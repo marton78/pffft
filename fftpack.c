@@ -76,7 +76,7 @@ static void passfb(integer *nac, integer ido, integer ip, integer l1, integer id
     c1_offset, c2_offset, ch2_offset;
 
   /* Local variables */
-  integer i, j, k, l, jc, lc, ik, nt, idj, idl, inc, idp;
+  integer i, j, k, l, jc, lc, ik, idj, idl, inc, idp;
   real wai, war;
   integer ipp2, idij, idlj, idot, ipph;
 
@@ -102,7 +102,6 @@ static void passfb(integer *nac, integer ido, integer ip, integer l1, integer id
 
   /* Function Body */
   idot = ido / 2;
-  nt = ip * idl1;
   ipp2 = ip + 2;
   ipph = (ip + 1) / 2;
   idp = ip * ido;

@@ -1335,12 +1335,13 @@ void pffft_transform_internal(PFFFT_Setup *setup, const float *finput, float *fo
   // temporary buffer is allocated on the stack if the scratch pointer is NULL
   int stack_allocate = (scratch == 0 ? Ncvec*2 : 1);
   VLA_ARRAY_ON_STACK(v4sf, scratch_on_stack, stack_allocate);
-  if (scratch == 0) scratch = scratch_on_stack;
 
   const v4sf *vinput = (const v4sf*)finput;
   v4sf *voutput      = (v4sf*)foutput;
-  v4sf *buff[2]      = { voutput, scratch };
+  v4sf *buff[2]      = { voutput, scratch ? scratch : scratch_on_stack };
   int ib = (nf_odd ^ ordered ? 1 : 0);
+
+  if (scratch == 0) scratch = scratch_on_stack;
 
   assert(VALIGNED(finput) && VALIGNED(foutput));
 
