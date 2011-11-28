@@ -209,8 +209,8 @@ void show_output(const char *name, int N, int cplx, float flops, float t0, float
   float mflops = flops/1e6/(t1 - t0 + 1e-16);
   if (array_output_format) {
     if (flops != -1) {
-      printf("|%10.0f    ", mflops);
-    } else printf("|       n/a    ");
+      printf("|%9.0f   ", mflops);
+    } else printf("|      n/a   ");
   } else {
     if (flops != -1) {
       printf("N=%5d, %s %16s : %6.0f MFlops [t=%6.0f ns, %d runs]\n", N, (cplx?"CPLX":"REAL"), name, mflops, (t1-t0)/2/max_iter * 1e9, max_iter);
@@ -371,26 +371,26 @@ int main(int argc, char **argv) {
       benchmark_ffts(Nvalues[i], 1);
     }
   } else {
-    printf("| N (input length) ");
-    printf("| real FFTPack ");
+    printf("| input len ");
+    printf("|real FFTPack");
 #ifdef HAVE_VECLIB
-    printf("|   real vDSP  ");
+    printf("|  real vDSP ");
 #endif
 #ifdef HAVE_FFTW
-    printf("|   real FFTW  ");
+    printf("|  real FFTW ");
 #endif
-    printf("|  real PFFFT  | ");
+    printf("| real PFFFT | ");
 
-    printf("| cplx FFTPack ");
+    printf("|cplx FFTPack");
 #ifdef HAVE_VECLIB
-    printf("|   cplx vDSP  ");
+    printf("|  cplx vDSP ");
 #endif
 #ifdef HAVE_FFTW
-    printf("|   cplx FFTW  ");
+    printf("|  cplx FFTW ");
 #endif
-    printf("|  cplx PFFFT  |\n");
+    printf("| cplx PFFFT |\n");
     for (i=0; Nvalues[i] > 0; ++i) {
-      printf("| %12d     ", Nvalues[i]);
+      printf("|%9d  ", Nvalues[i]);
       benchmark_ffts(Nvalues[i], 0); 
       printf("| ");
       benchmark_ffts(Nvalues[i], 1);
