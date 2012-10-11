@@ -60,8 +60,9 @@
    - 1D transforms only, with 32-bit single precision.
 
    - supports only transforms for inputs of length N of the form
-   N=(2^a)*(3^b), a >= 5 and b >=0 (32, 48, 64, 96, 128, 144 etc
-   are all acceptable lengths). Performance is best for 128<=N<=8192.
+   N=(2^a)*(3^b)*(5^c), a >= 5, b >=0, c >= 0 (32, 48, 64, 96, 128,
+   144, 160, etc are all acceptable lengths). Performance is best for
+   128<=N<=8192.
 
    - all (float*) pointers in the functions below are expected to
    have an "simd-compatible" alignment, that is 16 bytes on x86 and

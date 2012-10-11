@@ -67,12 +67,17 @@ double frand() {
 void pffft_validate_N(int N, int cplx) {
   int Nfloat = N*(cplx?2:1);
   int Nbytes = Nfloat * sizeof(float);
-
+  float *ref, *in, *out, *tmp, *tmp2;
   PFFFT_Setup *s = pffft_new_setup(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
-  float *ref = pffft_aligned_malloc(Nbytes), *in = pffft_aligned_malloc(Nbytes);
-  float *out = pffft_aligned_malloc(Nbytes), *tmp = pffft_aligned_malloc(Nbytes), *tmp2 = pffft_aligned_malloc(Nbytes);
-  
   int pass;
+
+  if (!s) { printf("Skipping N=%d, not supported\n", N); return; }
+  ref = pffft_aligned_malloc(Nbytes);
+  in = pffft_aligned_malloc(Nbytes);
+  out = pffft_aligned_malloc(Nbytes);
+  tmp = pffft_aligned_malloc(Nbytes);
+  tmp2 = pffft_aligned_malloc(Nbytes);
+
   for (pass=0; pass < 2; ++pass) {
     float ref_max = 0;
     int k;
@@ -193,12 +198,11 @@ void pffft_validate_N(int N, int cplx) {
 }
 
 void pffft_validate(int cplx) {
-  static int Ntest[] = { 16, 32, 64, 96, 128, 192, 256, 288, 384, 512, 576, 864, 1024, 2048, 2592, 4096, 36864, 0};
+  static int Ntest[] = { 16, 32, 64, 96, 128, 160, 192, 256, 288, 384, 5*96, 512, 576, 5*128, 864, 1024, 2048, 2592, 4096, 36864, 0};
   int k;
   for (k = 0; Ntest[k]; ++k) {
     int N = Ntest[k];
     if (N == 16 && !cplx) continue;
-
     pffft_validate_N(N, cplx);
   }
 }
@@ -325,16 +329,18 @@ void benchmark_ffts(int N, int cplx) {
   // PFFFT benchmark
   {
     PFFFT_Setup *s = pffft_new_setup(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
-    t0 = uclock_sec();  
-    for (iter = 0; iter < max_iter; ++iter) {
-      pffft_transform(s, X, Z, Y, PFFFT_FORWARD);
-      pffft_transform(s, X, Z, Y, PFFFT_BACKWARD);
-    }
-    t1 = uclock_sec();
-    pffft_destroy_setup(s);
+    if (s) {
+      t0 = uclock_sec();  
+      for (iter = 0; iter < max_iter; ++iter) {
+        pffft_transform(s, X, Z, Y, PFFFT_FORWARD);
+        pffft_transform(s, X, Z, Y, PFFFT_BACKWARD);
+      }
+      t1 = uclock_sec();
+      pffft_destroy_setup(s);
     
-    flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); // see http://www.fftw.org/speed/method.html
-    show_output("PFFFT", N, cplx, flops, t0, t1, max_iter);
+      flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); // see http://www.fftw.org/speed/method.html
+      show_output("PFFFT", N, cplx, flops, t0, t1, max_iter);
+    }
   }
 
   if (!array_output_format) {
@@ -351,7 +357,7 @@ void validate_pffft_simd(); // a small function inside pffft.c that will detect 
 #endif
 
 int main(int argc, char **argv) {
-  int Nvalues[] = { 64, 96, 128, 192, 256, 384, 512, 3*256, 1024, 2048, 4096, 8192, 9*1024, 16384, 32768, 256*1024, 1024*1024, -1 };
+  int Nvalues[] = { 64, 96, 128, 160, 192, 256, 384, 5*96, 512, 5*128, 3*256, 1024, 2048, 4096, 8192, 9*1024, 16384, 32768, 256*1024, 1024*1024, -1 };
   int i;
 
   if (argc > 1 && strcmp(argv[1], "--array-format") == 0) {
@@ -365,10 +371,10 @@ int main(int argc, char **argv) {
   pffft_validate(0);
   if (!array_output_format) {
     for (i=0; Nvalues[i] > 0; ++i) {
-      benchmark_ffts(Nvalues[i], 0);
+      benchmark_ffts(Nvalues[i], 0 /* real fft */);
     }
     for (i=0; Nvalues[i] > 0; ++i) {
-      benchmark_ffts(Nvalues[i], 1);
+      benchmark_ffts(Nvalues[i], 1 /* cplx fft */);
     }
   } else {
     printf("| input len ");

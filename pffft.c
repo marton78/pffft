@@ -194,6 +194,10 @@ typedef float v4sf;
 // shortcuts for complex multiplcations
 #define VCPLXMUL(ar,ai,br,bi) { v4sf tmp; tmp=VMUL(ar,bi); ar=VMUL(ar,br); ar=VSUB(ar,VMUL(ai,bi)); ai=VMUL(ai,br); ai=VADD(ai,tmp); }
 #define VCPLXMULCONJ(ar,ai,br,bi) { v4sf tmp; tmp=VMUL(ar,bi); ar=VMUL(ar,br); ar=VADD(ar,VMUL(ai,bi)); ai=VMUL(ai,br); ai=VSUB(ai,tmp); }
+#ifndef SVMUL
+// multiply a scalar with a vector
+#define SVMUL(f,v) VMUL(LD_PS1(f),v)
+#endif
 
 #if !defined(PFFFT_SIMD_DISABLE)
 typedef union v4sf_union {
@@ -304,13 +308,13 @@ static NEVER_INLINE(void) passf3_ps(int ido, int l1, const v4sf *cc, v4sf *ch,
   for (k=0; k< l1ido; k += ido, cc+= 3*ido, ch +=ido) {
     for (i=0; i<ido-1; i+=2) {
       tr2 = VADD(cc[i+ido], cc[i+2*ido]);
-      cr2 = VADD(cc[i], VMUL(LD_PS1(taur),tr2));
+      cr2 = VADD(cc[i], SVMUL(taur,tr2));
       ch[i]    = VADD(cc[i], tr2);
       ti2 = VADD(cc[i+ido+1], cc[i+2*ido+1]);
-      ci2 = VADD(cc[i    +1], VMUL(LD_PS1(taur),ti2));
+      ci2 = VADD(cc[i    +1], SVMUL(taur,ti2));
       ch[i+1]  = VADD(cc[i+1], ti2);
-      cr3 = VMUL(LD_PS1(taui), VSUB(cc[i+ido], cc[i+2*ido]));
-      ci3 = VMUL(LD_PS1(taui), VSUB(cc[i+ido+1], cc[i+2*ido+1]));
+      cr3 = SVMUL(taui, VSUB(cc[i+ido], cc[i+2*ido]));
+      ci3 = SVMUL(taui, VSUB(cc[i+ido+1], cc[i+2*ido+1]));
       dr2 = VSUB(cr2, ci3);
       dr3 = VADD(cr2, ci3);
       di2 = VADD(ci2, cr3);
@@ -394,6 +398,76 @@ static NEVER_INLINE(void) passf4_ps(int ido, int l1, const v4sf *cc, v4sf *ch,
   }
 } /* passf4 */
 
+/*
+  passf5 and passb5 has been merged here, fsign = -1 for passf5, +1 for passb5
+*/
+static NEVER_INLINE(void) passf5_ps(int ido, int l1, const v4sf *cc, v4sf *ch,
+                                    const float *wa1, const float *wa2, 
+                                    const float *wa3, const float *wa4, float fsign) {  
+  static const float tr11 = .309016994374947f;
+  const float ti11 = .951056516295154f*fsign;
+  static const float tr12 = -.809016994374947f;
+  const float ti12 = .587785252292473f*fsign;
+
+  /* Local variables */
+  int i, k;
+  v4sf ci2, ci3, ci4, ci5, di3, di4, di5, di2, cr2, cr3, cr5, cr4, ti2, ti3,
+    ti4, ti5, dr3, dr4, dr5, dr2, tr2, tr3, tr4, tr5;
+
+  float wr1, wi1, wr2, wi2, wr3, wi3, wr4, wi4;
+
+#define cc_ref(a_1,a_2) cc[(a_2-1)*ido + a_1 + 1]
+#define ch_ref(a_1,a_3) ch[(a_3-1)*l1*ido + a_1 + 1]
+
+  assert(ido > 2);
+  for (k = 0; k < l1; ++k, cc += 5*ido, ch += ido) {
+    for (i = 0; i < ido-1; i += 2) {
+      ti5 = VSUB(cc_ref(i  , 2), cc_ref(i  , 5));
+      ti2 = VADD(cc_ref(i  , 2), cc_ref(i  , 5));
+      ti4 = VSUB(cc_ref(i  , 3), cc_ref(i  , 4));
+      ti3 = VADD(cc_ref(i  , 3), cc_ref(i  , 4));
+      tr5 = VSUB(cc_ref(i-1, 2), cc_ref(i-1, 5));
+      tr2 = VADD(cc_ref(i-1, 2), cc_ref(i-1, 5));
+      tr4 = VSUB(cc_ref(i-1, 3), cc_ref(i-1, 4));
+      tr3 = VADD(cc_ref(i-1, 3), cc_ref(i-1, 4));
+      ch_ref(i-1, 1) = VADD(cc_ref(i-1, 1), VADD(tr2, tr3));
+      ch_ref(i  , 1) = VADD(cc_ref(i  , 1), VADD(ti2, ti3));
+      cr2 = VADD(cc_ref(i-1, 1), VADD(SVMUL(tr11, tr2),SVMUL(tr12, tr3)));
+      ci2 = VADD(cc_ref(i  , 1), VADD(SVMUL(tr11, ti2),SVMUL(tr12, ti3)));
+      cr3 = VADD(cc_ref(i-1, 1), VADD(SVMUL(tr12, tr2),SVMUL(tr11, tr3)));
+      ci3 = VADD(cc_ref(i  , 1), VADD(SVMUL(tr12, ti2),SVMUL(tr11, ti3)));
+      cr5 = VADD(SVMUL(ti11, tr5), SVMUL(ti12, tr4));
+      ci5 = VADD(SVMUL(ti11, ti5), SVMUL(ti12, ti4));
+      cr4 = VSUB(SVMUL(ti12, tr5), SVMUL(ti11, tr4));
+      ci4 = VSUB(SVMUL(ti12, ti5), SVMUL(ti11, ti4));
+      dr3 = VSUB(cr3, ci4);
+      dr4 = VADD(cr3, ci4);
+      di3 = VADD(ci3, cr4);
+      di4 = VSUB(ci3, cr4);
+      dr5 = VADD(cr2, ci5);
+      dr2 = VSUB(cr2, ci5);
+      di5 = VSUB(ci2, cr5);
+      di2 = VADD(ci2, cr5);
+      wr1=wa1[i], wi1=fsign*wa1[i+1], wr2=wa2[i], wi2=fsign*wa2[i+1]; 
+      wr3=wa3[i], wi3=fsign*wa3[i+1], wr4=wa4[i], wi4=fsign*wa4[i+1]; 
+      VCPLXMUL(dr2, di2, LD_PS1(wr1), LD_PS1(wi1));
+      ch_ref(i - 1, 2) = dr2;
+      ch_ref(i, 2)     = di2;
+      VCPLXMUL(dr3, di3, LD_PS1(wr2), LD_PS1(wi2));
+      ch_ref(i - 1, 3) = dr3;
+      ch_ref(i, 3)     = di3;
+      VCPLXMUL(dr4, di4, LD_PS1(wr3), LD_PS1(wi3));
+      ch_ref(i - 1, 4) = dr4;
+      ch_ref(i, 4)     = di4;
+      VCPLXMUL(dr5, di5, LD_PS1(wr4), LD_PS1(wi4));
+      ch_ref(i - 1, 5) = dr5;
+      ch_ref(i, 5)     = di5;
+    }
+  }
+#undef ch_ref
+#undef cc_ref
+}
+
 static NEVER_INLINE(void) radf2_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float *wa1) {
   static const float minus_one = -1.f;
   int i, k, l1ido = l1*ido;
@@ -418,7 +492,7 @@ static NEVER_INLINE(void) radf2_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
     if (ido % 2 == 1) return;
   }
   for (k=0; k < l1ido; k += ido) {
-    ch[2*k + ido] = VMUL(LD_PS1(minus_one), cc[ido-1 + k + l1ido]);
+    ch[2*k + ido] = SVMUL(minus_one, cc[ido-1 + k + l1ido]);
     ch[2*k + ido-1] = cc[k + ido-1];
   }
 } /* radf2 */
@@ -453,7 +527,7 @@ static NEVER_INLINE(void) radb2_ps(int ido, int l1, const v4sf *cc, v4sf *ch, co
   for (k = 0; k < l1ido; k += ido) {
     a = cc[2*k + ido-1]; b = cc[2*k + ido];
     ch[k + ido-1] = VADD(a,a);
-    ch[k + ido-1 + l1ido] = VMUL(LD_PS1(minus_two), b);
+    ch[k + ido-1 + l1ido] = SVMUL(minus_two, b);
   }
 } /* radb2 */
 
@@ -466,8 +540,8 @@ static void radf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT 
   for (k=0; k<l1; k++) {
     cr2 = VADD(cc[(k + l1)*ido], cc[(k + 2*l1)*ido]);
     ch[3*k*ido] = VADD(cc[k*ido], cr2);
-    ch[(3*k+2)*ido] = VMUL(LD_PS1(taui), VSUB(cc[(k + l1*2)*ido], cc[(k + l1)*ido]));
-    ch[ido-1 + (3*k + 1)*ido] = VADD(cc[k*ido], VMUL(LD_PS1(taur), cr2));
+    ch[(3*k+2)*ido] = SVMUL(taui, VSUB(cc[(k + l1*2)*ido], cc[(k + l1)*ido]));
+    ch[ido-1 + (3*k + 1)*ido] = VADD(cc[k*ido], SVMUL(taur, cr2));
   }
   if (ido == 1) return;
   for (k=0; k<l1; k++) {
@@ -485,10 +559,10 @@ static void radf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT 
       ci2 = VADD(di2, di3);
       ch[i - 1 + 3*k*ido] = VADD(cc[i - 1 + k*ido], cr2);
       ch[i + 3*k*ido] = VADD(cc[i + k*ido], ci2);
-      tr2 = VADD(cc[i - 1 + k*ido], VMUL(LD_PS1(taur), cr2));
-      ti2 = VADD(cc[i + k*ido], VMUL(LD_PS1(taur), ci2));
-      tr3 = VMUL(LD_PS1(taui), VSUB(di2, di3));
-      ti3 = VMUL(LD_PS1(taui), VSUB(dr3, dr2));
+      tr2 = VADD(cc[i - 1 + k*ido], SVMUL(taur, cr2));
+      ti2 = VADD(cc[i + k*ido], SVMUL(taur, ci2));
+      tr3 = SVMUL(taui, VSUB(di2, di3));
+      ti3 = SVMUL(taui, VSUB(dr3, dr2));
       ch[i - 1 + (3*k + 2)*ido] = VADD(tr2, tr3);
       ch[ic - 1 + (3*k + 1)*ido] = VSUB(tr2, tr3);
       ch[i + (3*k + 2)*ido] = VADD(ti2, ti3);
@@ -510,7 +584,7 @@ static void radb3_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch
     tr2 = cc[ido-1 + (3*k + 1)*ido]; tr2 = VADD(tr2,tr2);
     cr2 = VMADD(LD_PS1(taur), tr2, cc[3*k*ido]);
     ch[k*ido] = VADD(cc[3*k*ido], tr2);
-    ci3 = VMUL(LD_PS1(taui_2), cc[(3*k + 2)*ido]);
+    ci3 = SVMUL(taui_2, cc[(3*k + 2)*ido]);
     ch[(k + l1)*ido] = VSUB(cr2, ci3);
     ch[(k + 2*l1)*ido] = VADD(cr2, ci3);
   }
@@ -524,8 +598,8 @@ static void radb3_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch
       ti2 = VSUB(cc[i + (3*k + 2)*ido], cc[ic + (3*k + 1)*ido]);
       ci2 = VMADD(LD_PS1(taur), ti2, cc[i + 3*k*ido]);
       ch[i + k*ido] = VADD(cc[i + 3*k*ido], ti2);
-      cr3 = VMUL(LD_PS1(taui), VSUB(cc[i - 1 + (3*k + 2)*ido], cc[ic - 1 + (3*k + 1)*ido]));
-      ci3 = VMUL(LD_PS1(taui), VADD(cc[i + (3*k + 2)*ido], cc[ic + (3*k + 1)*ido]));
+      cr3 = SVMUL(taui, VSUB(cc[i - 1 + (3*k + 2)*ido], cc[ic - 1 + (3*k + 1)*ido]));
+      ci3 = SVMUL(taui, VADD(cc[i + (3*k + 2)*ido], cc[ic + (3*k + 1)*ido]));
       dr2 = VSUB(cr2, ci3);
       dr3 = VADD(cr2, ci3);
       di2 = VADD(ci2, cr3);
@@ -539,7 +613,6 @@ static void radb3_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch
     }
   }
 } /* radb3 */
-
 
 static NEVER_INLINE(void) radf4_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf * RESTRICT ch,
                                    const float * RESTRICT wa1, const float * RESTRICT wa2, const float * RESTRICT wa3)
@@ -615,8 +688,8 @@ static NEVER_INLINE(void) radf4_ps(int ido, int l1, const v4sf *RESTRICT cc, v4s
   for (k=0; k<l1ido; k += ido) {
     v4sf a = cc[ido-1 + k + l1ido], b = cc[ido-1 + k + 3*l1ido];
     v4sf c = cc[ido-1 + k], d = cc[ido-1 + k + 2*l1ido];
-    v4sf ti1 = VMUL(LD_PS1(minus_hsqt2), VADD(a, b));
-    v4sf tr1 = VMUL(LD_PS1(minus_hsqt2), VSUB(b, a));
+    v4sf ti1 = SVMUL(minus_hsqt2, VADD(a, b));
+    v4sf tr1 = SVMUL(minus_hsqt2, VSUB(b, a));
     ch[ido-1 + 4*k] = VADD(tr1, c);
     ch[ido-1 + 4*k + 2*ido] = VSUB(c, tr1);
     ch[4*k + 1*ido] = VSUB(ti1, d); 
@@ -638,10 +711,10 @@ static NEVER_INLINE(void) radb4_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
     while (ch < ch_end) {
       v4sf a = cc[0], b = cc[4*ido-1];
       v4sf c = cc[2*ido], d = cc[2*ido-1];
-      tr3 = VMUL(LD_PS1(two),d);
+      tr3 = SVMUL(two,d);
       tr2 = VADD(a,b);
       tr1 = VSUB(a,b);
-      tr4 = VMUL(LD_PS1(two),c);
+      tr4 = SVMUL(two,c);
       ch[0*l1ido] = VADD(tr2, tr3);
       ch[2*l1ido] = VSUB(tr2, tr3);
       ch[1*l1ido] = VSUB(tr1, tr4);
@@ -699,11 +772,187 @@ static NEVER_INLINE(void) radb4_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
     ti1 = VADD(b,a);
     ti2 = VSUB(b,a);
     ch[ido-1 + k + 0*l1ido] = VADD(tr2,tr2);
-    ch[ido-1 + k + 1*l1ido] = VMUL(LD_PS1(minus_sqrt2), VSUB(ti1, tr1));
+    ch[ido-1 + k + 1*l1ido] = SVMUL(minus_sqrt2, VSUB(ti1, tr1));
     ch[ido-1 + k + 2*l1ido] = VADD(ti2, ti2);
-    ch[ido-1 + k + 3*l1ido] = VMUL(LD_PS1(minus_sqrt2), VADD(ti1, tr1));
+    ch[ido-1 + k + 3*l1ido] = SVMUL(minus_sqrt2, VADD(ti1, tr1));
   }
 } /* radb4 */
+
+static void radf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, 
+                     const float *wa1, const float *wa2, const float *wa3, const float *wa4)
+{
+  static const float tr11 = .309016994374947f;
+  static const float ti11 = .951056516295154f;
+  static const float tr12 = -.809016994374947f;
+  static const float ti12 = .587785252292473f;
+
+  /* System generated locals */
+  int cc_offset, ch_offset;
+
+  /* Local variables */
+  int i, k, ic;
+  v4sf ci2, di2, ci4, ci5, di3, di4, di5, ci3, cr2, cr3, dr2, dr3, dr4, dr5,
+    cr5, cr4, ti2, ti3, ti5, ti4, tr2, tr3, tr4, tr5;
+  int idp2;
+
+
+#define cc_ref(a_1,a_2,a_3) cc[((a_3)*l1 + (a_2))*ido + a_1]
+#define ch_ref(a_1,a_2,a_3) ch[((a_3)*5 + (a_2))*ido + a_1]
+
+  /* Parameter adjustments */
+  ch_offset = 1 + ido * 6;
+  ch -= ch_offset;
+  cc_offset = 1 + ido * (1 + l1);
+  cc -= cc_offset;
+
+  /* Function Body */
+  for (k = 1; k <= l1; ++k) {
+    cr2 = VADD(cc_ref(1, k, 5), cc_ref(1, k, 2));
+    ci5 = VSUB(cc_ref(1, k, 5), cc_ref(1, k, 2));
+    cr3 = VADD(cc_ref(1, k, 4), cc_ref(1, k, 3));
+    ci4 = VSUB(cc_ref(1, k, 4), cc_ref(1, k, 3));
+    ch_ref(1, 1, k) = VADD(cc_ref(1, k, 1), VADD(cr2, cr3));
+    ch_ref(ido, 2, k) = VADD(cc_ref(1, k, 1), VADD(SVMUL(tr11, cr2), SVMUL(tr12, cr3)));
+    ch_ref(1, 3, k) = VADD(SVMUL(ti11, ci5), SVMUL(ti12, ci4));
+    ch_ref(ido, 4, k) = VADD(cc_ref(1, k, 1), VADD(SVMUL(tr12, cr2), SVMUL(tr11, cr3)));
+    ch_ref(1, 5, k) = VSUB(SVMUL(ti12, ci5), SVMUL(ti11, ci4));
+    //printf("pffft: radf5, k=%d ch_ref=%f, ci4=%f\n", k, ch_ref(1, 5, k), ci4);
+  }
+  if (ido == 1) {
+    return;
+  }
+  idp2 = ido + 2;
+  for (k = 1; k <= l1; ++k) {
+    for (i = 3; i <= ido; i += 2) {
+      ic = idp2 - i;
+      dr2 = LD_PS1(wa1[i-2]); di2 = LD_PS1(wa1[i-1]);
+      dr3 = LD_PS1(wa2[i-2]); di3 = LD_PS1(wa2[i-1]);
+      dr4 = LD_PS1(wa3[i-2]); di4 = LD_PS1(wa3[i-1]);
+      dr5 = LD_PS1(wa4[i-2]); di5 = LD_PS1(wa4[i-1]);
+      VCPLXMUL(dr2, di2, cc_ref(i-1, k, 2), cc_ref(i, k, 2));
+      VCPLXMUL(dr3, di3, cc_ref(i-1, k, 3), cc_ref(i, k, 3));
+      VCPLXMUL(dr4, di4, cc_ref(i-1, k, 4), cc_ref(i, k, 4));
+      VCPLXMUL(dr5, di5, cc_ref(i-1, k, 5), cc_ref(i, k, 5));
+      cr2 = VADD(dr2, dr5);
+      ci5 = VSUB(dr5, dr2);
+      cr5 = VSUB(di2, di5);
+      ci2 = VADD(di2, di5);
+      cr3 = VADD(dr3, dr4);
+      ci4 = VSUB(dr4, dr3);
+      cr4 = VSUB(di3, di4);
+      ci3 = VADD(di3, di4);
+      ch_ref(i - 1, 1, k) = VADD(cc_ref(i - 1, k, 1), VADD(cr2, cr3));
+      ch_ref(i, 1, k) = VADD(cc_ref(i, k, 1), VADD(ci2, ci3));
+      tr2 = VADD(cc_ref(i - 1, k, 1), VADD(SVMUL(tr11, cr2), SVMUL(tr12, cr3)));
+      ti2 = VADD(cc_ref(i, k, 1), VADD(SVMUL(tr11, ci2), SVMUL(tr12, ci3)));
+      tr3 = VADD(cc_ref(i - 1, k, 1), VADD(SVMUL(tr12, cr2), SVMUL(tr11, cr3)));
+      ti3 = VADD(cc_ref(i, k, 1), VADD(SVMUL(tr12, ci2), SVMUL(tr11, ci3)));
+      tr5 = VADD(SVMUL(ti11, cr5), SVMUL(ti12, cr4));
+      ti5 = VADD(SVMUL(ti11, ci5), SVMUL(ti12, ci4));
+      tr4 = VSUB(SVMUL(ti12, cr5), SVMUL(ti11, cr4));
+      ti4 = VSUB(SVMUL(ti12, ci5), SVMUL(ti11, ci4));
+      ch_ref(i - 1, 3, k) = VADD(tr2, tr5);
+      ch_ref(ic - 1, 2, k) = VSUB(tr2, tr5);
+      ch_ref(i, 3, k) = VADD(ti2, ti5);
+      ch_ref(ic, 2, k) = VSUB(ti5, ti2);
+      ch_ref(i - 1, 5, k) = VADD(tr3, tr4);
+      ch_ref(ic - 1, 4, k) = VSUB(tr3, tr4);
+      ch_ref(i, 5, k) = VADD(ti3, ti4);
+      ch_ref(ic, 4, k) = VSUB(ti4, ti3);
+    }
+  }
+#undef cc_ref
+#undef ch_ref
+} /* radf5 */
+
+static void radb5_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch, 
+                  const float *wa1, const float *wa2, const float *wa3, const float *wa4)
+{
+  static const float tr11 = .309016994374947f;
+  static const float ti11 = .951056516295154f;
+  static const float tr12 = -.809016994374947f;
+  static const float ti12 = .587785252292473f;
+
+  int cc_offset, ch_offset;
+
+  /* Local variables */
+  int i, k, ic;
+  v4sf ci2, ci3, ci4, ci5, di3, di4, di5, di2, cr2, cr3, cr5, cr4, ti2, ti3,
+    ti4, ti5, dr3, dr4, dr5, dr2, tr2, tr3, tr4, tr5;
+  int idp2;
+
+#define cc_ref(a_1,a_2,a_3) cc[((a_3)*5 + (a_2))*ido + a_1]
+#define ch_ref(a_1,a_2,a_3) ch[((a_3)*l1 + (a_2))*ido + a_1]
+
+  /* Parameter adjustments */
+  ch_offset = 1 + ido * (1 + l1);
+  ch -= ch_offset;
+  cc_offset = 1 + ido * 6;
+  cc -= cc_offset;
+
+  /* Function Body */
+  for (k = 1; k <= l1; ++k) {
+    ti5 = VADD(cc_ref(1, 3, k), cc_ref(1, 3, k));
+    ti4 = VADD(cc_ref(1, 5, k), cc_ref(1, 5, k));
+    tr2 = VADD(cc_ref(ido, 2, k), cc_ref(ido, 2, k));
+    tr3 = VADD(cc_ref(ido, 4, k), cc_ref(ido, 4, k));
+    ch_ref(1, k, 1) = VADD(cc_ref(1, 1, k), VADD(tr2, tr3));
+    cr2 = VADD(cc_ref(1, 1, k), VADD(SVMUL(tr11, tr2), SVMUL(tr12, tr3)));
+    cr3 = VADD(cc_ref(1, 1, k), VADD(SVMUL(tr12, tr2), SVMUL(tr11, tr3)));
+    ci5 = VADD(SVMUL(ti11, ti5), SVMUL(ti12, ti4));
+    ci4 = VSUB(SVMUL(ti12, ti5), SVMUL(ti11, ti4));
+    ch_ref(1, k, 2) = VSUB(cr2, ci5);
+    ch_ref(1, k, 3) = VSUB(cr3, ci4);
+    ch_ref(1, k, 4) = VADD(cr3, ci4);
+    ch_ref(1, k, 5) = VADD(cr2, ci5);
+  }
+  if (ido == 1) {
+    return;
+  }
+  idp2 = ido + 2;
+  for (k = 1; k <= l1; ++k) {
+    for (i = 3; i <= ido; i += 2) {
+      ic = idp2 - i;
+      ti5 = VADD(cc_ref(i  , 3, k), cc_ref(ic  , 2, k));
+      ti2 = VSUB(cc_ref(i  , 3, k), cc_ref(ic  , 2, k));
+      ti4 = VADD(cc_ref(i  , 5, k), cc_ref(ic  , 4, k));
+      ti3 = VSUB(cc_ref(i  , 5, k), cc_ref(ic  , 4, k));
+      tr5 = VSUB(cc_ref(i-1, 3, k), cc_ref(ic-1, 2, k));
+      tr2 = VADD(cc_ref(i-1, 3, k), cc_ref(ic-1, 2, k));
+      tr4 = VSUB(cc_ref(i-1, 5, k), cc_ref(ic-1, 4, k));
+      tr3 = VADD(cc_ref(i-1, 5, k), cc_ref(ic-1, 4, k));
+      ch_ref(i - 1, k, 1) = VADD(cc_ref(i-1, 1, k), VADD(tr2, tr3));
+      ch_ref(i, k, 1) = VADD(cc_ref(i, 1, k), VADD(ti2, ti3));
+      cr2 = VADD(cc_ref(i-1, 1, k), VADD(SVMUL(tr11, tr2), SVMUL(tr12, tr3)));
+      ci2 = VADD(cc_ref(i  , 1, k), VADD(SVMUL(tr11, ti2), SVMUL(tr12, ti3)));
+      cr3 = VADD(cc_ref(i-1, 1, k), VADD(SVMUL(tr12, tr2), SVMUL(tr11, tr3)));
+      ci3 = VADD(cc_ref(i  , 1, k), VADD(SVMUL(tr12, ti2), SVMUL(tr11, ti3)));
+      cr5 = VADD(SVMUL(ti11, tr5), SVMUL(ti12, tr4));
+      ci5 = VADD(SVMUL(ti11, ti5), SVMUL(ti12, ti4));
+      cr4 = VSUB(SVMUL(ti12, tr5), SVMUL(ti11, tr4));
+      ci4 = VSUB(SVMUL(ti12, ti5), SVMUL(ti11, ti4));
+      dr3 = VSUB(cr3, ci4);
+      dr4 = VADD(cr3, ci4);
+      di3 = VADD(ci3, cr4);
+      di4 = VSUB(ci3, cr4);
+      dr5 = VADD(cr2, ci5);
+      dr2 = VSUB(cr2, ci5);
+      di5 = VSUB(ci2, cr5);
+      di2 = VADD(ci2, cr5);
+      VCPLXMUL(dr2, di2, LD_PS1(wa1[i-2]), LD_PS1(wa1[i-1]));
+      VCPLXMUL(dr3, di3, LD_PS1(wa2[i-2]), LD_PS1(wa2[i-1]));
+      VCPLXMUL(dr4, di4, LD_PS1(wa3[i-2]), LD_PS1(wa3[i-1]));
+      VCPLXMUL(dr5, di5, LD_PS1(wa4[i-2]), LD_PS1(wa4[i-1]));
+
+      ch_ref(i-1, k, 2) = dr2; ch_ref(i, k, 2) = di2;
+      ch_ref(i-1, k, 3) = dr3; ch_ref(i, k, 3) = di3;
+      ch_ref(i-1, k, 4) = dr4; ch_ref(i, k, 4) = di4;
+      ch_ref(i-1, k, 5) = dr5; ch_ref(i, k, 5) = di5;
+    }
+  }
+#undef cc_ref
+#undef ch_ref
+} /* radb5 */
 
 static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2, 
                                       const float *wa, const int *ifac) {  
@@ -720,6 +969,12 @@ static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *w
     int ido = n / l2;
     iw -= (ip - 1)*ido;
     switch (ip) {
+      case 5: {
+        int ix2 = iw + ido;
+        int ix3 = ix2 + ido;
+        int ix4 = ix3 + ido;
+        radf5_ps(ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], &wa[ix4]);
+      } break;
       case 4: {
         int ix2 = iw + ido;
         int ix3 = ix2 + ido;
@@ -759,6 +1014,12 @@ static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *w
     int l2 = ip*l1;
     int ido = n / l2;
     switch (ip) {
+      case 5: {
+        int ix2 = iw + ido;
+        int ix3 = ix2 + ido;
+        int ix4 = ix3 + ido;
+        radb5_ps(ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], &wa[ix4]);
+      } break;
       case 4: {
         int ix2 = iw + ido;
         int ix3 = ix2 + ido;
@@ -787,9 +1048,9 @@ static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *w
   return in; /* this is in fact the output .. */
 }
 
-static int decompose(int n, int *ifac, const int ntryh[3]) {
+static int decompose(int n, int *ifac, const int *ntryh) {
   int nl = n, nf = 0, i, j = 0;
-  for (j=0; j < 3; ++j) {
+  for (j=0; ntryh[j]; ++j) {
     int ntry = ntryh[j];
     while (nl != 1) {
       int nq = nl / ntry;
@@ -816,7 +1077,7 @@ static int decompose(int n, int *ifac, const int ntryh[3]) {
 
 static void rffti1_ps(int n, float *wa, int *ifac)
 {
-  static const int ntryh[3] = { 4,2,3 };
+  static const int ntryh[] = { 4,2,3,5,0 };
   int k1, j, ii;
 
   int nf = decompose(n,ifac,ntryh);
@@ -824,7 +1085,6 @@ static void rffti1_ps(int n, float *wa, int *ifac)
   int is = 0;
   int nfm1 = nf - 1;
   int l1 = 1;
-  if (nfm1 == 0) return;
   for (k1 = 1; k1 <= nfm1; k1++) {
     int ip = ifac[k1 + 1];
     int ld = 0;
@@ -850,7 +1110,7 @@ static void rffti1_ps(int n, float *wa, int *ifac)
 
 void cffti1_ps(int n, float *wa, int *ifac)
 {
-  static const int ntryh[3] = { 3,4,2 };
+  static const int ntryh[] = { 5,3,4,2,0 };
   int k1, j, ii;
 
   int nf = decompose(n,ifac,ntryh);
@@ -900,6 +1160,12 @@ v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2, con
     int ido = n / l2;
     int idot = ido + ido;
     switch (ip) {
+      case 5: {
+        int ix2 = iw + idot;
+        int ix3 = ix2 + idot;
+        int ix4 = ix3 + idot;
+        passf5_ps(idot, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], &wa[ix4], isign);
+      } break;
       case 4: {
         int ix2 = iw + idot;
         int ix3 = ix2 + idot;
@@ -941,8 +1207,11 @@ struct PFFFT_Setup {
 PFFFT_Setup *pffft_new_setup(int N, pffft_transform_t transform) {
   PFFFT_Setup *s = (PFFFT_Setup*)malloc(sizeof(PFFFT_Setup));
   int k, m;
-  if (transform == PFFFT_REAL) { assert(N >= 32); }
-  if (transform == PFFFT_COMPLEX) { assert(N >= 16); }
+  /* unfortunately, the fft size must be a multiple of 16 for complex FFTs 
+     and 32 for real FFTs -- a lot of stuff would need to be rewritten to
+     handle other cases (or maybe just switch to a scalar fft, I don't know..) */
+  if (transform == PFFFT_REAL) { assert((N%(2*SIMD_SZ*SIMD_SZ))==0 && N>0); }
+  if (transform == PFFFT_COMPLEX) { assert((N%(SIMD_SZ*SIMD_SZ))==0 && N>0); }
   //assert((N % 32) == 0);
   s->N = N;
   s->transform = transform;  
@@ -975,6 +1244,13 @@ PFFFT_Setup *pffft_new_setup(int N, pffft_transform_t transform) {
     }
     cffti1_ps(N/SIMD_SZ, s->twiddle, s->ifac);
   }
+
+  /* check that N is decomposable with allowed prime factors */
+  for (k=0, m=1; k < s->ifac[1]; ++k) { m *= s->ifac[2+k]; }
+  if (m != N/SIMD_SZ) {
+    pffft_destroy_setup(s); s = 0;
+  }
+
   return s;
 }
 
