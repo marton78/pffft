@@ -79,7 +79,7 @@
 #  define ALWAYS_INLINE(return_type) __forceinline return_type
 #  define NEVER_INLINE(return_type) __declspec(noinline) return_type
 #  define RESTRICT __restrict
-#  define VLA_ARRAY_ON_STACK(type__, varname__, size__) type__ *varname__ = (v4sf*)_alloca(size__ * sizeof(type__))
+#  define VLA_ARRAY_ON_STACK(type__, varname__, size__) type__ *varname__ = (type__*)_alloca(size__ * sizeof(type__))
 #endif
 
 
@@ -247,8 +247,8 @@ void validate_pffft_simd() {
 /* SSE and co like 16-bytes aligned pointers */
 #define MALLOC_V4SF_ALIGNMENT 64 // with a 64-byte alignment, we are even aligned on L2 cache lines...
 void *pffft_aligned_malloc(size_t nb_bytes) {
-  void *p0, *p;
-  if (!(p0 = malloc(nb_bytes + MALLOC_V4SF_ALIGNMENT))) return (void *) 0;
+  void *p, *p0 = malloc(nb_bytes + MALLOC_V4SF_ALIGNMENT);
+  if (!p0) return (void *) 0;
   p = (void *) (((size_t) p0 + MALLOC_V4SF_ALIGNMENT) & (~((size_t) (MALLOC_V4SF_ALIGNMENT-1))));
   *((void **) p - 1) = p0;
   return p;
@@ -1564,10 +1564,11 @@ void pffft_transform_internal_nosimd(PFFFT_Setup *setup, const float *input, flo
   // temporary buffer is allocated on the stack if the scratch pointer is NULL
   int stack_allocate = (scratch == 0 ? Ncvec*2 : 1);
   VLA_ARRAY_ON_STACK(v4sf, scratch_on_stack, stack_allocate);
-  if (scratch == 0) scratch = scratch_on_stack;
-
-  float *buff[2] = { output, scratch };
+  float *buff[2];
   int ib;
+  if (scratch == 0) scratch = scratch_on_stack;
+  buff[0] = output; buff[1] = scratch;
+
   if (setup->transform == PFFFT_COMPLEX) ordered = 0; // it is always ordered.
   ib = (nf_odd ^ ordered ? 1 : 0);
 
