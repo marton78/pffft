@@ -262,7 +262,7 @@ void benchmark_ffts(int N, int cplx) {
     free(wrk);
     
     flops = (max_iter_*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); // see http://www.fftw.org/speed/method.html
-    show_output("FFTPack", N, cplx, flops, t0, t1, max_iter);
+    show_output("FFTPack", N, cplx, flops, t0, t1, max_iter_);
   }
 
 #ifdef HAVE_VECLIB
