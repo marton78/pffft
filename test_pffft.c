@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2011 Julien Pommier.
+  Copyright (c) 2013 Julien Pommier.
 
   Small test & bench for PFFFT, comparing its performance with the scalar FFTPACK, FFTW, and Apple vDSP
 
@@ -86,7 +86,7 @@ void pffft_validate_N(int N, int cplx) {
     if (pass == 0) {
       float *wrk = malloc(2*Nbytes+15*sizeof(float));
       for (k=0; k < Nfloat; ++k) {
-        ref[k] = in[k] = frand(); //sqrt((float)(k+1));
+        ref[k] = in[k] = frand()*2-1; 
         out[k] = 1e30;
       }
       if (!cplx) {
@@ -165,24 +165,33 @@ void pffft_validate_N(int N, int cplx) {
     }
 
     // quick test of the circular convolution in fft domain
-    pffft_zreorder(s, ref, tmp, PFFFT_FORWARD);
-    memset(out, 0, Nbytes);
-    pffft_zconvolve_accumulate(s, ref, ref, out, 1.0);
-    pffft_zreorder(s, out, tmp2, PFFFT_FORWARD);
+    {
+      float conv_err = 0, conv_max = 0;
 
-    for (k=0; k < Nfloat; k += 2) {
-      float ar = tmp[k], ai=tmp[k+1];
-      if (k || cplx) {
-        tmp[k] = ar*ar - ai*ai;
-        tmp[k+1] = 2*ar*ai;
-      } else {
-        tmp[0] = ar*ar;
-        tmp[1] = ai*ai;
+      pffft_zreorder(s, ref, tmp, PFFFT_FORWARD);
+      memset(out, 0, Nbytes);
+      pffft_zconvolve_accumulate(s, ref, ref, out, 1.0);
+      pffft_zreorder(s, out, tmp2, PFFFT_FORWARD);
+      
+      for (k=0; k < Nfloat; k += 2) {
+        float ar = tmp[k], ai=tmp[k+1];
+        if (cplx || k > 0) {
+          tmp[k] = ar*ar - ai*ai;
+          tmp[k+1] = 2*ar*ai;
+        } else {
+          tmp[0] = ar*ar;
+          tmp[1] = ai*ai;
+        }
       }
-    }
-
-    for (k=0; k < Nfloat; ++k) {
-      assert(fabs(tmp[k] - tmp2[k]) < 1e-2*ref_max);
+      
+      for (k=0; k < Nfloat; ++k) {
+        float d = fabs(tmp[k] - tmp2[k]), e = fabs(tmp[k]);
+        if (d > conv_err) conv_err = d;
+        if (e > conv_max) conv_max = e;
+      }
+      if (conv_err > 1e-5*conv_max) {
+        printf("zconvolve error ? %g %g\n", conv_err, conv_max); exit(1);
+      }
     }
 
   }
@@ -198,7 +207,7 @@ void pffft_validate_N(int N, int cplx) {
 }
 
 void pffft_validate(int cplx) {
-  static int Ntest[] = { 16, 32, 64, 96, 128, 160, 192, 256, 288, 384, 5*96, 512, 576, 5*128, 864, 1024, 2048, 2592, 4096, 36864, 0};
+  static int Ntest[] = { 16, 32, 64, 96, 128, 160, 192, 256, 288, 384, 5*96, 512, 576, 5*128, 800, 864, 1024, 2048, 2592, 4000, 4096, 12000, 36864, 0};
   int k;
   for (k = 0; Ntest[k]; ++k) {
     int N = Ntest[k];
@@ -357,7 +366,7 @@ void validate_pffft_simd(); // a small function inside pffft.c that will detect 
 #endif
 
 int main(int argc, char **argv) {
-  int Nvalues[] = { 64, 96, 128, 160, 192, 256, 384, 5*96, 512, 5*128, 3*256, 1024, 2048, 4096, 8192, 9*1024, 16384, 32768, 256*1024, 1024*1024, -1 };
+  int Nvalues[] = { 64, 96, 128, 160, 192, 256, 384, 5*96, 512, 5*128, 3*256, 800, 1024, 2048, 2400, 4096, 8192, 9*1024, 16384, 32768, 256*1024, 1024*1024, -1 };
   int i;
 
   if (argc > 1 && strcmp(argv[1], "--array-format") == 0) {

@@ -1493,22 +1493,14 @@ static void radf5(integer ido, integer l1, const real *cc, real *ch,
   for (k = 1; k <= l1; ++k) {
     for (i = 3; i <= ido; i += 2) {
       ic = idp2 - i;
-      dr2 = wa1[i - 2] * cc_ref(i - 1, k, 2) + wa1[i - 1] * 
-        cc_ref(i, k, 2);
-      di2 = wa1[i - 2] * cc_ref(i, k, 2) - wa1[i - 1] * cc_ref(
-                                                               i - 1, k, 2);
-      dr3 = wa2[i - 2] * cc_ref(i - 1, k, 3) + wa2[i - 1] * 
-        cc_ref(i, k, 3);
-      di3 = wa2[i - 2] * cc_ref(i, k, 3) - wa2[i - 1] * cc_ref(
-                                                               i - 1, k, 3);
-      dr4 = wa3[i - 2] * cc_ref(i - 1, k, 4) + wa3[i - 1] * 
-        cc_ref(i, k, 4);
-      di4 = wa3[i - 2] * cc_ref(i, k, 4) - wa3[i - 1] * cc_ref(
-                                                               i - 1, k, 4);
-      dr5 = wa4[i - 2] * cc_ref(i - 1, k, 5) + wa4[i - 1] * 
-        cc_ref(i, k, 5);
-      di5 = wa4[i - 2] * cc_ref(i, k, 5) - wa4[i - 1] * cc_ref(
-                                                               i - 1, k, 5);
+      dr2 = wa1[i - 2] * cc_ref(i - 1, k, 2) + wa1[i - 1] * cc_ref(i, k, 2);
+      di2 = wa1[i - 2] * cc_ref(i, k, 2) - wa1[i - 1] * cc_ref(i - 1, k, 2);
+      dr3 = wa2[i - 2] * cc_ref(i - 1, k, 3) + wa2[i - 1] * cc_ref(i, k, 3);
+      di3 = wa2[i - 2] * cc_ref(i, k, 3) - wa2[i - 1] * cc_ref(i - 1, k, 3);
+      dr4 = wa3[i - 2] * cc_ref(i - 1, k, 4) + wa3[i - 1] * cc_ref(i, k, 4);
+      di4 = wa3[i - 2] * cc_ref(i, k, 4) - wa3[i - 1] * cc_ref(i - 1, k, 4);
+      dr5 = wa4[i - 2] * cc_ref(i - 1, k, 5) + wa4[i - 1] * cc_ref(i, k, 5);
+      di5 = wa4[i - 2] * cc_ref(i, k, 5) - wa4[i - 1] * cc_ref(i - 1, k, 5);
       cr2 = dr2 + dr5;
       ci5 = dr5 - dr2;
       cr5 = di2 - di5;
@@ -2125,6 +2117,7 @@ static void rfftf1(integer n, real *c, real *ch, const real *wa, integer *ifac)
         ix3 = ix2 + ido;
         ix4 = ix3 + ido;
         radf5(ido, l1, na ? ch : c, na ? c : ch, &wa[iw], &wa[ix2], &wa[ix3], &wa[ix4]);
+        break;
       default:
         if (ido == 1) {
           na = 1 - na;

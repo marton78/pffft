@@ -1,4 +1,4 @@
-/* Copyright (c) 2011  Julien Pommier ( pommier@modartt.com ) 
+/* Copyright (c) 2013  Julien Pommier ( pommier@modartt.com ) 
 
    Based on original fortran 77 code from FFTPACKv4 from NETLIB,
    authored by Dr Paul Swarztrauber of NCAR, in 1985.
@@ -115,7 +115,7 @@ extern "C" {
      
      The 'work' pointer should point to an area of N (2*N for complex
      fft) floats, properly aligned. If 'work' is NULL, then stack will
-     be used instead (this is probably the beest strategy for small
+     be used instead (this is probably the best strategy for small
      FFTs, say for N < 16384).
 
      input and output may alias.
