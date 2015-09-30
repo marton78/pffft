@@ -1,7 +1,6 @@
-PFFFT: a pretty fast FFT.
+# PFFFT: a pretty fast FFT.
 
-TL;DR
---
+## TL;DR
 
 PFFFT does 1D Fast Fourier Transforms, of single precision real and
 complex vectors. It tries do it fast, it tries to be correct, and it
@@ -10,8 +9,7 @@ on x86 cpus, Altivec on powerpc cpus, and NEON on ARM cpus. The
 license is BSD-like.
 
 
-Why does it exist:
---
+## Why does it exist:
 
 I was in search of a good performing FFT library , preferably very
 small and with a very liberal license.
@@ -63,15 +61,13 @@ thought, especially with the real transforms, and I ended up writing
 more code than I planned..
 
 
-The code:
---
+## The code:
 
 Only two files, in good old C, pffft.c and pffft.h . The API is very
 very simple, just make sure that you read the comments in pffft.h.
 
 
-Comparison with other FFTs:
---
+## Comparison with other FFTs:
 
 The idea was not to break speed records, but to get a decently fast
 fft that is at least 50% as fast as the fastest FFT -- especially on
@@ -88,8 +84,7 @@ provides "unordered" FFTs , and a fourier domain convolution
 operation.
 
 
-Benchmark results (cpu tested: core i7 2600, core 2 quad, core 1 duo, atom N270, cortex-A9)
---
+## Benchmark results (cpu tested: core i7 2600, core 2 quad, core 1 duo, atom N270, cortex-A9)
 
 The benchmark shows the performance of various fft implementations measured in 
 MFlops, with the number of floating point operations being defined as 5Nlog2(N)
