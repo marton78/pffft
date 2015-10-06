@@ -83,6 +83,10 @@
 #endif
 
 
+#ifdef COMPILER_MSVC
+#pragma warning( disable : 4244 4305 4204 )
+#endif
+
 /* 
    vector support macros: the rest of the code is independant of
    SSE/Altivec/NEON -- adding support for other platforms with 4-element
