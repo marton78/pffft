@@ -9,10 +9,12 @@
   gcc -o test_pffft -DHAVE_FFTW -msse -mfpmath=sse -O3 -Wall -W pffft.c test_pffft.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -lfftw3f -lm
 
   on macos, without fftw3:
-  gcc-4.2 -o test_pffft -DHAVE_VECLIB -O3 -Wall -W pffft.c test_pffft.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -framework veclib
+  clang -o test_pffft -DHAVE_VECLIB -O3 -Wall -W pffft.c test_pffft.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -framework Accelerate
 
   on macos, with fftw3:
-  gcc-4.2 -o test_pffft -DHAVE_FFTW -DHAVE_VECLIB -O3 -Wall -W pffft.c test_pffft.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -lfftw3f -framework veclib
+  clang -o test_pffft -DHAVE_FFTW -DHAVE_VECLIB -O3 -Wall -W pffft.c test_pffft.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -lfftw3f -framework Accelerate
+
+  as alternative: replace clang by gcc.
 
   on windows, with visual c++:
   cl /Ox -D_USE_MATH_DEFINES /arch:SSE test_pffft.c pffft.c fftpack.c
@@ -38,7 +40,7 @@
 #endif
 
 #ifdef HAVE_VECLIB
-#  include <vecLib/vDSP.h>
+#  include <Accelerate/Accelerate.h>
 #endif
 
 #ifdef HAVE_FFTW
@@ -417,3 +419,4 @@ int main(int argc, char **argv) {
 
   return 0;
 }
+
