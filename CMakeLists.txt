@@ -76,3 +76,11 @@ if (PATH_KISS AND USE_KISS)
   target_compile_definitions(bench_pffft PRIVATE HAVE_KISS_FFT=1)
   target_link_libraries(bench_pffft  KissFFT)
 endif()
+
+
+enable_testing()
+
+add_test(bench_pffft bench_pffft
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
