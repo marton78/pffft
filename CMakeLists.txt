@@ -2,8 +2,33 @@ cmake_minimum_required(VERSION 3.0)
 set(CMAKE_C_STANDARD 99)
 project(PRETTY_FAST_FFT LANGUAGES C)
 
-option(USE_SIMD "use SIMD (SSE/NEON) CPU features?" ON)
-option(USE_FFTW "use fftw3 in benchmark?" OFF)
+option(USE_SIMD  "use SIMD (SSE/NEON) CPU features?" ON)
+option(USE_FFTW  "use (system-installed) FFTW3 in benchmark?" OFF)
+option(USE_GREEN "use Green FFT in benchmark? - if exists in subdir" ON)
+option(USE_KISS  "use KissFFT in benchmark? - if exists in subdir" ON)
+
+
+if (USE_GREEN)
+  if (IS_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/greenffts")
+    message(STATUS "found subdir greenffts")
+    set(PATH_GREEN "${CMAKE_CURRENT_LIST_DIR}/greenffts")
+    add_subdirectory( "${PATH_GREEN}" )
+  else()
+    message(WARNING "GreenFFT not found in subdir greenffts")
+  endif()
+endif()
+
+if (USE_KISS)
+  # git submodule add https://github.com/hayguen/kissfft.git
+  if (IS_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/kissfft")
+    message(STATUS "found subdir kissfft")
+    set(PATH_KISS "${CMAKE_CURRENT_LIST_DIR}/kissfft")
+    add_subdirectory( "${PATH_KISS}" )
+  else()
+    message(WARNING "KissFFT not found in subdir kissfft")
+  endif()
+endif()
+
 
 ########################################################################
 # select the release build type by default to get optimization flags
@@ -30,12 +55,24 @@ set_property(TARGET FFTPACK APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
 
 
 add_executable(bench_pffft   test_pffft.c )
+
 if (NOT USE_SIMD)
   target_compile_definitions(bench_pffft PRIVATE PFFFT_SIMD_DISABLE=1)
 endif()
+
 target_link_libraries(bench_pffft  PFFFT FFTPACK)
 
 if (USE_FFTW)
   target_compile_definitions(bench_pffft PRIVATE HAVE_FFTW=1)
   target_link_libraries(bench_pffft  fftw3f)
+endif()
+
+if (PATH_GREEN AND USE_GREEN)
+  target_compile_definitions(bench_pffft PRIVATE HAVE_GREEN_FFTS=1)
+  target_link_libraries(bench_pffft  GreenFFT)
+endif()
+
+if (PATH_KISS AND USE_KISS)
+  target_compile_definitions(bench_pffft PRIVATE HAVE_KISS_FFT=1)
+  target_link_libraries(bench_pffft  KissFFT)
 endif()

@@ -1,0 +1,6 @@
+[submodule "greenffts"]
+	path = greenffts
+	url = https://github.com/hayguen/greenffts.git
+[submodule "kissfft"]
+	path = kissfft
+	url = https://github.com/hayguen/kissfft.git
