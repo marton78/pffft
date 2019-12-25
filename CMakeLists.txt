@@ -80,7 +80,19 @@ endif()
 
 enable_testing()
 
-add_test(bench_pffft bench_pffft
+add_test(NAME bench_pffft_pow2
+  COMMAND "${CMAKE_CURRENT_BINARY_DIR}/bench_pffft"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
+
+add_test(NAME bench_pffft_non2
+  COMMAND "${CMAKE_CURRENT_BINARY_DIR}/bench_pffft" "--non-pow2"
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+add_test(NAME bench_plots
+  COMMAND bash "-c" "${CMAKE_CURRENT_SOURCE_DIR}/plots.sh"
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
 

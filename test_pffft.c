@@ -131,8 +131,48 @@ const char * typeText[NUM_TYPES] = {
   "relative to pffft"
 };
 
+const char * typeFilenamePart[NUM_TYPES] = {
+  "1-preparation-in-ms",
+  "2-timePerFft-in-ns",
+  "3-rel-fastest",
+  "4-rel-pffft"
+};
+
 
 #define MAX(x,y) ((x)>(y)?(x):(y))
+
+int isPowerOfTwo(unsigned v) {
+  /* https://graphics.stanford.edu/~seander/bithacks.html#DetermineIfPowerOf2 */
+  int f = v && !(v & (v - 1));
+  return f;
+}
+
+unsigned nextPowerOfTwo(unsigned v) {
+  /* https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2 */
+  /* compute the next highest power of 2 of 32-bit v */
+  v--;
+  v |= v >> 1;
+  v |= v >> 2;
+  v |= v >> 4;
+  v |= v >> 8;
+  v |= v >> 16;
+  v++;
+  return v;
+}
+
+unsigned Log2(unsigned v) {
+  /* we don't need speed records .. obvious way is good enough */
+  /* https://graphics.stanford.edu/~seander/bithacks.html#IntegerLogObvious */
+  /* Find the log base 2 of an integer with the MSB N set in O(N) operations (the obvious way):
+   * unsigned v: 32-bit word to find the log base 2 of */
+  unsigned r = 0; /* r will be lg(v) */
+  while (v >>= 1)
+  {
+    r++;
+  }
+  return r;
+}
+
 
 double frand() {
   return rand()/(double)RAND_MAX;
@@ -305,13 +345,33 @@ void pffft_validate(int cplx) {
 
 int array_output_format = 1;
 
-double show_output(const char *name, int N, int cplx, float flops, float t0, float t1, int max_iter) {
+
+void print_table(const char *txt, FILE *tableFile) {
+  fprintf(stdout, "%s", txt);
+  if (tableFile && tableFile != stdout)
+    fprintf(tableFile, "%s", txt);
+}
+
+void print_table_flops(float mflops, FILE *tableFile) {
+  fprintf(stdout, "|%11.0f   ", mflops);
+  if (tableFile && tableFile != stdout)
+    fprintf(tableFile, "|%11.0f   ", mflops);
+}
+
+void print_table_fftsize(int N, FILE *tableFile) {
+  fprintf(stdout, "|%9d  ", N);
+  if (tableFile && tableFile != stdout)
+    fprintf(tableFile, "|%9d  ", N);
+}
+
+double show_output(const char *name, int N, int cplx, float flops, float t0, float t1, int max_iter, FILE *tableFile) {
   double T = (double)(t1-t0)/2/max_iter * 1e9;
   float mflops = flops/1e6/(t1 - t0 + 1e-16);
   if (array_output_format) {
-    if (flops != -1) {
-      printf("|%11.0f   ", mflops);
-    } else printf("|      n/a     ");
+    if (flops != -1)
+      print_table_flops(mflops, tableFile);
+    else
+      print_table("|      n/a     ", tableFile);
   } else {
     if (flops != -1) {
       printf("N=%5d, %s %16s : %6.0f MFlops [t=%6.0f ns, %d runs]\n", N, (cplx?"CPLX":"REAL"), name, mflops, (t1-t0)/2/max_iter * 1e9, max_iter);
@@ -321,18 +381,40 @@ double show_output(const char *name, int N, int cplx, float flops, float t0, flo
   return T;
 }
 
-void benchmark_ffts(int Nlog, int N, int cplx, int withFFTWmeas, double tmeas[NUM_TYPES][NUM_FFT_ALGOS], int haveAlgo[NUM_FFT_ALGOS] ) {
-  int Nfloat = (cplx ? N*2 : N);
+void test_pffft_mem_align()
+{
+  for ( int N = 1; N < 4096; ++N ) {
+    float * p0 = pffft_aligned_malloc( N * sizeof(float) );
+    float * p = p0; /* pffft_aligned_addr(p0); */
+    for ( int k = 0; k < N; ++k )
+      p[k] = k;
+    pffft_aligned_free(p0);
+  }
+}
+
+
+void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double tmeas[NUM_TYPES][NUM_FFT_ALGOS], int haveAlgo[NUM_FFT_ALGOS], FILE *tableFile ) {
+  const int log2N = Log2(N);
+  int nextPow2N = nextPowerOfTwo(N);
+  int log2NextN = Log2(nextPow2N);
+  int pffftPow2N = ( cplx ? ( MAX(N, 16) ) : ( MAX(N, 32) ) ); 
+
+  int Nfloat = (cplx ? MAX(nextPow2N, pffftPow2N)*2 : MAX(nextPow2N, pffftPow2N));
+  int Nmax;
   int Nbytes = Nfloat * sizeof(float);
-  float *X = pffft_aligned_malloc(Nbytes), *Y = pffft_aligned_malloc(Nbytes + 2*sizeof(float) ), *Z = pffft_aligned_malloc(Nbytes);
+
+  float *X = pffft_aligned_malloc(Nbytes + sizeof(float)), *Y = pffft_aligned_malloc(Nbytes + 2*sizeof(float) ), *Z = pffft_aligned_malloc(Nbytes);
   double te, t0, t1, flops, Tfastest;
+  const float checkVal = 12345.0F;
 
   int k;
+  int iter;
   int max_iter = 5120000/N*4;
 #ifdef __arm__
   max_iter /= 4;
 #endif
-  int iter;
+
+  /* printf("benchmark_ffts(N = %d, cplx = %d): Nfloat = %d, X_mem = 0x%p, X = %p\n", N, cplx, Nfloat, X_mem, X); */
 
   for (k = 0; k < Nfloat; ++k) {
     X[k] = sqrtf(k+1);
@@ -346,6 +428,8 @@ void benchmark_ffts(int Nlog, int N, int cplx, int withFFTWmeas, double tmeas[NU
 
 
   // FFTPack benchmark
+  Nmax = (cplx ? N*2 : N);
+  X[Nmax] = checkVal;
   {
     float *wrk = malloc(2*Nbytes + 15*sizeof(float));
     int max_iter_ = max_iter/pffft_simd_size(); if (max_iter_ == 0) max_iter_ = 1;
@@ -356,56 +440,70 @@ void benchmark_ffts(int Nlog, int N, int cplx, int withFFTWmeas, double tmeas[NU
     
     for (iter = 0; iter < max_iter_; ++iter) {
       if (cplx) {
+        assert( X[Nmax] == checkVal );
         cfftf(N, X, wrk);
+        assert( X[Nmax] == checkVal );
         cfftb(N, X, wrk);
+        assert( X[Nmax] == checkVal );
       } else {
+        assert( X[Nmax] == checkVal );
         rfftf(N, X, wrk);
+        assert( X[Nmax] == checkVal );
         rfftb(N, X, wrk);
+        assert( X[Nmax] == checkVal );
       }
     }
     t1 = uclock_sec();
     free(wrk);
     
     flops = (max_iter_*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); // see http://www.fftw.org/speed/method.html
-    tmeas[TYPE_DUR_NS][ALGO_FFTPACK] = show_output("FFTPack", N, cplx, flops, t0, t1, max_iter_);
+    tmeas[TYPE_DUR_NS][ALGO_FFTPACK] = show_output("FFTPack", N, cplx, flops, t0, t1, max_iter_, tableFile);
     tmeas[TYPE_PREP][ALGO_FFTPACK] = (t0 - te) * 1e3;
     haveAlgo[ALGO_FFTPACK] = 1;
   }
 
-
 #ifdef HAVE_VECLIB
-  int log2N = (int)(log(N)/log(2) + 0.5f);
-  te = uclock_sec();  
-  if (N == (1<<log2N)) {
+  Nmax = (cplx ? nextPow2N*2 : nextPow2N);
+  X[Nmax] = checkVal;
+  te = uclock_sec();
+  if ( 1 || isPowerOfTwo(N) ) {
     FFTSetup setup;
 
-    setup = vDSP_create_fftsetup(log2N, FFT_RADIX2);
+    setup = vDSP_create_fftsetup(log2NextN, FFT_RADIX2);
     DSPSplitComplex zsamples;
     zsamples.realp = &X[0];
     zsamples.imagp = &X[Nfloat/2];
     t0 = uclock_sec();  
     for (iter = 0; iter < max_iter; ++iter) {
       if (cplx) {
-        vDSP_fft_zip(setup, &zsamples, 1, log2N, kFFTDirection_Forward);
-        vDSP_fft_zip(setup, &zsamples, 1, log2N, kFFTDirection_Inverse);
+        assert( X[Nmax] == checkVal );
+        vDSP_fft_zip(setup, &zsamples, 1, log2NextN, kFFTDirection_Forward);
+        assert( X[Nmax] == checkVal );
+        vDSP_fft_zip(setup, &zsamples, 1, log2NextN, kFFTDirection_Inverse);
+        assert( X[Nmax] == checkVal );
       } else {
-        vDSP_fft_zrip(setup, &zsamples, 1, log2N, kFFTDirection_Forward); 
-        vDSP_fft_zrip(setup, &zsamples, 1, log2N, kFFTDirection_Inverse);
+        assert( X[Nmax] == checkVal );
+        vDSP_fft_zrip(setup, &zsamples, 1, log2NextN, kFFTDirection_Forward); 
+        assert( X[Nmax] == checkVal );
+        vDSP_fft_zrip(setup, &zsamples, 1, log2NextN, kFFTDirection_Inverse);
+        assert( X[Nmax] == checkVal );
       }
     }
     t1 = uclock_sec();
     vDSP_destroy_fftsetup(setup);
 
     flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); // see http://www.fftw.org/speed/method.html
-    tmeas[TYPE_DUR_NS][ALGO_VECLIB] = show_output("vDSP", N, cplx, flops, t0, t1, max_iter);
+    tmeas[TYPE_DUR_NS][ALGO_VECLIB] = show_output("vDSP", N, cplx, flops, t0, t1, max_iter, tableFile);
     tmeas[TYPE_PREP][ALGO_VECLIB] = (t0 - te) * 1e3;
     haveAlgo[ALGO_VECLIB] = 1;
   } else {
-    show_output("vDSP", N, cplx, -1, -1, -1, -1);
+    show_output("vDSP", N, cplx, -1, -1, -1, -1, tableFile);
   }
 #endif
 
 #ifdef HAVE_FFTW
+  Nmax = (cplx ? N*2 : N);
+  X[Nmax] = checkVal;
   {
     /* int flags = (N <= (256*1024) ? FFTW_MEASURE : FFTW_ESTIMATE);  measure takes a lot of time on largest ffts */
     int flags = FFTW_ESTIMATE;
@@ -424,8 +522,11 @@ void benchmark_ffts(int Nlog, int N, int cplx, int withFFTWmeas, double tmeas[NU
 
     t0 = uclock_sec();  
     for (iter = 0; iter < max_iter; ++iter) {
+      assert( X[Nmax] == checkVal );
       fftwf_execute(planf);
+      assert( X[Nmax] == checkVal );
       fftwf_execute(planb);
+      assert( X[Nmax] == checkVal );
     }
     t1 = uclock_sec();
 
@@ -434,20 +535,21 @@ void benchmark_ffts(int Nlog, int N, int cplx, int withFFTWmeas, double tmeas[NU
     fftwf_free(in); fftwf_free(out);
 
     flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); // see http://www.fftw.org/speed/method.html
-    tmeas[TYPE_DUR_NS][ALGO_FFTW_ESTIM] = show_output((flags == FFTW_MEASURE ? algoName[ALGO_FFTW_AUTO] : algoName[ALGO_FFTW_ESTIM]), N, cplx, flops, t0, t1, max_iter);
+    tmeas[TYPE_DUR_NS][ALGO_FFTW_ESTIM] = show_output((flags == FFTW_MEASURE ? algoName[ALGO_FFTW_AUTO] : algoName[ALGO_FFTW_ESTIM]), N, cplx, flops, t0, t1, max_iter, tableFile);
     tmeas[TYPE_PREP][ALGO_FFTW_ESTIM] = (t0 - te) * 1e3;
     haveAlgo[ALGO_FFTW_ESTIM] = 1;
   }
+  Nmax = (cplx ? N*2 : N);
+  X[Nmax] = checkVal;
   do {
     /* int flags = (N <= (256*1024) ? FFTW_MEASURE : FFTW_ESTIMATE);  measure takes a lot of time on largest ffts */
     /* int flags = FFTW_MEASURE; */
-    int flags = (N < 40000 ? FFTW_MEASURE : (withFFTWmeas ? FFTW_MEASURE : FFTW_ESTIMATE));
+    int flags = (N < 40000 ? FFTW_MEASURE : (withFFTWfullMeas ? FFTW_MEASURE : FFTW_ESTIMATE));
     if (flags == FFTW_ESTIMATE) {
-      show_output((flags == FFTW_MEASURE ? algoName[ALGO_FFTW_AUTO] : algoName[ALGO_FFTW_ESTIM]), N, cplx, -1, -1, -1, -1);
+      show_output((flags == FFTW_MEASURE ? algoName[ALGO_FFTW_AUTO] : algoName[ALGO_FFTW_ESTIM]), N, cplx, -1, -1, -1, -1, tableFile);
       /* copy values from estimation */
       tmeas[TYPE_DUR_NS][ALGO_FFTW_AUTO] = tmeas[TYPE_DUR_NS][ALGO_FFTW_ESTIM];
       tmeas[TYPE_PREP][ALGO_FFTW_AUTO] = tmeas[TYPE_PREP][ALGO_FFTW_ESTIM];
-      haveAlgo[ALGO_FFTW_AUTO] = 0;
     } else {
       te = uclock_sec();
       fftwf_plan planf, planb;
@@ -464,8 +566,11 @@ void benchmark_ffts(int Nlog, int N, int cplx, int withFFTWmeas, double tmeas[NU
 
       t0 = uclock_sec();  
       for (iter = 0; iter < max_iter; ++iter) {
+        assert( X[Nmax] == checkVal );
         fftwf_execute(planf);
+        assert( X[Nmax] == checkVal );
         fftwf_execute(planb);
+        assert( X[Nmax] == checkVal );
       }
       t1 = uclock_sec();
 
@@ -474,45 +579,54 @@ void benchmark_ffts(int Nlog, int N, int cplx, int withFFTWmeas, double tmeas[NU
       fftwf_free(in); fftwf_free(out);
 
       flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); // see http://www.fftw.org/speed/method.html
-      tmeas[TYPE_DUR_NS][ALGO_FFTW_AUTO] = show_output((flags == FFTW_MEASURE ? algoName[ALGO_FFTW_AUTO] : algoName[ALGO_FFTW_ESTIM]), N, cplx, flops, t0, t1, max_iter);
+      tmeas[TYPE_DUR_NS][ALGO_FFTW_AUTO] = show_output((flags == FFTW_MEASURE ? algoName[ALGO_FFTW_AUTO] : algoName[ALGO_FFTW_ESTIM]), N, cplx, flops, t0, t1, max_iter, tableFile);
       tmeas[TYPE_PREP][ALGO_FFTW_AUTO] = (t0 - te) * 1e3;
       haveAlgo[ALGO_FFTW_AUTO] = 1;
     }
   } while (0);
 #else
-  (void)withFFTWmeas;
+  (void)withFFTWfullMeas;
 #endif  
 
 #ifdef HAVE_GREEN_FFTS
+  Nmax = (cplx ? nextPow2N*2 : nextPow2N);
+  X[Nmax] = checkVal;
+  if ( 1 || isPowerOfTwo(N) )
   {
     te = uclock_sec();
-    fftInit(Nlog);
-    
+    fftInit(log2NextN);
+
     {
       t0 = uclock_sec();  
       for (iter = 0; iter < max_iter; ++iter) {
         if (cplx) {
-          ffts(X, Nlog, 1);
-          iffts(X, Nlog, 1);
+          assert( X[Nmax] == checkVal );
+          ffts(X, log2NextN, 1);
+          assert( X[Nmax] == checkVal );
+          iffts(X, log2NextN, 1);
+          assert( X[Nmax] == checkVal );
         } else {
-          rffts(X, Nlog, 1);
-          riffts(X, Nlog, 1);
+          rffts(X, log2NextN, 1);
+          riffts(X, log2NextN, 1);
         }
       }
       t1 = uclock_sec();
       fftFree();
 
       flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); // see http://www.fftw.org/speed/method.html
-      tmeas[TYPE_DUR_NS][ALGO_GREEN] = show_output("Green", N, cplx, flops, t0, t1, max_iter);
+      tmeas[TYPE_DUR_NS][ALGO_GREEN] = show_output("Green", N, cplx, flops, t0, t1, max_iter, tableFile);
       tmeas[TYPE_PREP][ALGO_GREEN] = (t0 - te) * 1e3;
       haveAlgo[ALGO_GREEN] = 1;
     }
+  } else {
+    show_output("Green", N, cplx, -1, -1, -1, -1, tableFile);
   }
-#else
-  (void)Nlog;
 #endif
 
 #ifdef HAVE_KISS_FFT
+  Nmax = (cplx ? nextPow2N*2 : nextPow2N);
+  X[Nmax] = checkVal;
+  if ( 1 || isPowerOfTwo(N) )
   {
     kiss_fft_cfg stf;
     kiss_fft_cfg sti;
@@ -521,52 +635,64 @@ void benchmark_ffts(int Nlog, int N, int cplx, int withFFTWmeas, double tmeas[NU
 
     te = uclock_sec();
     if (cplx) {
-      stf = kiss_fft_alloc(N, 0, 0, 0);
-      sti = kiss_fft_alloc(N, 1, 0, 0);
+      stf = kiss_fft_alloc(nextPow2N, 0, 0, 0);
+      sti = kiss_fft_alloc(nextPow2N, 1, 0, 0);
     } else {
-      stfr = kiss_fftr_alloc(N, 0, 0, 0);
-      stir = kiss_fftr_alloc(N, 1, 0, 0);
+      stfr = kiss_fftr_alloc(nextPow2N, 0, 0, 0);
+      stir = kiss_fftr_alloc(nextPow2N, 1, 0, 0);
     }
 
     {
       t0 = uclock_sec();  
       for (iter = 0; iter < max_iter; ++iter) {
         if (cplx) {
+          assert( X[Nmax] == checkVal );
           kiss_fft(stf, (const kiss_fft_cpx *)X, (kiss_fft_cpx *)Y);
+          assert( X[Nmax] == checkVal );
           kiss_fft(sti, (const kiss_fft_cpx *)Y, (kiss_fft_cpx *)X);
+          assert( X[Nmax] == checkVal );
         } else {
+          assert( X[Nmax] == checkVal );
           kiss_fftr(stfr, X, (kiss_fft_cpx *)Y);
+          assert( X[Nmax] == checkVal );
           kiss_fftri(stir, (const kiss_fft_cpx *)Y, X);
+          assert( X[Nmax] == checkVal );
         }
       }
       t1 = uclock_sec();
       kiss_fft_cleanup();
 
       flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); // see http://www.fftw.org/speed/method.html
-      tmeas[TYPE_DUR_NS][ALGO_KISS] = show_output("Kiss", N, cplx, flops, t0, t1, max_iter);
+      tmeas[TYPE_DUR_NS][ALGO_KISS] = show_output("Kiss", N, cplx, flops, t0, t1, max_iter, tableFile);
       tmeas[TYPE_PREP][ALGO_KISS] = (t0 - te) * 1e3;
       haveAlgo[ALGO_KISS] = 1;
     }
+  } else {
+    show_output("Kiss", N, cplx, -1, -1, -1, -1, tableFile);
   }
 #endif
 
 
-
   // PFFFT benchmark
+  Nmax = (cplx ? pffftPow2N*2 : pffftPow2N);
+  X[Nmax] = checkVal;
   {
     te = uclock_sec();
-    PFFFT_Setup *s = pffft_new_setup(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
+    PFFFT_Setup *s = pffft_new_setup(pffftPow2N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
     if (s) {
       t0 = uclock_sec();  
       for (iter = 0; iter < max_iter; ++iter) {
+        assert( X[Nmax] == checkVal );
         pffft_transform(s, X, Z, Y, PFFFT_FORWARD);
+        assert( X[Nmax] == checkVal );
         pffft_transform(s, X, Z, Y, PFFFT_BACKWARD);
+        assert( X[Nmax] == checkVal );
       }
       t1 = uclock_sec();
       pffft_destroy_setup(s);
-    
+
       flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); // see http://www.fftw.org/speed/method.html
-      tmeas[TYPE_DUR_NS][ALGO_PFFFT] = show_output("PFFFT", N, cplx, flops, t0, t1, max_iter);
+      tmeas[TYPE_DUR_NS][ALGO_PFFFT] = show_output("PFFFT", N, cplx, flops, t0, t1, max_iter, tableFile);
       tmeas[TYPE_PREP][ALGO_PFFFT] = (t0 - te) * 1e3;
       haveAlgo[ALGO_PFFFT] = 1;
     }
@@ -641,21 +767,38 @@ int main(int argc, char **argv) {
      and 32 for real FFTs -- a lot of stuff would need to be rewritten to
      handle other cases (or maybe just switch to a scalar fft, I don't know..) */
 
-  /* int Nvalues[] = { 64, 96, 128, 160, 192, 256, 384, 5*96, 512, 5*128, 3*256, 800, 1024, 2048, 2400, 4096, 8192, 9*1024, 16384, 32768, 256*1024, 1024*1024, -1 };
-   */
-  int Nexp[] =    { 1, 2, 3,  4,  5,  6,   7,   8,   9,   10,
-	               11, 12, 13, 14, 15, 16, 17, 18, 19,    20, -1 };
-  int Nvalues[] = { 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024,
-                  2*1024, 4*1024, 8*1024, 16*1024, 32*1024, 64*1024, 128*1024, 256*1024, 512*1024,
-                  1024*1024, -1 };
-  int benchReal=1, benchCplx=1, withFFTWmeas=0;
+#if 0  /* include powers of 2 ? */
+#define NUMNONPOW2LENS  23
+  int NnonPow2[NUMNONPOW2LENS] = {
+    64, 96, 128, 160, 192,   256, 384, 5*96, 512, 5*128,
+    3*256, 800, 1024, 2048, 2400,   4096, 8192, 9*1024, 16384, 32768,
+    256*1024, 1024*1024, -1 };
+#else
+#define NUMNONPOW2LENS  11
+  int NnonPow2[NUMNONPOW2LENS] = {
+    96, 160, 192, 384, 5*96,   5*128,3*256, 800, 2400, 9*1024,
+    -1 };
+#endif
+
+#define NUMPOW2FFTLENS  21
+#define MAXNUMFFTLENS MAX( NUMPOW2FFTLENS, NUMNONPOW2LENS )
+  int Npow2[NUMPOW2FFTLENS];  /* exp = 1 .. 20, -1 */
+  const int *Nvalues = NULL;
+  double tmeas[2][MAXNUMFFTLENS][NUM_TYPES][NUM_FFT_ALGOS];
+
+  int benchReal=1, benchCplx=1, withFFTWfullMeas=0, outputTable2File=1, usePow2=1;
   int realCplxIdx, typeIdx;
   int i, k;
   int smallestCplxN = pffft_simd_size()*pffft_simd_size();
   int smallestRealN = 2*smallestCplxN;
+  FILE *tableFile = NULL;
 
-  double tmeas[2][sizeof(Nvalues)/sizeof(Nvalues[0])][NUM_TYPES][NUM_FFT_ALGOS];
   int haveAlgo[NUM_FFT_ALGOS];
+  char acCsvFilename[32];
+
+  for ( k = 1; k <= NUMPOW2FFTLENS; ++k )
+    Npow2[k-1] = (k == NUMPOW2FFTLENS) ? -1 : (1 << k);
+  Nvalues = Npow2;  /* set default .. for comparisons .. */
 
   for ( i = 0; i < NUM_FFT_ALGOS; ++i )
     haveAlgo[i] = 0;
@@ -664,30 +807,35 @@ int main(int argc, char **argv) {
     if (!strcmp(argv[i], "--array-format") || !strcmp(argv[i], "--table")) {
       array_output_format = 1;
     }
-    if (!strcmp(argv[i], "--no-tab")) {
+    else if (!strcmp(argv[i], "--no-tab")) {
       array_output_format = 0;
     }
-    if (!strcmp(argv[i], "--real")) {
+    else if (!strcmp(argv[i], "--real")) {
       benchCplx = 0;
     }
-    if (!strcmp(argv[i], "--cplx")) {
+    else if (!strcmp(argv[i], "--cplx")) {
       benchReal = 0;
     }
-    if (!strcmp(argv[i], "--fftw-measure")) {
-      withFFTWmeas = 1;
+    else if (!strcmp(argv[i], "--fftw-full-measure")) {
+      withFFTWfullMeas = 1;
+    }
+    else if (!strcmp(argv[i], "--non-pow2")) {
+      Nvalues = NnonPow2;
+      usePow2 = 0;
+    }
+    else /* if (!strcmp(argv[i], "--help")) */ {
+      printf("usage: %s [--array-format|--table] [--no-tab] [--real|--cplx] [--fftw-full-measure] [--non-pow2]\n", argv[0]);
+      exit(0);
     }
   }
 
 #ifdef HAVE_FFTW
-  if (withFFTWmeas)
+  if (withFFTWfullMeas)
   {
-    compiledInAlgo[ALGO_FFTW_AUTO] = 1;
     algoName[ALGO_FFTW_AUTO] = "FFTW(meas.)"; /* "FFTW (auto)" */
     algoTableHeader[NUM_FFT_ALGOS][0] = "|real FFTWmeas "; /* "|real FFTWauto " */
     algoTableHeader[NUM_FFT_ALGOS][0] = "|cplx FFTWmeas "; /* "|cplx FFTWauto " */
   }
-  /* else
-    compiledInAlgo[ALGO_FFTW_AUTO] = 0; */
 #endif
 
 #ifdef PFFFT_SIMD_DISABLE
@@ -697,24 +845,28 @@ int main(int argc, char **argv) {
 #endif
   pffft_validate(1);
   pffft_validate(0);
+  test_pffft_mem_align();
   if (!array_output_format) {
     if (benchReal) {
       for (i=0; Nvalues[i] > 0; ++i) {
-        if ( Nvalues[i] >= smallestRealN )
-          benchmark_ffts(Nexp[i], Nvalues[i], 0 /* real fft */, withFFTWmeas, tmeas[0][i], haveAlgo);
+        /* if ( Nvalues[i] >= smallestRealN ) */
+          benchmark_ffts(Nvalues[i], 0 /* real fft */, withFFTWfullMeas, tmeas[0][i], haveAlgo, NULL);
       }
     }
     if (benchCplx) {
       for (i=0; Nvalues[i] > 0; ++i) {
-        if ( Nvalues[i] >= smallestCplxN )
-          benchmark_ffts(Nexp[i], Nvalues[i], 1 /* cplx fft */, withFFTWmeas, tmeas[1][i], haveAlgo);
+        /* if ( Nvalues[i] >= smallestCplxN ) */
+          benchmark_ffts(Nvalues[i], 1 /* cplx fft */, withFFTWfullMeas, tmeas[1][i], haveAlgo, NULL);
       }
     }
   } else {
 
+    if (outputTable2File) {
+      tableFile = fopen( usePow2 ? "bench-fft-table-pow2.txt" : "bench-fft-table-non2.txt", "w");
+    }
     /* print table headers */
     {
-      printf("| input len ");
+      print_table("| input len ", tableFile);
       for (realCplxIdx = 0; realCplxIdx < 2; ++realCplxIdx)
       {
         if ( (realCplxIdx == 0 && !benchReal) || (realCplxIdx == 1 && !benchCplx) )
@@ -722,14 +874,14 @@ int main(int argc, char **argv) {
         for (k=0; k < NUM_FFT_ALGOS; ++k)
         {
           if ( compiledInAlgo[k] )
-            printf("%s", algoTableHeader[k][realCplxIdx]);
+            print_table(algoTableHeader[k][realCplxIdx], tableFile);
         }
       }
-      printf("|\n");
+      print_table("|\n", tableFile);
     }
     /* print table value seperators */
     {
-      printf("|----------");
+      print_table("|----------", tableFile);
       for (realCplxIdx = 0; realCplxIdx < 2; ++realCplxIdx)
       {
         if ( (realCplxIdx == 0 && !benchReal) || (realCplxIdx == 1 && !benchCplx) )
@@ -737,26 +889,29 @@ int main(int argc, char **argv) {
         for (k=0; k < NUM_FFT_ALGOS; ++k)
         {
           if ( compiledInAlgo[k] )
-            printf("%s", ":|-------------");
+            print_table(":|-------------", tableFile);
         }
       }
-      printf(":|\n");
+      print_table(":|\n", tableFile);
     }
 
     for (i=0; Nvalues[i] > 0; ++i) {
-      if ( Nvalues[i] >= smallestRealN && Nvalues[i] >= smallestCplxN )
+      /* if ( Nvalues[i] >= smallestRealN && Nvalues[i] >= smallestCplxN ) */
       {
-        printf("|%9d  ", Nvalues[i]);
+        print_table_fftsize(Nvalues[i], tableFile);
         if (benchReal) {
-          benchmark_ffts(Nexp[i], Nvalues[i], 0, withFFTWmeas, tmeas[0][i], haveAlgo);
+          benchmark_ffts(Nvalues[i], 0, withFFTWfullMeas, tmeas[0][i], haveAlgo, tableFile);
         }
         if (benchCplx) {
-          benchmark_ffts(Nexp[i], Nvalues[i], 1, withFFTWmeas, tmeas[1][i], haveAlgo);
+          benchmark_ffts(Nvalues[i], 1, withFFTWfullMeas, tmeas[1][i], haveAlgo, tableFile);
         }
-        printf("|\n");
+        print_table("|\n", tableFile);
       }
     }
-    printf(" (numbers are given in MFlops)\n");
+    fprintf(stdout, " (numbers are given in MFlops)\n");
+    if (outputTable2File) {
+      fclose(tableFile);
+    }
   }
 
 
@@ -764,6 +919,8 @@ int main(int argc, char **argv) {
   printf("smallest cplx fft size: %d\n", smallestCplxN);
   printf("smallest real fft size: %d\n", smallestRealN);
 
+  printf("\n");
+  printf("now writing .csv files ..\n");
 
   for (realCplxIdx = 0; realCplxIdx < 2; ++realCplxIdx)
   {
@@ -771,26 +928,39 @@ int main(int argc, char **argv) {
     {
       for (typeIdx = 0; typeIdx < NUM_TYPES; ++typeIdx)
       {
-        printf("\n\n\n");
-        printf("%s %s\n", (realCplxIdx == 0 ? "real" : "complex"), typeText[typeIdx]);
+        FILE *f = NULL;
+        acCsvFilename[0] = 0;
+#ifdef PFFFT_SIMD_DISABLE
+        strcat(acCsvFilename, "scal-");
+#else
+        strcat(acCsvFilename, "simd-");
+#endif
+        strcat(acCsvFilename, (realCplxIdx == 0 ? "real-" : "cplx-"));
+        strcat(acCsvFilename, ( usePow2 ? "pow2-" : "non2-"));
+        strcat(acCsvFilename, typeFilenamePart[typeIdx]);
+        strcat(acCsvFilename, ".csv");
+        f = fopen(acCsvFilename, "w");
+        if (!f)
+          continue;
         {
-          printf("size, log2, ");
+          fprintf(f, "size, log2, ");
           for (k=0; k < NUM_FFT_ALGOS; ++k)
             if ( haveAlgo[k] )
-              printf("%s, ", algoName[k]);
-          printf("\n");
+              fprintf(f, "%s, ", algoName[k]);
+          fprintf(f, "\n");
         }
         for (i=0; Nvalues[i] > 0; ++i)
         {
           if ( (benchReal && Nvalues[i] >= smallestRealN) || (benchCplx && Nvalues[i] >= smallestCplxN) )
           {
-            printf("%d, %.3f, ", Nvalues[i], log10((double)Nvalues[i])/log10(2.0) );
+            fprintf(f, "%d, %.3f, ", Nvalues[i], log10((double)Nvalues[i])/log10(2.0) );
             for (k=0; k < NUM_FFT_ALGOS; ++k)
               if ( haveAlgo[k] )
-                printf("%f, ", tmeas[realCplxIdx][i][typeIdx][k]);
-            printf("\n");
+                fprintf(f, "%f, ", tmeas[realCplxIdx][i][typeIdx][k]);
+            fprintf(f, "\n");
           }
         }
+        fclose(f);
       }
     }
   }

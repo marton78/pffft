@@ -66,6 +66,22 @@ more code than I planned..
 Only two files, in good old C, `pffft.c` and `pffft.h`. The API is very
 very simple, just make sure that you read the comments in `pffft.h`.
 
+This archive's source can be downloaded with git including the submodules:
+
+```
+git clone --recursive https://github.com/hayguen/pffft.git`
+```
+
+With `--recursive` the submodules for Green and Kiss-FFT are also fetched,
+to use them in the benchmark. You can omit the `--recursive`-option.
+
+
+## CMake:
+The core are still the 2 files; that's everything you need.
+There's now CMake support to build the static library `libPFFFT.a` from
+these files, plus the additional `libFFTPACK.a` library. Later one's
+sources are there anyway for the benchmark.
+
 
 ## Comparison with other FFTs:
 
@@ -422,4 +438,16 @@ expected. They are in fact higher than the number I get on the 2.8GHz
 Xeon of my 2008 mac pro.. (except for FFT lengths >= 32768 where
 having a big cache is useful). A good surprise is also that the perf
 is not too far from apple's vDSP (at least for the real FFT).
+
+
+## Benchmarking with GnuPlot figures
+
+On Linux systems, you can execute the shell script `bench_all.sh` to
+generate all benchmarks. If possible it also generates the gnuplot
+figures and creates the archive `pffft_bench_${HOSTNAME}.tar.gz` including
+the generated .csv tables and also the .png plot files.
+
+`bench_all.sh` accepts command line options: first optional argument
+is `ON` or `OFF` to switch usage of FFTW. Other arguments are forwarded
+into a text file, which is added to the archive file.
 
