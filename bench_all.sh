@@ -32,16 +32,16 @@ else
 fi
 
 
-cmake -DCMAKE_TOOLCHAIN_FILE=ToolChain.cmake -DUSE_FFTW=${FFTW} -DUSE_SIMD=OFF ${CMAKEOPT} ../
-make clean
-make
-echo -e "\n\nrunning 2nd pass without simd (==scalar) .."
-time ctest -V
+#cmake -DCMAKE_TOOLCHAIN_FILE=ToolChain.cmake -DUSE_FFTW=${FFTW} -DUSE_SIMD=OFF ${CMAKEOPT} ../
+#make clean
+#make
+#echo -e "\n\nrunning without simd (==scalar) .."
+#time ctest -V
 
 cmake -DCMAKE_TOOLCHAIN_FILE=ToolChain.cmake -DUSE_FFTW=${FFTW} -DUSE_SIMD=ON ${CMAKEOPT} ../
-make clean
+#make clean
 make
-echo -e "\n\nrunning 1st pass with simd .."
+echo -e "\n\nrunning with simd .."
 time ctest -V
 
 

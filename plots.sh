@@ -6,7 +6,7 @@ H="768"
 PTS="20"
 LWS="20"
 
-for f in $(ls -1 *-1-*.csv *-4-*.csv *-6-*.csv); do
+for f in $(ls -1 *-4-*.csv *-6-*.csv); do
   b=$(basename "$f" ".csv")
   #echo $b
   LASTCOL="$(head -n 1 $f |sed 's/,/,\n/g' |grep -c ',')"
