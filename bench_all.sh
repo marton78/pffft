@@ -1,6 +1,9 @@
 #!/bin/bash
 
-FFTW=ON
+FFTW="ON"
+CMAKEOPT=""
+# CMAKEOPT="-DUSE_NEON=ON"
+
 if [ ! -z "$1" ]; then
   FFTW="$1"
 fi
@@ -29,13 +32,13 @@ else
 fi
 
 
-cmake -DCMAKE_TOOLCHAIN_FILE=ToolChain.cmake -DUSE_FFTW=${FFTW} -DUSE_SIMD=OFF ../
+cmake -DCMAKE_TOOLCHAIN_FILE=ToolChain.cmake -DUSE_FFTW=${FFTW} -DUSE_SIMD=OFF ${CMAKEOPT} ../
 make clean
 make
 echo -e "\n\nrunning 2nd pass without simd (==scalar) .."
 time ctest -V
 
-cmake -DCMAKE_TOOLCHAIN_FILE=ToolChain.cmake -DUSE_FFTW=${FFTW} -DUSE_SIMD=ON ../
+cmake -DCMAKE_TOOLCHAIN_FILE=ToolChain.cmake -DUSE_FFTW=${FFTW} -DUSE_SIMD=ON ${CMAKEOPT} ../
 make clean
 make
 echo -e "\n\nrunning 1st pass with simd .."
@@ -43,6 +46,9 @@ time ctest -V
 
 
 echo "$@" >infos.txt
+echo "FFTW=${FFTW}" >>infos.txt
+echo "CMAKEOPT=${CMAKEOPT}" >>infos.txt
+
 
 echo "" >>infos.txt
 echo "${GCC_WITH_CMAKE} --version:" >>infos.txt

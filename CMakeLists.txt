@@ -3,6 +3,7 @@ set(CMAKE_C_STANDARD 99)
 project(PRETTY_FAST_FFT LANGUAGES C)
 
 option(USE_SIMD  "use SIMD (SSE/NEON) CPU features?" ON)
+option(USE_NEON  "force using NEON on ARM? (requires SIMD)" OFF)
 option(USE_FFTW  "use (system-installed) FFTW3 in benchmark?" OFF)
 option(USE_GREEN "use Green FFT in benchmark? - if exists in subdir" ON)
 option(USE_KISS  "use KissFFT in benchmark? - if exists in subdir" ON)
@@ -42,6 +43,11 @@ add_library(PFFFT STATIC pffft.c)
 if (NOT USE_SIMD)
   target_compile_definitions(PFFFT PRIVATE PFFFT_SIMD_DISABLE=1)
 endif()
+if (USE_SIMD AND USE_NEON)
+  target_compile_options(PFFFT PRIVATE "-mfpu=neon")
+endif()
+
+
 target_link_libraries(PFFFT m)
 set_property(TARGET PFFFT APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
