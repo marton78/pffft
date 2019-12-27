@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 2.8)
 set(CMAKE_C_STANDARD 99)
-project(PRETTY_FAST_FFT LANGUAGES C)
+project(PRETTY_FAST_FFT)
 
 option(USE_SIMD  "use SIMD (SSE/NEON) CPU features?" ON)
 option(USE_NEON  "force using NEON on ARM? (requires SIMD)" OFF)

@@ -413,10 +413,11 @@ double show_output(const char *name, int N, int cplx, float flops, float t0, flo
 
 void test_pffft_mem_align()
 {
-  for ( int N = 1; N < 4096; ++N ) {
+  int N, k;
+  for ( N = 1; N < 4096; ++N ) {
     float * p0 = pffft_aligned_malloc( N * sizeof(float) );
     float * p = p0; /* pffft_aligned_addr(p0); */
-    for ( int k = 0; k < N; ++k )
+    for ( k = 0; k < N; ++k )
       p[k] = k;
     pffft_aligned_free(p0);
   }
