@@ -60,7 +60,7 @@ set_property(TARGET FFTPACK APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
 )
 
 
-add_executable(bench_pffft   test_pffft.c )
+add_executable(bench_pffft   bench_pffft.c )
 
 if (NOT USE_SIMD)
   target_compile_definitions(bench_pffft PRIVATE PFFFT_SIMD_DISABLE=1)
