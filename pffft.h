@@ -116,7 +116,9 @@ extern "C" {
      The 'work' pointer should point to an area of N (2*N for complex
      fft) floats, properly aligned. If 'work' is NULL, then stack will
      be used instead (this is probably the best strategy for small
-     FFTs, say for N < 16384).
+     FFTs, say for N < 16384). Threads usually have a small stack, that
+     there's no sufficient amount of memory, usually leading to a creash!
+     Use the heap with pffft_aligned_malloc() in this case.
 
      input and output may alias.
   */
