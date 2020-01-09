@@ -10,7 +10,7 @@ option(USE_KISS  "use KissFFT in benchmark? - if exists in subdir" ON)
 
 
 if (USE_GREEN)
-  if (IS_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/greenffts")
+  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/greenffts/CMakeLists.txt")
     message(STATUS "found subdir greenffts")
     set(PATH_GREEN "${CMAKE_CURRENT_LIST_DIR}/greenffts")
     add_subdirectory( "${PATH_GREEN}" )
@@ -21,7 +21,7 @@ endif()
 
 if (USE_KISS)
   # git submodule add https://github.com/hayguen/kissfft.git
-  if (IS_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/kissfft")
+  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/kissfft/CMakeLists.txt")
     message(STATUS "found subdir kissfft")
     set(PATH_KISS "${CMAKE_CURRENT_LIST_DIR}/kissfft")
     add_subdirectory( "${PATH_KISS}" )
