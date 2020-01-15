@@ -51,6 +51,8 @@
 #define PFFASTCONV_H
 
 #include <stddef.h> // for size_t
+#include "pffft.h"
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -119,7 +121,7 @@ extern "C" {
     PFFASTCONV_Setup structure can't be shared accross multiple filters
     or concurrent threads.
   */
-  PFFASTCONV_Setup * pffastconv_new_setup( const float * filterCoeffs, int filterLen, int * blockLen, int flags );
+  PFFASTCONV_Setup * pffastconv_new_setup( const PFFFT_FLOAT * filterCoeffs, int filterLen, int * blockLen, int flags );
 
   void pffastconv_destroy_setup(PFFASTCONV_Setup *);
 
@@ -148,7 +150,7 @@ extern "C" {
      input[].
 
   */
-  int pffastconv_apply(PFFASTCONV_Setup * s, const float *input, int inputLen, float *output, int applyFlush);
+  int pffastconv_apply(PFFASTCONV_Setup * s, const PFFFT_FLOAT *input, int inputLen, PFFFT_FLOAT *output, int applyFlush);
 
   void *pffastconv_malloc(size_t nb_bytes);
   void pffastconv_free(void *);

@@ -99,11 +99,18 @@
 // define PFFFT_SIMD_DISABLE if you want to use scalar code instead of simd code
 //#define PFFFT_SIMD_DISABLE
 
+#ifdef PFFFT_FLOAT
+#define float PFFFT_FLOAT
+#endif
+
+
 #include "pfsimd_macros.h"
 
 /* detect bugs with the vector support macros */
 void validate_pffft_simd() {
+#ifndef PFFFT_SIMD_DISABLE
   Vvalidate_simd();
+#endif
 }
 
 /* SSE and co like 16-bytes aligned pointers */

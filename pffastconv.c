@@ -36,6 +36,11 @@
 #pragma warning( disable : 4244 4305 4204 4456 )
 #endif
 
+#ifdef PFFFT_FLOAT
+#define float PFFFT_FLOAT
+#endif
+
+
 /* 
    vector support macros: the rest of the code is independant of
    SSE/Altivec/NEON -- adding support for other platforms with 4-element
