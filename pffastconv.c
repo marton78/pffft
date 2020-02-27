@@ -98,10 +98,14 @@ PFFASTCONV_Setup * pffastconv_new_setup( const float * filterCoeffs, int filterL
 {
   PFFASTCONV_Setup * s = NULL;
   const int cplxFactor = ( (flags & PFFASTCONV_CPLX_INP_OUT) && (flags & PFFASTCONV_CPLX_SINGLE_FFT) ) ? 2 : 1;
+  const int minFftLen = 2*pffft_simd_size()*pffft_simd_size();
   int i, Nfft = 2 * nextPowerOfTwo(filterLen -1);
 #if FASTCONV_DBG_OUT
   const int iOldBlkLen = *blockLen;
 #endif
+
+  if ( Nfft < minFftLen )
+    Nfft = minFftLen;
 
   if ( flags & PFFASTCONV_CPLX_FILTER )
     return NULL;
