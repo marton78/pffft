@@ -175,6 +175,31 @@ extern "C" {
   */
   void pffft_zconvolve_accumulate(PFFFT_Setup *setup, const PFFFT_FLOAT *dft_a, const PFFFT_FLOAT *dft_b, PFFFT_FLOAT *dft_ab, PFFFT_FLOAT scaling);
 
+  /* 
+     Perform a multiplication of the frequency components of dft_a and
+     dft_b and put result in dft_ab. The arrays should have
+     been obtained with pffft_transform(.., PFFFT_FORWARD) and should
+     *not* have been reordered with pffft_zreorder (otherwise just
+     perform the operation yourself as the dft coefs are stored as
+     interleaved complex numbers).
+     
+     the operation performed is: dft_ab = (dft_a * fdt_b)*scaling
+     
+     The dft_a, dft_b and dft_ab pointers may alias.
+  */
+  void pffft_zconvolve_no_accu(PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
+
+  /* simple helper to get minimum possible fft size */
+  int pffft_min_fft_size(pffft_transform_t transform);
+
+  /* simple helper to determine next power of 2
+     - without inexact/rounding floating point operations
+  */
+  int pffft_next_power_of_two(int N);
+
+  /* simple helper to determine if power of 2 - returns bool */
+  int pffft_is_power_of_two(int N);
+
   /*
     the float buffers must have the correct alignment (16-byte boundary
     on intel and powerpc). This function may be used to obtain such
@@ -183,7 +208,7 @@ extern "C" {
   void *pffft_aligned_malloc(size_t nb_bytes);
   void pffft_aligned_free(void *);
 
-  /* return 4 or 1 wether support SSE/Altivec instructions was enable when building pffft.c */
+  /* return 4 or 1 wether support SSE/Altivec instructions was enabled when building pffft.c */
   int pffft_simd_size();
 
 #ifdef __cplusplus

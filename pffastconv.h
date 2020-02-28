@@ -107,9 +107,14 @@ extern "C" {
      * */
 
 
-    PFFASTCONV_SYMMETRIC = 32
+    PFFASTCONV_SYMMETRIC = 32,
     /* just informal, that filter is symmetric .. and filterLen is multiple of 8 */
-    
+
+    PFFASTCONV_CORRELATION = 64,
+    /* filterCoeffs[] of pffastconv_new_setup are for correlation;
+     * thus, do not flip them for the internal fft calculation
+     * - as necessary for the fast convolution */
+
   } pffastconv_flags_t;
 
   /*
@@ -155,7 +160,7 @@ extern "C" {
   void *pffastconv_malloc(size_t nb_bytes);
   void pffastconv_free(void *);
 
-  /* return 4 or 1 wether support SSE/Altivec instructions was enable when building pffft.c */
+  /* return 4 or 1 wether support SSE/Altivec instructions was enabled when building pffft.c */
   int pffastconv_simd_size();
 
 

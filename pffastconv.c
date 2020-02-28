@@ -49,20 +49,6 @@
 #include "pfsimd_macros.h"
 
 
-static
-unsigned nextPowerOfTwo(unsigned v) {
-  /* https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2 */
-  /* compute the next highest power of 2 of 32-bit v */
-  v--;
-  v |= v >> 1;
-  v |= v >> 2;
-  v |= v >> 4;
-  v |= v >> 8;
-  v |= v >> 16;
-  v++;
-  return v;
-}
-
 void *pffastconv_malloc(size_t nb_bytes)
 {
   return Valigned_malloc(nb_bytes);
@@ -99,7 +85,7 @@ PFFASTCONV_Setup * pffastconv_new_setup( const float * filterCoeffs, int filterL
   PFFASTCONV_Setup * s = NULL;
   const int cplxFactor = ( (flags & PFFASTCONV_CPLX_INP_OUT) && (flags & PFFASTCONV_CPLX_SINGLE_FFT) ) ? 2 : 1;
   const int minFftLen = 2*pffft_simd_size()*pffft_simd_size();
-  int i, Nfft = 2 * nextPowerOfTwo(filterLen -1);
+  int i, Nfft = 2 * pffft_next_power_of_two(filterLen -1);
 #if FASTCONV_DBG_OUT
   const int iOldBlkLen = *blockLen;
 #endif
@@ -114,7 +100,7 @@ PFFASTCONV_Setup * pffastconv_new_setup( const float * filterCoeffs, int filterL
 
   if ( *blockLen > Nfft ) {
     Nfft = *blockLen;
-    Nfft = nextPowerOfTwo(Nfft);
+    Nfft = pffft_next_power_of_two(Nfft);
   }
   *blockLen = Nfft;  /* this is in (complex) samples */
 
@@ -136,8 +122,13 @@ PFFASTCONV_Setup * pffastconv_new_setup( const float * filterCoeffs, int filterL
   s->scale = (float)( 1.0 / Nfft );
 
   memset( s->Xt, 0, (unsigned)Nfft * sizeof(float) );
-  for ( i = 0; i < filterLen; ++i )
-    s->Xt[ ( Nfft - cplxFactor * i ) & (Nfft -1) ] = filterCoeffs[ filterLen - 1 - i ];
+  if ( flags & PFFASTCONV_CORRELATION ) {
+    for ( i = 0; i < filterLen; ++i )
+      s->Xt[ ( Nfft - cplxFactor * i ) & (Nfft -1) ] = filterCoeffs[ i ];
+  } else {
+    for ( i = 0; i < filterLen; ++i )
+      s->Xt[ ( Nfft - cplxFactor * i ) & (Nfft -1) ] = filterCoeffs[ filterLen - 1 - i ];
+  }
 
   pffft_transform(s->st, s->Xt, s->Hf, /* tmp = */ s->Mf, PFFFT_FORWARD);
 
@@ -219,8 +210,7 @@ int pffastconv_apply(PFFASTCONV_Setup * s, const float *input_, int cplxInputLen
         pffft_transform(s->st, s->Xt, s->Xf, /* tmp = */ s->Mf, PFFFT_FORWARD);
       }
 
-      memset( s->Mf, 0, (unsigned)Nfft * sizeof(float) );  /* why does pffft_zconvolve_accumulate() accumulate?? */
-      pffft_zconvolve_accumulate(s->st, s->Xf, s->Hf, /* tmp = */ s->Mf, s->scale);
+      pffft_zconvolve_no_accu(s->st, s->Xf, s->Hf, /* tmp = */ s->Mf, s->scale);
 
       if ( flags & PFFASTCONV_DIRECT_OUT )
       {
@@ -270,8 +260,7 @@ int pffastconv_apply(PFFASTCONV_Setup * s, const float *input_, int cplxInputLen
           pffft_transform(s->st, s->Xt, s->Xf, /* tmp = */ s->Mf, PFFFT_FORWARD);
         }
     
-        memset( s->Mf, 0, (unsigned)Nfft * sizeof(float) );  /* why does pffft_zconvolve_accumulate() accumulate?? */
-        pffft_zconvolve_accumulate(s->st, s->Xf, s->Hf, /* tmp = */ s->Mf, s->scale);
+        pffft_zconvolve_no_accu(s->st, s->Xf, s->Hf, /* tmp = */ s->Mf, s->scale);
 
         if ( flags & PFFASTCONV_CPLX_INP_OUT )
         {

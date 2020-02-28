@@ -53,12 +53,6 @@
 #define PWR2LOG(PWR)  ( (PWR) < 1E-30 ? 10.0*log10(1E-30) : 10.0*log10(PWR) )
 
 
-int isPowerOfTwo(unsigned v) {
-  /* https://graphics.stanford.edu/~seander/bithacks.html#DetermineIfPowerOf2 */
-  int f = v && !(v & (v - 1));
-  return f;
-}
-
 
 int test(int N, int cplx, int useOrdered) {
   int Nfloat = (cplx ? N*2 : N);
@@ -71,7 +65,7 @@ int test(int N, int cplx, int useOrdered) {
   double pwr, pwrCar, pwrOther, err, errSum, mag, expextedMag;
   float amp = 1.0F;
 
-  assert( isPowerOfTwo(N) );
+  assert( pffft_is_power_of_two(N) );
 
   PFFFT_Setup *s = pffft_new_setup(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
   assert(s);
@@ -213,33 +207,70 @@ int test(int N, int cplx, int useOrdered) {
 
 int main(int argc, char **argv)
 {
-  int N, result, resN, resAll;
+  int N, result, resN, resAll, k, resNextPw2, resIsPw2, resFFT;
 
-  resAll = 0;
+  int inp_power_of_two[] = { 1, 2, 3, 4, 5, 6, 7, 8,  9, 511, 512,  513 };
+  int ref_power_of_two[] = { 1, 2, 4, 4, 8, 8, 8, 8, 16, 512, 512, 1024 };
+
+  resNextPw2 = 0;
+  resIsPw2 = 0;
+  for ( k = 0; k < (sizeof(inp_power_of_two)/sizeof(inp_power_of_two[0])); ++k) {
+    N = pffft_next_power_of_two(inp_power_of_two[k]);
+    if (N != ref_power_of_two[k]) {
+      resNextPw2 = 1;
+      printf("pffft_next_power_of_two(%d) does deliver %d, which is not reference result %d!\n",
+        inp_power_of_two[k], N, ref_power_of_two[k] );
+    }
+
+    result = pffft_is_power_of_two(inp_power_of_two[k]);
+    if (inp_power_of_two[k] == ref_power_of_two[k]) {
+      if (!result) {
+        resIsPw2 = 1;
+        printf("pffft_is_power_of_two(%d) delivers false; expected true!\n", inp_power_of_two[k]);
+      }
+    } else {
+      if (result) {
+        resIsPw2 = 1;
+        printf("pffft_is_power_of_two(%d) delivers true; expected false!\n", inp_power_of_two[k]);
+      }
+    }
+  }
+  if (!resNextPw2)
+    printf("tests for pffft_next_power_of_two() succeeded successfully.\n");
+  if (!resIsPw2)
+    printf("tests for pffft_is_power_of_two() succeeded successfully.\n");
+
+  resFFT = 0;
   for ( N = 32; N <= 65536; N *= 2 )
   {
     result = test(N, 1 /* cplx fft */, 1 /* useOrdered */);
     resN = result;
-    resAll |= result;
+    resFFT |= result;
 
     result = test(N, 0 /* cplx fft */, 1 /* useOrdered */);
     resN |= result;
-    resAll |= result;
+    resFFT |= result;
 
     result = test(N, 1 /* cplx fft */, 0 /* useOrdered */);
     resN |= result;
-    resAll |= result;
+    resFFT |= result;
 
     result = test(N, 0 /* cplx fft */, 0 /* useOrdered */);
     resN |= result;
-    resAll |= result;
+    resFFT |= result;
 
     if (!resN)
       printf("tests for size %d succeeded successfully.\n", N);
   }
 
+  if (!resFFT)
+    printf("all pffft transform tests (FORWARD/BACKWARD, REAL/COMPLEX) succeeded successfully.\n");
+
+  resAll = resNextPw2 | resIsPw2 | resFFT;
   if (!resAll)
     printf("all tests succeeded successfully.\n");
+  else
+    printf("there are failed tests!\n");
 
   return resAll;
 }

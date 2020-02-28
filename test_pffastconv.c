@@ -96,21 +96,6 @@
 
 
 
-
-unsigned nextPowerOfTwo(unsigned v) {
-  /* https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2 */
-  /* compute the next highest power of 2 of 32-bit v */
-  v--;
-  v |= v >> 1;
-  v |= v >> 2;
-  v |= v >> 4;
-  v |= v >> 8;
-  v |= v >> 16;
-  v++;
-  return v;
-}
-
-
 typedef int            (*pfnConvolution)  (void * setup, const float * X, int len, float *Y, const float *Yref, int applyFlush);
 typedef void*          (*pfnConvSetup)    (float *Hfwd, int Nf, int * BlkLen, int flags);
 typedef pfnConvolution (*pfnGetConvFnPtr) (void * setup);
@@ -697,6 +682,7 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
     else
       Y[i] = Y[1];
 
+    Y[i][0] = 123.F;  /* test for pffft_zconvolve_no_accu() */
     aSpeedFactor[i] = -1.0;
     aDuration[i] = -1.0;
     procSmpPerSec[i] = -1.0;
@@ -813,7 +799,7 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
           } while ( t1 < tstop );
           outN[yi] += offC;
           td = t1 - t0;
-          procSmpPerSec[yi] = cplxFactor * (double)offC / td;
+          procSmpPerSec[yi] = cplxFactor * (double)outN[yi] / td;
         }
       }
       else
@@ -914,8 +900,8 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
           {
             if (!aRunAlgo[yc] || procSmpPerSec[yc] <= 0.0)
               continue;
-            printf("algo '%s':\t%.2f MSmp\tin\t%.1f ms\t= %g SmpPerSec\n",
-              convText[yc], (double)outN[yc]/(1000.0 * 1000.0), 1000.0 * aDuration[yc], procSmpPerSec[yc] );
+            printf("algo '%s':\t%.2f MSmp\tin\t%.1f ms\t= %g kSmpPerSec\n",
+              convText[yc], (double)outN[yc]/(1000.0 * 1000.0), 1000.0 * aDuration[yc], procSmpPerSec[yc] * 0.001 );
           }
         }
 
