@@ -1,4 +1,5 @@
 /* Copyright (c) 2013  Julien Pommier ( pommier@modartt.com )
+   Copyright (c) 2020  Hayati Ayguen ( h_ayguen@web.de )
 
    Based on original fortran 77 code from FFTPACKv4 from NETLIB
    (http://www.netlib.org/fftpack), authored by Dr Paul Swarztrauber
@@ -99,11 +100,18 @@
 // define PFFFT_SIMD_DISABLE if you want to use scalar code instead of simd code
 //#define PFFFT_SIMD_DISABLE
 
+#ifdef PFFFT_FLOAT
+#define float PFFFT_FLOAT
+#endif
+
+
 #include "pfsimd_macros.h"
 
 /* detect bugs with the vector support macros */
 void validate_pffft_simd() {
+#ifndef PFFFT_SIMD_DISABLE
   Vvalidate_simd();
+#endif
 }
 
 /* SSE and co like 16-bytes aligned pointers */
@@ -1622,6 +1630,61 @@ void pffft_zconvolve_accumulate(PFFFT_Setup *s, const float *a, const float *b, 
 }
 
 
+void pffft_zconvolve_no_accu(PFFFT_Setup *s, const float *a, const float *b, float *ab, float scaling) {
+  v4sf vscal = LD_PS1(scaling);
+  const v4sf * RESTRICT va = (const v4sf*)a;
+  const v4sf * RESTRICT vb = (const v4sf*)b;
+  v4sf * RESTRICT vab = (v4sf*)ab;
+  float sar, sai, sbr, sbi;
+  const int NcvecMulTwo = 2*s->Ncvec;  /* int Ncvec = s->Ncvec; */
+  int k; /* was i -- but always used "2*i" - except at for() */
+
+#ifdef __arm__
+  __builtin_prefetch(va);
+  __builtin_prefetch(vb);
+  __builtin_prefetch(vab);
+  __builtin_prefetch(va+2);
+  __builtin_prefetch(vb+2);
+  __builtin_prefetch(vab+2);
+  __builtin_prefetch(va+4);
+  __builtin_prefetch(vb+4);
+  __builtin_prefetch(vab+4);
+  __builtin_prefetch(va+6);
+  __builtin_prefetch(vb+6);
+  __builtin_prefetch(vab+6);
+# ifndef __clang__
+#   define ZCONVOLVE_USING_INLINE_NEON_ASM
+# endif
+#endif
+
+  assert(VALIGNED(a) && VALIGNED(b) && VALIGNED(ab));
+  sar = ((v4sf_union*)va)[0].f[0];
+  sai = ((v4sf_union*)va)[1].f[0];
+  sbr = ((v4sf_union*)vb)[0].f[0];
+  sbi = ((v4sf_union*)vb)[1].f[0];
+
+  /* default routine, works fine for non-arm cpus with current compilers */
+  for (k=0; k < NcvecMulTwo; k += 4) {
+    v4sf var, vai, vbr, vbi;
+    var = va[k+0]; vai = va[k+1];
+    vbr = vb[k+0]; vbi = vb[k+1];
+    VCPLXMUL(var, vai, vbr, vbi);
+    vab[k+0] = VMUL(var, vscal);
+    vab[k+1] = VMUL(vai, vscal);
+    var = va[k+2]; vai = va[k+3];
+    vbr = vb[k+2]; vbi = vb[k+3];
+    VCPLXMUL(var, vai, vbr, vbi);
+    vab[k+2] = VMUL(var, vscal);
+    vab[k+3] = VMUL(vai, vscal);
+  }
+
+  if (s->transform == PFFFT_REAL) {
+    ((v4sf_union*)vab)[0].f[0] = sar*sbr*scaling;
+    ((v4sf_union*)vab)[1].f[0] = sai*sbi*scaling;
+  }
+}
+
+
 #else // defined(PFFFT_SIMD_DISABLE)
 
 // standard routine using scalar floats, without SIMD stuff.
@@ -1706,23 +1769,48 @@ void pffft_transform_internal_nosimd(PFFFT_Setup *setup, const float *input, flo
 #define pffft_zconvolve_accumulate_nosimd pffft_zconvolve_accumulate
 void pffft_zconvolve_accumulate_nosimd(PFFFT_Setup *s, const float *a, const float *b,
                                        float *ab, float scaling) {
-  int i, Ncvec = s->Ncvec;
+  int NcvecMulTwo = 2*s->Ncvec;  /* int Ncvec = s->Ncvec; */
+  int k; /* was i -- but always used "2*i" - except at for() */
 
   if (s->transform == PFFFT_REAL) {
     // take care of the fftpack ordering
     ab[0] += a[0]*b[0]*scaling;
-    ab[2*Ncvec-1] += a[2*Ncvec-1]*b[2*Ncvec-1]*scaling;
-    ++ab; ++a; ++b; --Ncvec;
+    ab[NcvecMulTwo-1] += a[NcvecMulTwo-1]*b[NcvecMulTwo-1]*scaling;
+    ++ab; ++a; ++b; NcvecMulTwo -= 2;
   }
-  for (i=0; i < Ncvec; ++i) {
+  for (k=0; k < NcvecMulTwo; k += 2) {
     float ar, ai, br, bi;
-    ar = a[2*i+0]; ai = a[2*i+1];
-    br = b[2*i+0]; bi = b[2*i+1];
+    ar = a[k+0]; ai = a[k+1];
+    br = b[k+0]; bi = b[k+1];
     VCPLXMUL(ar, ai, br, bi);
-    ab[2*i+0] += ar*scaling;
-    ab[2*i+1] += ai*scaling;
+    ab[k+0] += ar*scaling;
+    ab[k+1] += ai*scaling;
   }
 }
+
+
+#define pffft_zconvolve_no_accu_nosimd pffft_zconvolve_no_accu
+void pffft_zconvolve_no_accu_nosimd(PFFFT_Setup *s, const float *a, const float *b,
+                                    float *ab, float scaling) {
+  int NcvecMulTwo = 2*s->Ncvec;  /* int Ncvec = s->Ncvec; */
+  int k; /* was i -- but always used "2*i" - except at for() */
+
+  if (s->transform == PFFFT_REAL) {
+    // take care of the fftpack ordering
+    ab[0] += a[0]*b[0]*scaling;
+    ab[NcvecMulTwo-1] += a[NcvecMulTwo-1]*b[NcvecMulTwo-1]*scaling;
+    ++ab; ++a; ++b; NcvecMulTwo -= 2;
+  }
+  for (k=0; k < NcvecMulTwo; k += 2) {
+    float ar, ai, br, bi;
+    ar = a[k+0]; ai = a[k+1];
+    br = b[k+0]; bi = b[k+1];
+    VCPLXMUL(ar, ai, br, bi);
+    ab[k+0] = ar*scaling;
+    ab[k+1] = ai*scaling;
+  }
+}
+
 
 #endif // defined(PFFFT_SIMD_DISABLE)
 
@@ -1733,3 +1821,37 @@ void pffft_transform(PFFFT_Setup *setup, const float *input, float *output, floa
 void pffft_transform_ordered(PFFFT_Setup *setup, const float *input, float *output, float *work, pffft_direction_t direction) {
   pffft_transform_internal(setup, input, output, (v4sf*)work, direction, 1);
 }
+
+
+int pffft_next_power_of_two(int N) {
+  /* https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2 */
+  /* compute the next highest power of 2 of 32-bit v */
+  unsigned v = N;
+  v--;
+  v |= v >> 1;
+  v |= v >> 2;
+  v |= v >> 4;
+  v |= v >> 8;
+  v |= v >> 16;
+  v++;
+  return v;
+}
+
+int pffft_is_power_of_two(int N) {
+  /* https://graphics.stanford.edu/~seander/bithacks.html#DetermineIfPowerOf2 */
+  int f = N && !(N & (N - 1));
+  return f;
+}
+
+int pffft_min_fft_size(pffft_transform_t transform) {
+  /* unfortunately, the fft size must be a multiple of 16 for complex FFTs 
+     and 32 for real FFTs -- a lot of stuff would need to be rewritten to
+     handle other cases (or maybe just switch to a scalar fft, I don't know..) */
+  if (transform == PFFFT_REAL)
+    return ( 2 * SIMD_SZ * SIMD_SZ );
+  else if (transform == PFFFT_COMPLEX)
+    return ( SIMD_SZ * SIMD_SZ );
+  else
+    return 1;
+}
+

@@ -167,25 +167,6 @@ const int saveType[NUM_TYPES] = {
 #define MAX(x,y) ((x)>(y)?(x):(y))
 #define MIN(x,y) ((x)<(y)?(x):(y))
 
-int isPowerOfTwo(unsigned v) {
-  /* https://graphics.stanford.edu/~seander/bithacks.html#DetermineIfPowerOf2 */
-  int f = v && !(v & (v - 1));
-  return f;
-}
-
-unsigned nextPowerOfTwo(unsigned v) {
-  /* https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2 */
-  /* compute the next highest power of 2 of 32-bit v */
-  v--;
-  v |= v >> 1;
-  v |= v >> 2;
-  v |= v >> 4;
-  v |= v >> 8;
-  v |= v >> 16;
-  v++;
-  return v;
-}
-
 unsigned Log2(unsigned v) {
   /* we don't need speed records .. obvious way is good enough */
   /* https://graphics.stanford.edu/~seander/bithacks.html#IntegerLogObvious */
@@ -432,7 +413,7 @@ double cal_benchmark(int N, int cplx) {
   double t0, t1, tstop, T, nI;
   int k, iter;
 
-  assert( isPowerOfTwo(N) );
+  assert( pffft_is_power_of_two(N) );
   for (k = 0; k < Nfloat; ++k) {
     X[k] = sqrtf(k+1);
   }
@@ -465,7 +446,7 @@ double cal_benchmark(int N, int cplx) {
 
 void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, double tmeas[NUM_TYPES][NUM_FFT_ALGOS], int haveAlgo[NUM_FFT_ALGOS], FILE *tableFile ) {
   const int log2N = Log2(N);
-  int nextPow2N = nextPowerOfTwo(N);
+  int nextPow2N = pffft_next_power_of_two(N);
   int log2NextN = Log2(nextPow2N);
 #ifdef PFFFT_SIMD_DISABLE
   int pffftPow2N = N;
@@ -551,7 +532,7 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   Nmax = (cplx ? nextPow2N*2 : nextPow2N);
   X[Nmax] = checkVal;
   te = uclock_sec();
-  if ( 1 || isPowerOfTwo(N) ) {
+  if ( 1 || pffft_is_power_of_two(N) ) {
     FFTSetup setup;
 
     setup = vDSP_create_fftsetup(log2NextN, FFT_RADIX2);
@@ -708,7 +689,7 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
 #ifdef HAVE_GREEN_FFTS
   Nmax = (cplx ? nextPow2N*2 : nextPow2N);
   X[Nmax] = checkVal;
-  if ( 1 || isPowerOfTwo(N) )
+  if ( 1 || pffft_is_power_of_two(N) )
   {
     te = uclock_sec();
     fftInit(log2NextN);
@@ -751,7 +732,7 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
 #ifdef HAVE_KISS_FFT
   Nmax = (cplx ? nextPow2N*2 : nextPow2N);
   X[Nmax] = checkVal;
-  if ( 1 || isPowerOfTwo(N) )
+  if ( 1 || pffft_is_power_of_two(N) )
   {
     kiss_fft_cfg stf;
     kiss_fft_cfg sti;

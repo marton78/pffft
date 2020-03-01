@@ -51,6 +51,8 @@
 #define PFFASTCONV_H
 
 #include <stddef.h> // for size_t
+#include "pffft.h"
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -105,9 +107,14 @@ extern "C" {
      * */
 
 
-    PFFASTCONV_SYMMETRIC = 32
+    PFFASTCONV_SYMMETRIC = 32,
     /* just informal, that filter is symmetric .. and filterLen is multiple of 8 */
-    
+
+    PFFASTCONV_CORRELATION = 64,
+    /* filterCoeffs[] of pffastconv_new_setup are for correlation;
+     * thus, do not flip them for the internal fft calculation
+     * - as necessary for the fast convolution */
+
   } pffastconv_flags_t;
 
   /*
@@ -119,7 +126,7 @@ extern "C" {
     PFFASTCONV_Setup structure can't be shared accross multiple filters
     or concurrent threads.
   */
-  PFFASTCONV_Setup * pffastconv_new_setup( const float * filterCoeffs, int filterLen, int * blockLen, int flags );
+  PFFASTCONV_Setup * pffastconv_new_setup( const PFFFT_FLOAT * filterCoeffs, int filterLen, int * blockLen, int flags );
 
   void pffastconv_destroy_setup(PFFASTCONV_Setup *);
 
@@ -148,12 +155,12 @@ extern "C" {
      input[].
 
   */
-  int pffastconv_apply(PFFASTCONV_Setup * s, const float *input, int inputLen, float *output, int applyFlush);
+  int pffastconv_apply(PFFASTCONV_Setup * s, const PFFFT_FLOAT *input, int inputLen, PFFFT_FLOAT *output, int applyFlush);
 
   void *pffastconv_malloc(size_t nb_bytes);
   void pffastconv_free(void *);
 
-  /* return 4 or 1 wether support SSE/Altivec instructions was enable when building pffft.c */
+  /* return 4 or 1 wether support SSE/Altivec instructions was enabled when building pffft.c */
   int pffastconv_simd_size();
 
 
