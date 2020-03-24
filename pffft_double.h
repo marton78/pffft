@@ -92,21 +92,21 @@ extern "C" {
      this struct can be shared by many threads as it contains only
      read-only data.  
   */
-  typedef struct PFFFT64_Setup PFFFT64_Setup;
+  typedef struct PFFFTD_Setup PFFFTD_Setup;
 
   /* direction of the transform */
-  typedef enum { PFFFT64_FORWARD, PFFFT64_BACKWARD } pffft64_direction_t;
+  typedef enum { PFFFTD_FORWARD, PFFFTD_BACKWARD } pffftd_direction_t;
   
   /* type of transform */
-  typedef enum { PFFFT64_REAL, PFFFT64_COMPLEX } pffft64_transform_t;
+  typedef enum { PFFFTD_REAL, PFFFTD_COMPLEX } pffftd_transform_t;
 
   /*
     prepare for performing transforms of size N -- the returned
-    PFFFT64_Setup structure is read-only so it can safely be shared by
+    PFFFTD_Setup structure is read-only so it can safely be shared by
     multiple concurrent threads. 
   */
-  PFFFT64_Setup *pffft64_new_setup(int N, pffft64_transform_t transform);
-  void pffft64_destroy_setup(PFFFT64_Setup *);
+  PFFFTD_Setup *pffftd_new_setup(int N, pffftd_transform_t transform);
+  void pffftd_destroy_setup(PFFFTD_Setup *);
   /* 
      Perform a Fourier transform , The z-domain data is stored in the
      most efficient order for transforming it back, or using it for
@@ -125,7 +125,7 @@ extern "C" {
 
      input and output may alias.
   */
-  void pffft64_transform(PFFFT64_Setup *setup, const double *input, double *output, double *work, pffft64_direction_t direction);
+  void pffftd_transform(PFFFTD_Setup *setup, const double *input, double *output, double *work, pffftd_direction_t direction);
 
   /* 
      Similar to pffft_transform, but makes sure that the output is
@@ -134,7 +134,7 @@ extern "C" {
      
      input and output may alias.
   */
-  void pffft64_transform_ordered(PFFFT64_Setup *setup, const double *input, double *output, double *work, pffft64_direction_t direction);
+  void pffftd_transform_ordered(PFFFTD_Setup *setup, const double *input, double *output, double *work, pffftd_direction_t direction);
 
   /* 
      call pffft_zreorder(.., PFFFT_FORWARD) after pffft_transform(...,
@@ -148,7 +148,7 @@ extern "C" {
      
      input and output should not alias.
   */
-  void pffft64_zreorder(PFFFT64_Setup *setup, const double *input, double *output, pffft64_direction_t direction);
+  void pffftd_zreorder(PFFFTD_Setup *setup, const double *input, double *output, pffftd_direction_t direction);
 
   /* 
      Perform a multiplication of the frequency components of dft_a and
@@ -162,36 +162,36 @@ extern "C" {
      
      The dft_a, dft_b and dft_ab pointers may alias.
   */
-  void pffft64_zconvolve_accumulate(PFFFT64_Setup *setup, const double *dft_a, const double *dft_b, double *dft_ab, double scaling);
+  void pffftd_zconvolve_accumulate(PFFFTD_Setup *setup, const double *dft_a, const double *dft_b, double *dft_ab, double scaling);
 
   /* simple helper to get minimum possible fft size */
-  int pffft64_min_fft_size(pffft64_transform_t transform);
+  int pffftd_min_fft_size(pffftd_transform_t transform);
 
   /* simple helper to determine next power of 2
      - without inexact/rounding floating point operations
   */
-  int pffft64_min_fft_size(int N);
+  int pffftd_min_fft_size(int N);
 
   /* simple helper to determine next power of 2
    - without inexact/rounding floating point operations
 */
-  int pffft64_next_power_of_two(int N);
+  int pffftd_next_power_of_two(int N);
 
   /* simple helper to determine if power of 2 - returns bool */
-  int pffft64_is_power_of_two(int N);
+  int pffftd_is_power_of_two(int N);
 
   /*
     the double buffers must have the correct alignment (32-byte boundary
     on intel and powerpc). This function may be used to obtain such
     correctly aligned buffers.  
   */
-  void *pffft64_aligned_malloc(size_t nb_bytes);
-  void pffft64_aligned_free(void *);
+  void *pffftd_aligned_malloc(size_t nb_bytes);
+  void pffftd_aligned_free(void *);
 
   /* return 4 or 1 wether support AVX instructions was enabled when building pffft-double.c */
-  int pffft64_simd_size();
+  int pffftd_simd_size();
 
-  void validate_pffft64_simd();
+  void validate_pffftd_simd();
 
 #ifdef __cplusplus
 }

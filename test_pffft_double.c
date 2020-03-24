@@ -6,21 +6,21 @@
   How to build: 
 
   on linux, with fftw3:
-  gcc -o test_pffft64 -DHAVE_FFTW -msse -mfpmath=sse -O3 -Wall -W pffft64.c test_pffft64.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -lfftw3f -lm
+  gcc -o test_pffftd -DHAVE_FFTW -msse -mfpmath=sse -O3 -Wall -W pffftd.c test_pffftd.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -lfftw3f -lm
 
   on macos, without fftw3:
-  clang -o test_pffft64 -DHAVE_VECLIB -O3 -Wall -W pffft64.c test_pffft64.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -framework Accelerate
+  clang -o test_pffftd -DHAVE_VECLIB -O3 -Wall -W pffftd.c test_pffftd.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -framework Accelerate
 
   on macos, with fftw3:
-  clang -o test_pffft64 -DHAVE_FFTW -DHAVE_VECLIB -O3 -Wall -W pffft64.c test_pffft64.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -lfftw3f -framework Accelerate
+  clang -o test_pffftd -DHAVE_FFTW -DHAVE_VECLIB -O3 -Wall -W pffftd.c test_pffftd.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -lfftw3f -framework Accelerate
 
   as alternative: replace clang by gcc.
 
   on windows, with visual c++:
-  cl /Ox -D_USE_MATH_DEFINES /arch:SSE test_pffft64.c pffft64.c fftpack.c
+  cl /Ox -D_USE_MATH_DEFINES /arch:SSE test_pffftd.c pffftd.c fftpack.c
   
   build without SIMD instructions:
-  gcc -o test_pffft64 -DPFFFT_SIMD_DISABLE -O3 -Wall -W pffft64.c test_pffft64.c fftpack.c -lm
+  gcc -o test_pffftd -DPFFFT_SIMD_DISABLE -O3 -Wall -W pffftd.c test_pffftd.c fftpack.c -lm
 
  */
 
@@ -28,7 +28,7 @@
 Note: adapted for double precision dynamic range version.
 */
 
-#include "pffft64.h"
+#include "pffft_double.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -55,18 +55,18 @@ Note: adapted for double precision dynamic range version.
 
 int test(int N, int cplx, int useOrdered) {
   int Ndouble = (cplx ? N*2 : N);
-  double *X = pffft64_aligned_malloc((unsigned)Ndouble * sizeof(double));
-  double *Y = pffft64_aligned_malloc((unsigned)Ndouble * sizeof(double));
-  double *Z = pffft64_aligned_malloc((unsigned)Ndouble * sizeof(double));
-  double *W = pffft64_aligned_malloc((unsigned)Ndouble * sizeof(double));
+  double *X = pffftd_aligned_malloc((unsigned)Ndouble * sizeof(double));
+  double *Y = pffftd_aligned_malloc((unsigned)Ndouble * sizeof(double));
+  double *Z = pffftd_aligned_malloc((unsigned)Ndouble * sizeof(double));
+  double *W = pffftd_aligned_malloc((unsigned)Ndouble * sizeof(double));
   int k, j, m, iter, kmaxOther, retError = 0;
   double freq, dPhi, phi, phi0;
   double pwr, pwrCar, pwrOther, err, errSum, mag, expextedMag;
   double amp = 1.0F;
 
-  assert( pffft64_is_power_of_two(N) );
+  assert( pffftd_is_power_of_two(N) );
 
-  PFFFT64_Setup *s = pffft64_new_setup(N, cplx ? PFFFT64_COMPLEX : PFFFT64_REAL);
+  PFFFTD_Setup *s = pffftd_new_setup(N, cplx ? PFFFTD_COMPLEX : PFFFTD_REAL);
   assert(s);
   if (!s) {
     printf("Error setting up PFFFT!\n");
@@ -108,11 +108,11 @@ int test(int N, int cplx, int useOrdered) {
 
       /* forward transform from X --> Y  .. using work buffer W */
       if ( useOrdered )
-        pffft64_transform_ordered(s, X, Y, W, PFFFT64_FORWARD );
+        pffftd_transform_ordered(s, X, Y, W, PFFFTD_FORWARD );
       else
       {
-        pffft64_transform(s, X, Z, W, PFFFT64_FORWARD );  /* temporarily use Z for reordering */
-        pffft64_zreorder(s, Z, Y, PFFFT64_FORWARD );
+        pffftd_transform(s, X, Z, W, PFFFTD_FORWARD );  /* temporarily use Z for reordering */
+        pffftd_zreorder(s, Z, Y, PFFFTD_FORWARD );
       }
 
       pwrOther = -1.0;
@@ -171,7 +171,7 @@ int test(int N, int cplx, int useOrdered) {
 
 
       /* now convert spectrum back */
-      pffft64_transform_ordered(s, Y, Z, W, PFFFT64_BACKWARD);
+      pffftd_transform_ordered(s, Y, Z, W, PFFFTD_BACKWARD);
 
       errSum = 0.0;
       for ( j = 0; j < (cplx ? (2*N) : N); ++j )
@@ -193,11 +193,11 @@ int test(int N, int cplx, int useOrdered) {
     }
 
   }
-  pffft64_destroy_setup(s);
-  pffft64_aligned_free(X);
-  pffft64_aligned_free(Y);
-  pffft64_aligned_free(Z);
-  pffft64_aligned_free(W);
+  pffftd_destroy_setup(s);
+  pffftd_aligned_free(X);
+  pffftd_aligned_free(Y);
+  pffftd_aligned_free(Z);
+  pffftd_aligned_free(W);
 
   return retError;
 }
@@ -214,30 +214,30 @@ int main(int argc, char **argv)
   resNextPw2 = 0;
   resIsPw2 = 0;
   for ( k = 0; k < (sizeof(inp_power_of_two)/sizeof(inp_power_of_two[0])); ++k) {
-    N = pffft64_next_power_of_two(inp_power_of_two[k]);
+    N = pffftd_next_power_of_two(inp_power_of_two[k]);
     if (N != ref_power_of_two[k]) {
       resNextPw2 = 1;
-      printf("pffft64_next_power_of_two(%d) does deliver %d, which is not reference result %d!\n",
+      printf("pffftd_next_power_of_two(%d) does deliver %d, which is not reference result %d!\n",
         inp_power_of_two[k], N, ref_power_of_two[k] );
     }
 
-    result = pffft64_is_power_of_two(inp_power_of_two[k]);
+    result = pffftd_is_power_of_two(inp_power_of_two[k]);
     if (inp_power_of_two[k] == ref_power_of_two[k]) {
       if (!result) {
         resIsPw2 = 1;
-        printf("pffft64_is_power_of_two(%d) delivers false; expected true!\n", inp_power_of_two[k]);
+        printf("pffftd_is_power_of_two(%d) delivers false; expected true!\n", inp_power_of_two[k]);
       }
     } else {
       if (result) {
         resIsPw2 = 1;
-        printf("pffft64_is_power_of_two(%d) delivers true; expected false!\n", inp_power_of_two[k]);
+        printf("pffftd_is_power_of_two(%d) delivers true; expected false!\n", inp_power_of_two[k]);
       }
     }
   }
   if (!resNextPw2)
-    printf("tests for pffft64_next_power_of_two() succeeded successfully.\n");
+    printf("tests for pffftd_next_power_of_two() succeeded successfully.\n");
   if (!resIsPw2)
-    printf("tests for pffft64_is_power_of_two() succeeded successfully.\n");
+    printf("tests for pffftd_is_power_of_two() succeeded successfully.\n");
 
   resFFT = 0;
   for ( N = 32; N <= 65536; N *= 2 )
@@ -263,7 +263,7 @@ int main(int argc, char **argv)
   }
 
   if (!resFFT)
-    printf("all pffft64 transform tests (FORWARD/BACKWARD, REAL/COMPLEX) succeeded successfully.\n");
+    printf("all pffftd transform tests (FORWARD/BACKWARD, REAL/COMPLEX) succeeded successfully.\n");
 
   resAll = resNextPw2 | resIsPw2 | resFFT;
   if (!resAll)

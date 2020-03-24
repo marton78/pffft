@@ -79,7 +79,7 @@
 #  include <alloca.h>
 #endif
 
-#include "pffft64.h"
+#include "pffft_double.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
@@ -105,13 +105,13 @@
 */
 
 
-// define PFFFT64_SIMD_DISABLE if you want to use scalar code instead of simd code
-//#define PFFFT64_SIMD_DISABLE
+// define PFFFTD_SIMD_DISABLE if you want to use scalar code instead of simd code
+//#define PFFFTD_SIMD_DISABLE
 
 /*
   AVX support macros
 */
-#if !defined(PFFFT64_SIMD_DISABLE) && defined(__AVX__)
+#if !defined(PFFFTD_SIMD_DISABLE) && defined(__AVX__)
 
 #include <immintrin.h>
 typedef __m256d v4sd;
@@ -180,11 +180,11 @@ return [ b[0], b[1], a[2], a[3] ]
    _mm256_insertf128_pd(_mm256_castpd128_pd256(_mm256_castpd256_pd128(b)), _mm256_extractf128_pd(a, 1), 1)
 #  define VALIGNED(ptr) ((((uintptr_t)(ptr)) & 0x1F) == 0)
 #else
-#define PFFFT64_SIMD_DISABLE
+#define PFFFTD_SIMD_DISABLE
 #endif
 
 // fallback mode for situations where AVX is not available, use scalar mode instead
-#ifdef PFFFT64_SIMD_DISABLE
+#ifdef PFFFTD_SIMD_DISABLE
 typedef double v4sd;
 #  define SIMD_SZ 1
 #  define VZERO() 0.f
@@ -204,7 +204,7 @@ typedef double v4sd;
 #define SVMUL(f,v) VMUL(LD_PS1(f),v)
 #endif
 
-#if !defined(PFFFT64_SIMD_DISABLE)
+#if !defined(PFFFTD_SIMD_DISABLE)
 typedef union v4sd_union {
   v4sd  v;
   double f[4];
@@ -215,7 +215,7 @@ typedef union v4sd_union {
 #define assertv4(v,f0,f1,f2,f3) assert(v.f[0] == (f0) && v.f[1] == (f1) && v.f[2] == (f2) && v.f[3] == (f3))
 
 /* detect bugs with the vector support macros */
-void validate_pffft64_simd() {
+void validate_pffftd_simd() {
   double f[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
   v4sd_union a0, a1, a2, a3, t, u; 
   memcpy(a0.f, f, 4*sizeof(double));
@@ -251,11 +251,11 @@ void validate_pffft64_simd() {
          a2.f[0], a2.f[1], a2.f[2], a2.f[3], a3.f[0], a3.f[1], a3.f[2], a3.f[3]); 
   assertv4(a0, 0, 4, 8, 12); assertv4(a1, 1, 5, 9, 13); assertv4(a2, 2, 6, 10, 14); assertv4(a3, 3, 7, 11, 15);
 }
-#endif //!PFFFT64_SIMD_DISABLE
+#endif //!PFFFTD_SIMD_DISABLE
 
 /* SSE and co like 16-bytes aligned pointers */
 #define MALLOC_V4SF_ALIGNMENT 64 // with a 64-byte alignment, we are even aligned on L2 cache lines...
-void *pffft64_aligned_malloc(size_t nb_bytes) {
+void *pffftd_aligned_malloc(size_t nb_bytes) {
   void *p, *p0 = malloc(nb_bytes + MALLOC_V4SF_ALIGNMENT);
   if (!p0) return (void *) 0;
   p = (void *) (((size_t) p0 + MALLOC_V4SF_ALIGNMENT) & (~((size_t) (MALLOC_V4SF_ALIGNMENT-1))));
@@ -263,11 +263,11 @@ void *pffft64_aligned_malloc(size_t nb_bytes) {
   return p;
 }
 
-void pffft64_aligned_free(void *p) {
+void pffftd_aligned_free(void *p) {
   if (p) free(*((void **) p - 1));
 }
 
-int pffft64_simd_size() { return SIMD_SZ; }
+int pffftd_simd_size() { return SIMD_SZ; }
 
 /*
   passf2 and passb2 has been merged here, fsign = -1 for passf2, +1 for passb2
@@ -1199,34 +1199,34 @@ static v4sd *cfftf1_ps(int n, const v4sd *input_readonly, v4sd *work1, v4sd *wor
 }
 
 
-struct PFFFT64_Setup {
+struct PFFFTD_Setup {
   int     N;
-  int     Ncvec; // nb of complex simd vectors (N/4 if PFFFT64_COMPLEX, N/8 if PFFFT64_REAL)
+  int     Ncvec; // nb of complex simd vectors (N/4 if PFFFTD_COMPLEX, N/8 if PFFFTD_REAL)
   int ifac[15];
-  pffft64_transform_t transform;
+  pffftd_transform_t transform;
   v4sd *data; // allocated room for twiddle coefs
   double *e;    // points into 'data' , N/4*3 elements
   double *twiddle; // points into 'data', N/4 elements
 };
 
-PFFFT64_Setup *pffft64_new_setup(int N, pffft64_transform_t transform) {
-  PFFFT64_Setup *s = (PFFFT64_Setup*)malloc(sizeof(PFFFT64_Setup));
+PFFFTD_Setup *pffftd_new_setup(int N, pffftd_transform_t transform) {
+  PFFFTD_Setup *s = (PFFFTD_Setup*)malloc(sizeof(PFFFTD_Setup));
   int k, m;
   /* unfortunately, the fft size must be a multiple of 16 for complex FFTs 
      and 32 for real FFTs -- a lot of stuff would need to be rewritten to
      handle other cases (or maybe just switch to a scalar fft, I don't know..) */
-  if (transform == PFFFT64_REAL) { assert((N%(2*SIMD_SZ*SIMD_SZ))==0 && N>0); }
-  if (transform == PFFFT64_COMPLEX) { assert((N%(SIMD_SZ*SIMD_SZ))==0 && N>0); }
+  if (transform == PFFFTD_REAL) { assert((N%(2*SIMD_SZ*SIMD_SZ))==0 && N>0); }
+  if (transform == PFFFTD_COMPLEX) { assert((N%(SIMD_SZ*SIMD_SZ))==0 && N>0); }
   //assert((N % 32) == 0);
   s->N = N;
   s->transform = transform;  
   /* nb of complex simd vectors */
-  s->Ncvec = (transform == PFFFT64_REAL ? N/2 : N)/SIMD_SZ;
-  s->data = (v4sd*)pffft64_aligned_malloc(2*s->Ncvec * sizeof(v4sd));
+  s->Ncvec = (transform == PFFFTD_REAL ? N/2 : N)/SIMD_SZ;
+  s->data = (v4sd*)pffftd_aligned_malloc(2*s->Ncvec * sizeof(v4sd));
   s->e = (double*)s->data;
   s->twiddle = (double*)(s->data + (2*s->Ncvec*(SIMD_SZ-1))/SIMD_SZ);  
 
-  if (transform == PFFFT64_REAL) {
+  if (transform == PFFFTD_REAL) {
     for (k=0; k < s->Ncvec; ++k) {
       int i = k/SIMD_SZ;
       int j = k%SIMD_SZ;
@@ -1253,19 +1253,19 @@ PFFFT64_Setup *pffft64_new_setup(int N, pffft64_transform_t transform) {
   /* check that N is decomposable with allowed prime factors */
   for (k=0, m=1; k < s->ifac[1]; ++k) { m *= s->ifac[2+k]; }
   if (m != N/SIMD_SZ) {
-    pffft64_destroy_setup(s); s = 0;
+    pffftd_destroy_setup(s); s = 0;
   }
 
   return s;
 }
 
 
-void pffft64_destroy_setup(PFFFT64_Setup *s) {
-  pffft64_aligned_free(s->data);
+void pffftd_destroy_setup(PFFFTD_Setup *s) {
+  pffftd_aligned_free(s->data);
   free(s);
 }
 
-#if !defined(PFFFT64_SIMD_DISABLE)
+#if !defined(PFFFTD_SIMD_DISABLE)
 
 /* [0 0 1 2 3 4 5 6 7 8] -> [0 8 7 6 5 4 3 2 1] */
 static void reversed_copy(int N, const v4sd *in, int in_stride, v4sd *out) {
@@ -1301,14 +1301,14 @@ static void unreversed_copy(int N, const v4sd *in, v4sd *out, int out_stride) {
   UNINTERLEAVE2(h0, g1, out[0], out[1]);
 }
 
-void pffft64_zreorder(PFFFT64_Setup *setup, const double *in, double *out, pffft64_direction_t direction) {
+void pffftd_zreorder(PFFFTD_Setup *setup, const double *in, double *out, pffftd_direction_t direction) {
   int k, N = setup->N, Ncvec = setup->Ncvec;
   const v4sd *vin = (const v4sd*)in;
   v4sd *vout = (v4sd*)out;
   assert(in != out);
-  if (setup->transform == PFFFT64_REAL) {
+  if (setup->transform == PFFFTD_REAL) {
     int k, dk = N/32;
-    if (direction == PFFFT64_FORWARD) {
+    if (direction == PFFFTD_FORWARD) {
       for (k=0; k < dk; ++k) {
         INTERLEAVE2(vin[k*8 + 0], vin[k*8 + 1], vout[2*(0*dk + k) + 0], vout[2*(0*dk + k) + 1]);
         INTERLEAVE2(vin[k*8 + 4], vin[k*8 + 5], vout[2*(2*dk + k) + 0], vout[2*(2*dk + k) + 1]);
@@ -1324,7 +1324,7 @@ void pffft64_zreorder(PFFFT64_Setup *setup, const double *in, double *out, pffft
       unreversed_copy(dk, (v4sd*)(in + 3*N/4), (v4sd*)(out + N - 2*SIMD_SZ), -8);
     }
   } else {
-    if (direction == PFFFT64_FORWARD) {
+    if (direction == PFFFTD_FORWARD) {
       for (k=0; k < Ncvec; ++k) { 
         int kk = (k/4) + (k%4)*(Ncvec/4);
         INTERLEAVE2(vin[k*2], vin[k*2+1], vout[kk*2], vout[kk*2+1]);
@@ -1338,7 +1338,7 @@ void pffft64_zreorder(PFFFT64_Setup *setup, const double *in, double *out, pffft
   }
 }
 
-void pffft64_cplx_finalize(int Ncvec, const v4sd *in, v4sd *out, const v4sd *e) {
+void pffftd_cplx_finalize(int Ncvec, const v4sd *in, v4sd *out, const v4sd *e) {
   int k, dk = Ncvec/SIMD_SZ; // number of 4x4 matrix blocks
   v4sd r0, i0, r1, i1, r2, i2, r3, i3;
   v4sd sr0, dr0, sr1, dr1, si0, di0, si1, di1;
@@ -1382,7 +1382,7 @@ void pffft64_cplx_finalize(int Ncvec, const v4sd *in, v4sd *out, const v4sd *e) 
   }
 }
 
-void pffft64_cplx_preprocess(int Ncvec, const v4sd *in, v4sd *out, const v4sd *e) {
+void pffftd_cplx_preprocess(int Ncvec, const v4sd *in, v4sd *out, const v4sd *e) {
   int k, dk = Ncvec/SIMD_SZ; // number of 4x4 matrix blocks
   v4sd r0, i0, r1, i1, r2, i2, r3, i3;
   v4sd sr0, dr0, sr1, dr1, si0, di0, si1, di1;
@@ -1416,7 +1416,7 @@ void pffft64_cplx_preprocess(int Ncvec, const v4sd *in, v4sd *out, const v4sd *e
 }
 
 
-static ALWAYS_INLINE(void) pffft64_real_finalize_4x4(const v4sd *in0, const v4sd *in1, const v4sd *in,
+static ALWAYS_INLINE(void) pffftd_real_finalize_4x4(const v4sd *in0, const v4sd *in1, const v4sd *in,
                             const v4sd *e, v4sd *out) {
   v4sd r0, i0, r1, i1, r2, i2, r3, i3;
   v4sd sr0, dr0, sr1, dr1, si0, di0, si1, di1;
@@ -1473,7 +1473,7 @@ static ALWAYS_INLINE(void) pffft64_real_finalize_4x4(const v4sd *in0, const v4sd
 
 }
 
-static NEVER_INLINE(void) pffft64_real_finalize(int Ncvec, const v4sd *in, v4sd *out, const v4sd *e) {
+static NEVER_INLINE(void) pffftd_real_finalize(int Ncvec, const v4sd *in, v4sd *out, const v4sd *e) {
   int k, dk = Ncvec/SIMD_SZ; // number of 4x4 matrix blocks
   /* fftpack order is f0r f1r f1i f2r f2i ... f(n-1)r f(n-1)i f(n)r */
 
@@ -1484,7 +1484,7 @@ static NEVER_INLINE(void) pffft64_real_finalize(int Ncvec, const v4sd *in, v4sd 
 
   cr.v = in[0]; ci.v = in[Ncvec*2-1];
   assert(in != out);
-  pffft64_real_finalize_4x4(&zero, &zero, in+1, e, out);
+  pffftd_real_finalize_4x4(&zero, &zero, in+1, e, out);
 
   /*
     [cr0 cr1 cr2 cr3 ci0 ci1 ci2 ci3]
@@ -1510,14 +1510,14 @@ static NEVER_INLINE(void) pffft64_real_finalize(int Ncvec, const v4sd *in, v4sd 
 
   for (k=1; k < dk; ++k) {
     v4sd save_next = in[8*k+7];
-    pffft64_real_finalize_4x4(&save, &in[8*k+0], in + 8*k+1,
+    pffftd_real_finalize_4x4(&save, &in[8*k+0], in + 8*k+1,
                            e + k*6, out + k*8);
     save = save_next;
   }
 
 }
 
-static ALWAYS_INLINE(void) pffft64_real_preprocess_4x4(const v4sd *in, 
+static ALWAYS_INLINE(void) pffftd_real_preprocess_4x4(const v4sd *in, 
                                              const v4sd *e, v4sd *out, int first) {
   v4sd r0=in[0], i0=in[1], r1=in[2], i1=in[3], r2=in[4], i2=in[5], r3=in[6], i3=in[7];
   /*
@@ -1566,7 +1566,7 @@ static ALWAYS_INLINE(void) pffft64_real_preprocess_4x4(const v4sd *in,
   *out++ = i3;
 }
 
-static NEVER_INLINE(void) pffft64_real_preprocess(int Ncvec, const v4sd *in, v4sd *out, const v4sd *e) {
+static NEVER_INLINE(void) pffftd_real_preprocess(int Ncvec, const v4sd *in, v4sd *out, const v4sd *e) {
   int k, dk = Ncvec/SIMD_SZ; // number of 4x4 matrix blocks
   /* fftpack order is f0r f1r f1i f2r f2i ... f(n-1)r f(n-1)i f(n)r */
 
@@ -1579,7 +1579,7 @@ static NEVER_INLINE(void) pffft64_real_preprocess(int Ncvec, const v4sd *in, v4s
     Xi.f[k] = ((double*)in)[8*k+4];
   }
 
-  pffft64_real_preprocess_4x4(in, e, out+1, 1); // will write only 6 values
+  pffftd_real_preprocess_4x4(in, e, out+1, 1); // will write only 6 values
 
   /*
     [Xr0 Xr1 Xr2 Xr3 Xi0 Xi1 Xi2 Xi3]
@@ -1594,7 +1594,7 @@ static NEVER_INLINE(void) pffft64_real_preprocess(int Ncvec, const v4sd *in, v4s
     [ci3] [0  -s   0   s   0  -s   0  -s]
   */
   for (k=1; k < dk; ++k) {    
-    pffft64_real_preprocess_4x4(in+8*k, e + k*6, out-1+k*8, 0);
+    pffftd_real_preprocess_4x4(in+8*k, e + k*6, out-1+k*8, 0);
   }
 
   cr0=(Xr.f[0]+Xi.f[0]) + 2*Xr.f[2]; uout[0].f[0] = cr0;
@@ -1608,8 +1608,8 @@ static NEVER_INLINE(void) pffft64_real_preprocess(int Ncvec, const v4sd *in, v4s
 }
 
 
-void pffft64_transform_internal(PFFFT64_Setup *setup, const double *finput, double *foutput, v4sd *scratch,
-                             pffft64_direction_t direction, int ordered) {
+void pffftd_transform_internal(PFFFTD_Setup *setup, const double *finput, double *foutput, v4sd *scratch,
+                             pffftd_direction_t direction, int ordered) {
   int k, Ncvec   = setup->Ncvec;
   int nf_odd = (setup->ifac[1] & 1);
 
@@ -1625,12 +1625,12 @@ void pffft64_transform_internal(PFFFT64_Setup *setup, const double *finput, doub
   assert(VALIGNED(finput) && VALIGNED(foutput));
 
   //assert(finput != foutput);
-  if (direction == PFFFT64_FORWARD) {
+  if (direction == PFFFTD_FORWARD) {
     ib = !ib;
-    if (setup->transform == PFFFT64_REAL) { 
+    if (setup->transform == PFFFTD_REAL) { 
       ib = (rfftf1_ps(Ncvec*2, vinput, buff[ib], buff[!ib],
                       setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);      
-      pffft64_real_finalize(Ncvec, buff[ib], buff[!ib], (v4sd*)setup->e);
+      pffftd_real_finalize(Ncvec, buff[ib], buff[!ib], (v4sd*)setup->e);
     } else {
       v4sd *tmp = buff[ib];
       for (k=0; k < Ncvec; ++k) {
@@ -1638,25 +1638,25 @@ void pffft64_transform_internal(PFFFT64_Setup *setup, const double *finput, doub
       }
       ib = (cfftf1_ps(Ncvec, buff[ib], buff[!ib], buff[ib], 
                       setup->twiddle, &setup->ifac[0], -1) == buff[0] ? 0 : 1);
-      pffft64_cplx_finalize(Ncvec, buff[ib], buff[!ib], (v4sd*)setup->e);
+      pffftd_cplx_finalize(Ncvec, buff[ib], buff[!ib], (v4sd*)setup->e);
     }
     if (ordered) {
-      pffft64_zreorder(setup, (double*)buff[!ib], (double*)buff[ib], PFFFT64_FORWARD);       
+      pffftd_zreorder(setup, (double*)buff[!ib], (double*)buff[ib], PFFFTD_FORWARD);       
     } else ib = !ib;
   } else {
     if (vinput == buff[ib]) { 
       ib = !ib; // may happen when finput == foutput
     }
     if (ordered) {
-      pffft64_zreorder(setup, (double*)vinput, (double*)buff[ib], PFFFT64_BACKWARD); 
+      pffftd_zreorder(setup, (double*)vinput, (double*)buff[ib], PFFFTD_BACKWARD); 
       vinput = buff[ib]; ib = !ib;
     }
-    if (setup->transform == PFFFT64_REAL) {
-      pffft64_real_preprocess(Ncvec, vinput, buff[ib], (v4sd*)setup->e);
+    if (setup->transform == PFFFTD_REAL) {
+      pffftd_real_preprocess(Ncvec, vinput, buff[ib], (v4sd*)setup->e);
       ib = (rfftb1_ps(Ncvec*2, buff[ib], buff[0], buff[1], 
                       setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
     } else {
-      pffft64_cplx_preprocess(Ncvec, vinput, buff[ib], (v4sd*)setup->e);
+      pffftd_cplx_preprocess(Ncvec, vinput, buff[ib], (v4sd*)setup->e);
       ib = (cfftf1_ps(Ncvec, buff[ib], buff[0], buff[1], 
                       setup->twiddle, &setup->ifac[0], +1) == buff[0] ? 0 : 1);
       for (k=0; k < Ncvec; ++k) {
@@ -1677,7 +1677,7 @@ void pffft64_transform_internal(PFFFT64_Setup *setup, const double *finput, doub
   assert(buff[ib] == voutput);
 }
 
-void pffft64_zconvolve_accumulate(PFFFT64_Setup *s, const double *a, const double *b, double *ab, double scaling) {
+void pffftd_zconvolve_accumulate(PFFFTD_Setup *s, const double *a, const double *b, double *ab, double scaling) {
   int Ncvec = s->Ncvec;
   const v4sd * RESTRICT va = (const v4sd*)a;
   const v4sd * RESTRICT vb = (const v4sd*)b;
@@ -1766,25 +1766,25 @@ void pffft64_zconvolve_accumulate(PFFFT64_Setup *s, const double *a, const doubl
     vab[2*i+3] = VMADD(ai, vscal, vab[2*i+3]);
   }
 #endif
-  if (s->transform == PFFFT64_REAL) {
+  if (s->transform == PFFFTD_REAL) {
     ((v4sd_union*)vab)[0].f[0] = abr + ar*br*scaling;
     ((v4sd_union*)vab)[1].f[0] = abi + ai*bi*scaling;
   }
 }
 
 
-#else // defined(PFFFT64_SIMD_DISABLE)
+#else // defined(PFFFTD_SIMD_DISABLE)
 
 // standard routine using scalar floats, without SIMD stuff.
 
-#define pffft64_zreorder_nosimd pffft64_zreorder
-void pffft64_zreorder_nosimd(PFFFT64_Setup *setup, const double *in, double *out, pffft64_direction_t direction) {
+#define pffftd_zreorder_nosimd pffftd_zreorder
+void pffftd_zreorder_nosimd(PFFFTD_Setup *setup, const double *in, double *out, pffftd_direction_t direction) {
   int k, N = setup->N;
-  if (setup->transform == PFFFT64_COMPLEX) {
+  if (setup->transform == PFFFTD_COMPLEX) {
     for (k=0; k < 2*N; ++k) out[k] = in[k];
     return;
   }
-  else if (direction == PFFFT64_FORWARD) {
+  else if (direction == PFFFTD_FORWARD) {
     double x_N = in[N-1];
     for (k=N-1; k > 1; --k) out[k] = in[k-1]; 
     out[0] = in[0];
@@ -1797,9 +1797,9 @@ void pffft64_zreorder_nosimd(PFFFT64_Setup *setup, const double *in, double *out
   }
 }
 
-#define pffft64_transform_internal_nosimd pffft64_transform_internal
-void pffft64_transform_internal_nosimd(PFFFT64_Setup *setup, const double *input, double *output, double *scratch,
-                                    pffft64_direction_t direction, int ordered) {
+#define pffftd_transform_internal_nosimd pffftd_transform_internal
+void pffftd_transform_internal_nosimd(PFFFTD_Setup *setup, const double *input, double *output, double *scratch,
+                                    pffftd_direction_t direction, int ordered) {
   int Ncvec   = setup->Ncvec;
   int nf_odd = (setup->ifac[1] & 1);
 
@@ -1811,11 +1811,11 @@ void pffft64_transform_internal_nosimd(PFFFT64_Setup *setup, const double *input
   if (scratch == 0) scratch = scratch_on_stack;
   buff[0] = output; buff[1] = scratch;
 
-  if (setup->transform == PFFFT64_COMPLEX) ordered = 0; // it is always ordered.
+  if (setup->transform == PFFFTD_COMPLEX) ordered = 0; // it is always ordered.
   ib = (nf_odd ^ ordered ? 1 : 0);
 
-  if (direction == PFFFT64_FORWARD) {
-    if (setup->transform == PFFFT64_REAL) { 
+  if (direction == PFFFTD_FORWARD) {
+    if (setup->transform == PFFFTD_REAL) { 
       ib = (rfftf1_ps(Ncvec*2, input, buff[ib], buff[!ib],
                       setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);      
     } else {
@@ -1823,17 +1823,17 @@ void pffft64_transform_internal_nosimd(PFFFT64_Setup *setup, const double *input
                       setup->twiddle, &setup->ifac[0], -1) == buff[0] ? 0 : 1);
     }
     if (ordered) {
-      pffft64_zreorder(setup, buff[ib], buff[!ib], PFFFT64_FORWARD); ib = !ib;
+      pffftd_zreorder(setup, buff[ib], buff[!ib], PFFFTD_FORWARD); ib = !ib;
     }
   } else {    
     if (input == buff[ib]) { 
       ib = !ib; // may happen when finput == foutput
     }
     if (ordered) {
-      pffft64_zreorder(setup, input, buff[!ib], PFFFT64_BACKWARD); 
+      pffftd_zreorder(setup, input, buff[!ib], PFFFTD_BACKWARD); 
       input = buff[!ib];
     }
-    if (setup->transform == PFFFT64_REAL) {
+    if (setup->transform == PFFFTD_REAL) {
       ib = (rfftb1_ps(Ncvec*2, input, buff[ib], buff[!ib], 
                       setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
     } else {
@@ -1854,12 +1854,12 @@ void pffft64_transform_internal_nosimd(PFFFT64_Setup *setup, const double *input
   assert(buff[ib] == output);
 }
 
-#define pffft64_zconvolve_accumulate_nosimd pffft64_zconvolve_accumulate
-void pffft64_zconvolve_accumulate_nosimd(PFFFT64_Setup *s, const double *a, const double *b,
+#define pffftd_zconvolve_accumulate_nosimd pffftd_zconvolve_accumulate
+void pffftd_zconvolve_accumulate_nosimd(PFFFTD_Setup *s, const double *a, const double *b,
                                        double *ab, double scaling) {
   int i, Ncvec = s->Ncvec;
 
-  if (s->transform == PFFFT64_REAL) {
+  if (s->transform == PFFFTD_REAL) {
     // take care of the fftpack ordering
     ab[0] += a[0]*b[0]*scaling;
     ab[2*Ncvec-1] += a[2*Ncvec-1]*b[2*Ncvec-1]*scaling;
@@ -1875,18 +1875,18 @@ void pffft64_zconvolve_accumulate_nosimd(PFFFT64_Setup *s, const double *a, cons
   }
 }
 
-#endif // defined(PFFFT64_SIMD_DISABLE)
+#endif // defined(PFFFTD_SIMD_DISABLE)
 
-void pffft64_transform(PFFFT64_Setup *setup, const double *input, double *output, double *work, pffft64_direction_t direction) {
-  pffft64_transform_internal(setup, input, output, (v4sd*)work, direction, 0);
+void pffftd_transform(PFFFTD_Setup *setup, const double *input, double *output, double *work, pffftd_direction_t direction) {
+  pffftd_transform_internal(setup, input, output, (v4sd*)work, direction, 0);
 }
 
-void pffft64_transform_ordered(PFFFT64_Setup *setup, const double *input, double *output, double *work, pffft64_direction_t direction) {
-  pffft64_transform_internal(setup, input, output, (v4sd*)work, direction, 1);
+void pffftd_transform_ordered(PFFFTD_Setup *setup, const double *input, double *output, double *work, pffftd_direction_t direction) {
+  pffftd_transform_internal(setup, input, output, (v4sd*)work, direction, 1);
 }
 
 
-int pffft64_next_power_of_two(int N) {
+int pffftd_next_power_of_two(int N) {
     /* https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2 */
     /* compute the next highest power of 2 of 32-bit v */
     unsigned v = N;
@@ -1900,19 +1900,19 @@ int pffft64_next_power_of_two(int N) {
     return v;
 }
 
-int pffft64_is_power_of_two(int N) {
+int pffftd_is_power_of_two(int N) {
     /* https://graphics.stanford.edu/~seander/bithacks.html#DetermineIfPowerOf2 */
     int f = N && !(N & (N - 1));
     return f;
 }
 
-int pffft64_min_fft_size(pffft64_transform_t transform) {
+int pffftd_min_fft_size(pffftd_transform_t transform) {
     /* unfortunately, the fft size must be a multiple of 16 for complex FFTs
        and 32 for real FFTs -- a lot of stuff would need to be rewritten to
        handle other cases (or maybe just switch to a scalar fft, I don't know..) */
-    if (transform == PFFFT64_REAL)
+    if (transform == PFFFTD_REAL)
         return (2 * SIMD_SZ * SIMD_SZ);
-    else if (transform == PFFFT64_COMPLEX)
+    else if (transform == PFFFTD_COMPLEX)
         return (SIMD_SZ * SIMD_SZ);
     else
         return 1;
