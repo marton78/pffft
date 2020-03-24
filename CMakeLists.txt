@@ -72,6 +72,26 @@ set_property(TARGET PFFFT APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 
+add_library(PFFFT64 STATIC pffft64.c)
+target_compile_definitions(PFFFT64 PRIVATE _USE_MATH_DEFINES)
+if (USE_ASAN)
+  target_compile_options(PFFFT64 PRIVATE "-fsanitize=address")
+endif()
+if (NOT USE_SIMD)
+  target_compile_definitions(PFFFT64 PRIVATE PFFFT64_SIMD_DISABLE=1)
+endif()
+if (USE_SIMD AND USE_AVX)
+if(WIN32)
+  target_compile_options(PFFFT64 PRIVATE "/arch=AVX")
+  else(WIN32)
+  target_compile_options(PFFFT64 PRIVATE "-march=native")
+  endif(WIN32)
+endif()
+target_link_libraries( PFFFT64 ${MATHLIB} )
+set_property(TARGET PFFFT64 APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+)
+
 
 add_library(FFTPACK STATIC fftpack.c)
 target_compile_definitions(FFTPACK PRIVATE _USE_MATH_DEFINES)
@@ -101,6 +121,11 @@ set_property(TARGET PFFASTCONV APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
 add_executable( test_pffft  test_pffft.c )
 target_compile_definitions(test_pffft PRIVATE _USE_MATH_DEFINES)
 target_link_libraries( test_pffft  PFFFT ${ASANLIB} )
+
+
+add_executable( test_pffft64  test_pffft64.c )
+target_compile_definitions(test_pffft64 PRIVATE _USE_MATH_DEFINES)
+target_link_libraries( test_pffft64  PFFFT64 ${ASANLIB} )
 
 
 add_executable(test_pffastconv   test_pffastconv.c )
