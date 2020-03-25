@@ -168,13 +168,8 @@ extern "C" {
   int pffftd_min_fft_size(pffftd_transform_t transform);
 
   /* simple helper to determine next power of 2
-     - without inexact/rounding floating point operations
-  */
-  int pffftd_min_fft_size(int N);
-
-  /* simple helper to determine next power of 2
    - without inexact/rounding floating point operations
-*/
+  */
   int pffftd_next_power_of_two(int N);
 
   /* simple helper to determine if power of 2 - returns bool */
