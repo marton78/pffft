@@ -49,7 +49,7 @@
    SSE/Altivec/NEON -- adding support for other platforms with 4-element
    vectors should be limited to these macros 
 */
-#include "pfsimd_macros.h"
+#include "pf_float.h"
 
 
 #if defined(_MSC_VER)

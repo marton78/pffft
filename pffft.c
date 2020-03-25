@@ -105,7 +105,7 @@
 #endif
 
 
-#include "pfsimd_macros.h"
+#include "pf_float.h"
 
 /* detect bugs with the vector support macros */
 void validate_pffft_simd() {

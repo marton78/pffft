@@ -56,8 +56,11 @@ else()
   set(MATHLIB "m")
 endif()
 
+set( SIMD_FLOAT_HDRS pf_float.h pf_sse1_float.h pf_altivec_float.h pf_neon_float.h pf_scalar_float.h )
+set( SIMD_DOUBLE_HDRS pf_double.h pf_avx_double.h pf_scalar_double.h )
 
-add_library(PFFFT STATIC pffft.c)
+
+add_library(PFFFT STATIC pffft.c pffft.h ${SIMD_FLOAT_HDRS} )
 target_compile_definitions(PFFFT PRIVATE _USE_MATH_DEFINES)
 if (USE_ASAN)
   target_compile_options(PFFFT PRIVATE "-fsanitize=address")
@@ -73,7 +76,7 @@ set_property(TARGET PFFFT APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 
-add_library(PFFFT_DOUBLE STATIC pffft_double.c)
+add_library(PFFFT_DOUBLE STATIC pffft_double.c pffft_double.h )
 target_compile_definitions(PFFFT_DOUBLE PRIVATE _USE_MATH_DEFINES)
 if (USE_ASAN)
   target_compile_options(PFFFT_DOUBLE PRIVATE "-fsanitize=address")
@@ -94,7 +97,7 @@ set_property(TARGET PFFFT_DOUBLE APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
 )
 
 
-add_library(FFTPACK STATIC fftpack.c)
+add_library(FFTPACK STATIC fftpack.c fftpack.h)
 target_compile_definitions(FFTPACK PRIVATE _USE_MATH_DEFINES)
 target_link_libraries( FFTPACK ${MATHLIB} )
 set_property(TARGET FFTPACK APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
@@ -102,7 +105,7 @@ set_property(TARGET FFTPACK APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
 )
 
 
-add_library(PFFASTCONV STATIC pffastconv.c)
+add_library(PFFASTCONV STATIC pffastconv.c pffastconv.h pffft.h ${SIMD_FLOAT_HDRS} )
 target_compile_definitions(PFFASTCONV PRIVATE _USE_MATH_DEFINES)
 if (USE_ASAN)
   target_compile_options(PFFASTCONV PRIVATE "-fsanitize=address")
@@ -142,7 +145,7 @@ endif()
 target_link_libraries( test_pffastconv  PFFASTCONV ${ASANLIB} ${MATHLIB} )
 
 
-add_executable(bench_pffft   bench_pffft.c )
+add_executable(bench_pffft   bench_pffft.c pffft.h fftpack.h)
 target_compile_definitions(bench_pffft PRIVATE _USE_MATH_DEFINES)
 if (NOT USE_SIMD)
   target_compile_definitions(bench_pffft PRIVATE PFFFT_SIMD_DISABLE=1)
