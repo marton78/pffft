@@ -1,5 +1,6 @@
 /* Copyright (c) 2013  Julien Pommier ( pommier@modartt.com )
    Copyright (c) 2020  Hayati Ayguen ( h_ayguen@web.de )
+   Copyright (c) 2020  Dario Mambro ( dario.mambro@gmail.com )
 
    Based on original fortran 77 code from FFTPACKv4 from NETLIB
    (http://www.netlib.org/fftpack), authored by Dr Paul Swarztrauber

@@ -1,5 +1,5 @@
 /*
-   AVX port by Dario Mambro ( dario.mambro@gmail.com )
+   Copyright (c) 2020  Dario Mambro ( dario.mambro@gmail.com )
 */
 
 /* Copyright (c) 2013  Julien Pommier ( pommier@modartt.com )
