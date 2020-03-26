@@ -60,7 +60,10 @@ set( SIMD_FLOAT_HDRS pf_float.h pf_sse1_float.h pf_altivec_float.h pf_neon_float
 set( SIMD_DOUBLE_HDRS pf_double.h pf_avx_double.h pf_scalar_double.h )
 
 
-add_library(PFFFT STATIC pffft.c pffft.h ${SIMD_FLOAT_HDRS} )
+add_library(PFFFT STATIC
+  pffft.c pffft.h ${SIMD_FLOAT_HDRS}
+  pffft_double.c pffft_double.h ${SIMD_DOUBLE_HDRS}
+)
 target_compile_definitions(PFFFT PRIVATE _USE_MATH_DEFINES)
 if (USE_ASAN)
   target_compile_options(PFFFT PRIVATE "-fsanitize=address")
@@ -72,29 +75,18 @@ if (USE_SIMD AND USE_NEON)
   target_compile_definitions(PFFFT PRIVATE PFFFT_ENABLE_NEON=1)
   target_compile_options(PFFFT PRIVATE "-mfpu=neon")
 endif()
+if (USE_SIMD AND USE_AVX)
+  target_compile_definitions(PFFFT PRIVATE PFFFT_ENABLE_AVX=1)
+  if(WIN32)
+    #target_compile_options(PFFFT PRIVATE "/arch=AVX")
+    set_property(SOURCE pffft_double.c PROPERTY COMPILE_FLAGS "/arch=AVX")
+  else()
+    #target_compile_options(PFFFT PRIVATE "-march=native")
+    set_property(SOURCE pffft_double.c PROPERTY COMPILE_FLAGS "-march=native")
+  endif()
+endif()
 target_link_libraries( PFFFT ${MATHLIB} )
 set_property(TARGET PFFFT APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-)
-
-add_library(PFFFT_DOUBLE STATIC pffft_double.c pffft_double.h ${SIMD_DOUBLE_HDRS} )
-target_compile_definitions(PFFFT_DOUBLE PRIVATE _USE_MATH_DEFINES)
-if (USE_ASAN)
-  target_compile_options(PFFFT_DOUBLE PRIVATE "-fsanitize=address")
-endif()
-if (NOT USE_SIMD)
-  target_compile_definitions(PFFFT_DOUBLE PRIVATE PFFFT_SIMD_DISABLE=1)
-endif()
-if (USE_SIMD AND USE_AVX)
-  target_compile_definitions(PFFFT_DOUBLE PRIVATE PFFFT_ENABLE_AVX=1)
-  if(WIN32)
-    target_compile_options(PFFFT_DOUBLE PRIVATE "/arch=AVX")
-  else(WIN32)
-    target_compile_options(PFFFT_DOUBLE PRIVATE "-march=native")
-  endif(WIN32)
-endif()
-target_link_libraries( PFFFT_DOUBLE ${MATHLIB} )
-set_property(TARGET PFFFT_DOUBLE APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 
@@ -130,7 +122,7 @@ target_link_libraries( test_pffft  PFFFT ${ASANLIB} )
 
 add_executable( test_pffft_double  test_pffft_double.c )
 target_compile_definitions(test_pffft_double PRIVATE _USE_MATH_DEFINES)
-target_link_libraries( test_pffft_double  PFFFT_DOUBLE ${ASANLIB} )
+target_link_libraries( test_pffft_double  PFFFT ${ASANLIB} )
 
 
 add_executable(test_pffastconv   test_pffastconv.c )
