@@ -1819,7 +1819,7 @@ void pffft_zconvolve_accumulate_nosimd(SETUP_STRUCT *s, const float *a, const fl
 }
 
 #define pffft_zconvolve_no_accu_nosimd FUNC_ZCONVOLVE_NO_ACCU
-void pffft_zconvolve_no_accu_nosimd(PFFFTD_Setup *s, const float *a, const float *b,
+void pffft_zconvolve_no_accu_nosimd(SETUP_STRUCT *s, const float *a, const float *b,
                                     float *ab, float scaling) {
   int NcvecMulTwo = 2*s->Ncvec;  /* int Ncvec = s->Ncvec; */
   int k; /* was i -- but always used "2*i" - except at for() */
