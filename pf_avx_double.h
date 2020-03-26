@@ -1,3 +1,6 @@
+/*
+   Copyright (c) 2020  Dario Mambro ( dario.mambro@gmail.com )
+*/
 
 /* Copyright (c) 2013  Julien Pommier ( pommier@modartt.com )
 
@@ -32,13 +35,6 @@
 
 #ifndef PF_AVX_DBL_H
 #define PF_AVX_DBL_H
-
-/*
-   NOTE: This file is adapted from Julien Pommier's original PFFFT,
-   which works on 32 bit floating point precision using SSE instructions,
-   to work with 64 bit floating point precision using AVX instructions.
-   Author: Dario Mambro @ https://github.com/unevens/pffft
-*/
 
 /* 
    vector support macros: the rest of the code is independant of
