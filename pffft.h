@@ -79,20 +79,6 @@
 
 #include <stddef.h> // for size_t
 
-#ifndef PFFFT_FLOAT
-  #if 1
-    /* default: float */
-    #define PFFFT_FLOAT float
-  #else
-    #define PFFFT_FLOAT double
-    #ifndef PFFFT_SIMD_DISABLE
-      /* double only with PFFFT_SIMD_DISABLE */
-      #define PFFFT_SIMD_DISABLE 1
-    #endif
-  #endif
-#endif
-
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -103,11 +89,16 @@ extern "C" {
   */
   typedef struct PFFFT_Setup PFFFT_Setup;
 
+#ifndef PFFFT_COMMON_ENUMS
+#define PFFFT_COMMON_ENUMS
+
   /* direction of the transform */
   typedef enum { PFFFT_FORWARD, PFFFT_BACKWARD } pffft_direction_t;
   
   /* type of transform */
   typedef enum { PFFFT_REAL, PFFFT_COMPLEX } pffft_transform_t;
+
+#endif
 
   /*
     prepare for performing transforms of size N -- the returned
@@ -131,12 +122,12 @@ extern "C" {
      fft) floats, properly aligned. If 'work' is NULL, then stack will
      be used instead (this is probably the best strategy for small
      FFTs, say for N < 16384). Threads usually have a small stack, that
-     there's no sufficient amount of memory, usually leading to a creash!
+     there's no sufficient amount of memory, usually leading to a crash!
      Use the heap with pffft_aligned_malloc() in this case.
 
      input and output may alias.
   */
-  void pffft_transform(PFFFT_Setup *setup, const PFFFT_FLOAT *input, PFFFT_FLOAT *output, PFFFT_FLOAT *work, pffft_direction_t direction);
+  void pffft_transform(PFFFT_Setup *setup, const float *input, float *output, float *work, pffft_direction_t direction);
 
   /* 
      Similar to pffft_transform, but makes sure that the output is
@@ -145,7 +136,7 @@ extern "C" {
      
      input and output may alias.
   */
-  void pffft_transform_ordered(PFFFT_Setup *setup, const PFFFT_FLOAT *input, PFFFT_FLOAT *output, PFFFT_FLOAT *work, pffft_direction_t direction);
+  void pffft_transform_ordered(PFFFT_Setup *setup, const float *input, float *output, float *work, pffft_direction_t direction);
 
   /* 
      call pffft_zreorder(.., PFFFT_FORWARD) after pffft_transform(...,
@@ -159,7 +150,7 @@ extern "C" {
      
      input and output should not alias.
   */
-  void pffft_zreorder(PFFFT_Setup *setup, const PFFFT_FLOAT *input, PFFFT_FLOAT *output, pffft_direction_t direction);
+  void pffft_zreorder(PFFFT_Setup *setup, const float *input, float *output, pffft_direction_t direction);
 
   /* 
      Perform a multiplication of the frequency components of dft_a and
@@ -173,7 +164,7 @@ extern "C" {
      
      The dft_a, dft_b and dft_ab pointers may alias.
   */
-  void pffft_zconvolve_accumulate(PFFFT_Setup *setup, const PFFFT_FLOAT *dft_a, const PFFFT_FLOAT *dft_b, PFFFT_FLOAT *dft_ab, PFFFT_FLOAT scaling);
+  void pffft_zconvolve_accumulate(PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
 
   /* 
      Perform a multiplication of the frequency components of dft_a and
@@ -208,11 +199,12 @@ extern "C" {
   void *pffft_aligned_malloc(size_t nb_bytes);
   void pffft_aligned_free(void *);
 
-  /* return 4 or 1 wether support SSE/Altivec instructions was enabled when building pffft.c */
+  /* return 4 or 1 wether support SSE/NEON/Altivec instructions was enabled when building pffft.c */
   int pffft_simd_size();
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // PFFFT_H
+#endif /* PFFFT_H */
+

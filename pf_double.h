@@ -30,8 +30,8 @@
    SOFTWARE.
 */
 
-#ifndef PF_FLT_H
-#define PF_FLT_H
+#ifndef PF_DBL_H
+#define PF_DBL_H
 
 #include <assert.h>
 #include <string.h>
@@ -58,19 +58,16 @@
  */
 
 
-#include "pf_sse1_float.h"
-#include "pf_neon_float.h"
-#include "pf_altivec_float.h"
+#include "pf_avx_double.h"
 
 #ifndef SIMD_SZ
 #  if !defined(PFFFT_SIMD_DISABLE)
-#    warning "building float with simd disabled !\n";
+#    warning "building double with simd disabled !\n";
 #    define PFFFT_SIMD_DISABLE /* fallback to scalar code */
 #  endif
 #endif
 
-#include "pf_scalar_float.h"
-
+#include "pf_scalar_double.h"
 
 // shortcuts for complex multiplcations
 #define VCPLXMUL(ar,ai,br,bi) { v4sf tmp; tmp=VMUL(ar,bi); ar=VMUL(ar,br); ar=VSUB(ar,VMUL(ai,bi)); ai=VMUL(ai,br); ai=VADD(ai,tmp); }
@@ -82,7 +79,7 @@
 
 typedef union v4sf_union {
   v4sf  v;
-  float f[SIMD_SZ];
+  double f[4];
 } v4sf_union;
 
 #if !defined(PFFFT_SIMD_DISABLE)
@@ -91,12 +88,12 @@ typedef union v4sf_union {
 
 /* detect bugs with the vector support macros */
 static void Vvalidate_simd() {
-  float f[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
+  double f[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
   v4sf_union a0, a1, a2, a3, t, u; 
-  memcpy(a0.f, f, 4*sizeof(float));
-  memcpy(a1.f, f+4, 4*sizeof(float));
-  memcpy(a2.f, f+8, 4*sizeof(float));
-  memcpy(a3.f, f+12, 4*sizeof(float));
+  memcpy(a0.f, f, 4*sizeof(double));
+  memcpy(a1.f, f+4, 4*sizeof(double));
+  memcpy(a2.f, f+8, 4*sizeof(double));
+  memcpy(a3.f, f+12, 4*sizeof(double));
 
   t = a0; u = a1; t.v = VZERO();
   printf("VZERO=[%2g %2g %2g %2g]\n", t.f[0], t.f[1], t.f[2], t.f[3]); assertv4(t, 0, 0, 0, 0);
@@ -146,5 +143,5 @@ void Valigned_free(void *p) {
 }
 
 
-#endif /* PF_FLT_H */
+#endif /* PF_DBL_H */
 

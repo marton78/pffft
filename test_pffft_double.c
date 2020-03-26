@@ -66,7 +66,7 @@ int test(int N, int cplx, int useOrdered) {
 
   assert( pffftd_is_power_of_two(N) );
 
-  PFFFTD_Setup *s = pffftd_new_setup(N, cplx ? PFFFTD_COMPLEX : PFFFTD_REAL);
+  PFFFTD_Setup *s = pffftd_new_setup(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
   assert(s);
   if (!s) {
     printf("Error setting up PFFFT!\n");
@@ -108,11 +108,11 @@ int test(int N, int cplx, int useOrdered) {
 
       /* forward transform from X --> Y  .. using work buffer W */
       if ( useOrdered )
-        pffftd_transform_ordered(s, X, Y, W, PFFFTD_FORWARD );
+        pffftd_transform_ordered(s, X, Y, W, PFFFT_FORWARD );
       else
       {
-        pffftd_transform(s, X, Z, W, PFFFTD_FORWARD );  /* temporarily use Z for reordering */
-        pffftd_zreorder(s, Z, Y, PFFFTD_FORWARD );
+        pffftd_transform(s, X, Z, W, PFFFT_FORWARD );  /* temporarily use Z for reordering */
+        pffftd_zreorder(s, Z, Y, PFFFT_FORWARD );
       }
 
       pwrOther = -1.0;
@@ -171,7 +171,7 @@ int test(int N, int cplx, int useOrdered) {
 
 
       /* now convert spectrum back */
-      pffftd_transform_ordered(s, Y, Z, W, PFFFTD_BACKWARD);
+      pffftd_transform_ordered(s, Y, Z, W, PFFFT_BACKWARD);
 
       errSum = 0.0;
       for ( j = 0; j < (cplx ? (2*N) : N); ++j )

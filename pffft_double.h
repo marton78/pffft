@@ -62,7 +62,7 @@
 
    Restrictions: 
 
-   - 1D transforms only, with 64-bit single precision.
+   - 1D transforms only, with 64-bit double precision.
 
    - supports only transforms for inputs of length N of the form
    N=(2^a)*(3^b)*(5^c), a >= 5, b >=0, c >= 0 (32, 48, 64, 96, 128,
@@ -94,18 +94,23 @@ extern "C" {
   */
   typedef struct PFFFTD_Setup PFFFTD_Setup;
 
+#ifndef PFFFT_COMMON_ENUMS
+#define PFFFT_COMMON_ENUMS
+
   /* direction of the transform */
-  typedef enum { PFFFTD_FORWARD, PFFFTD_BACKWARD } pffftd_direction_t;
+  typedef enum { PFFFT_FORWARD, PFFFT_BACKWARD } pffft_direction_t;
   
   /* type of transform */
-  typedef enum { PFFFTD_REAL, PFFFTD_COMPLEX } pffftd_transform_t;
+  typedef enum { PFFFT_REAL, PFFFT_COMPLEX } pffft_transform_t;
+
+#endif
 
   /*
     prepare for performing transforms of size N -- the returned
     PFFFTD_Setup structure is read-only so it can safely be shared by
     multiple concurrent threads. 
   */
-  PFFFTD_Setup *pffftd_new_setup(int N, pffftd_transform_t transform);
+  PFFFTD_Setup *pffftd_new_setup(int N, pffft_transform_t transform);
   void pffftd_destroy_setup(PFFFTD_Setup *);
   /* 
      Perform a Fourier transform , The z-domain data is stored in the
@@ -121,11 +126,13 @@ extern "C" {
      The 'work' pointer should point to an area of N (2*N for complex
      fft) doubles, properly aligned. If 'work' is NULL, then stack will
      be used instead (this is probably the best strategy for small
-     FFTs, say for N < 16384).
+     FFTs, say for N < 16384). Threads usually have a small stack, that
+     there's no sufficient amount of memory, usually leading to a crash!
+     Use the heap with pffft_aligned_malloc() in this case.
 
      input and output may alias.
   */
-  void pffftd_transform(PFFFTD_Setup *setup, const double *input, double *output, double *work, pffftd_direction_t direction);
+  void pffftd_transform(PFFFTD_Setup *setup, const double *input, double *output, double *work, pffft_direction_t direction);
 
   /* 
      Similar to pffft_transform, but makes sure that the output is
@@ -134,7 +141,7 @@ extern "C" {
      
      input and output may alias.
   */
-  void pffftd_transform_ordered(PFFFTD_Setup *setup, const double *input, double *output, double *work, pffftd_direction_t direction);
+  void pffftd_transform_ordered(PFFFTD_Setup *setup, const double *input, double *output, double *work, pffft_direction_t direction);
 
   /* 
      call pffft_zreorder(.., PFFFT_FORWARD) after pffft_transform(...,
@@ -148,7 +155,7 @@ extern "C" {
      
      input and output should not alias.
   */
-  void pffftd_zreorder(PFFFTD_Setup *setup, const double *input, double *output, pffftd_direction_t direction);
+  void pffftd_zreorder(PFFFTD_Setup *setup, const double *input, double *output, pffft_direction_t direction);
 
   /* 
      Perform a multiplication of the frequency components of dft_a and
@@ -165,10 +172,10 @@ extern "C" {
   void pffftd_zconvolve_accumulate(PFFFTD_Setup *setup, const double *dft_a, const double *dft_b, double *dft_ab, double scaling);
 
   /* simple helper to get minimum possible fft size */
-  int pffftd_min_fft_size(pffftd_transform_t transform);
+  int pffftd_min_fft_size(pffft_transform_t transform);
 
   /* simple helper to determine next power of 2
-   - without inexact/rounding floating point operations
+     - without inexact/rounding floating point operations
   */
   int pffftd_next_power_of_two(int N);
 
@@ -192,4 +199,5 @@ extern "C" {
 }
 #endif
 
-#endif // PFFFT_H
+#endif /* PFFFT_DOUBLE_H */
+

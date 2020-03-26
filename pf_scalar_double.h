@@ -30,26 +30,23 @@
    SOFTWARE.
 */
 
-#ifndef PF_SCAL_FLT_H
-#define PF_SCAL_FLT_H
+#ifndef PF_SCAL_DBL_H
+#define PF_SCAL_DBL_H
 
 /*
   fallback mode for situations where SSE/AVX/NEON/Altivec are not available, use scalar mode instead
 */
 #ifdef PFFFT_SIMD_DISABLE
-typedef float v4sf;
+typedef double v4sf;
 #  define SIMD_SZ 1
-#  define VREQUIRES_ALIGN 0
 #  define VZERO() 0.f
 #  define VMUL(a,b) ((a)*(b))
 #  define VADD(a,b) ((a)+(b))
 #  define VMADD(a,b,c) ((a)*(b)+(c))
 #  define VSUB(a,b) ((a)-(b))
 #  define LD_PS1(p) (p)
-#  define VLOAD_UNALIGNED(ptr)  (*(ptr))
-#  define VLOAD_ALIGNED(ptr)    (*(ptr))
 #  define VALIGNED(ptr) ((((uintptr_t)(ptr)) & 0x3) == 0)
 #endif
 
-#endif /* PF_SCAL_FLT_H */
+#endif /* PF_SCAL_DBL_H */
 
