@@ -920,7 +920,7 @@ static void rffti1_ps(int n, float *wa, int *ifac)
   }
 } /* rffti1 */
 
-void cffti1_ps(int n, float *wa, int *ifac)
+static void cffti1_ps(int n, float *wa, int *ifac)
 {
   static const int ntryh[] = { 5,3,4,2,0 };
   int k1, j, ii;
@@ -959,7 +959,7 @@ void cffti1_ps(int n, float *wa, int *ifac)
 } /* cffti1 */
 
 
-v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2, const float *wa, const int *ifac, int isign) {
+static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2, const float *wa, const int *ifac, int isign) {
   v4sf *in  = (v4sf*)input_readonly;
   v4sf *out = (in == work2 ? work1 : work2); 
   int nf = ifac[1], k1;
