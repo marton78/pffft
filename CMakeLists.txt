@@ -124,6 +124,10 @@ add_executable( test_pffft_double  test_pffft_double.c )
 target_compile_definitions(test_pffft_double PRIVATE _USE_MATH_DEFINES)
 target_link_libraries( test_pffft_double  PFFFT ${ASANLIB} )
 
+add_executable( test_pffft_cpp test_pffft.cpp )
+target_compile_definitions(test_pffft_cpp PRIVATE _USE_MATH_DEFINES)
+target_link_libraries( test_pffft_cpp  PFFFT ${ASANLIB} )
+
 
 add_executable(test_pffastconv   test_pffastconv.c )
 target_compile_definitions(test_pffastconv PRIVATE _USE_MATH_DEFINES)
