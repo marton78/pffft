@@ -1,5 +1,4 @@
 cmake_minimum_required(VERSION 2.8)
-set(CMAKE_C_STANDARD 99)
 project(PRETTY_FAST_FFT)
 
 option(USE_SIMD  "use SIMD (SSE/NEON) CPU features?" ON)
@@ -9,6 +8,15 @@ option(USE_FFTW  "use (system-installed) FFTW3 in fft benchmark?" OFF)
 option(USE_GREEN "use Green FFT in fft benchmark? - if exists in subdir" ON)
 option(USE_KISS  "use KissFFT in fft benchmark? - if exists in subdir" ON)
 option(USE_ASAN  "use GCC's address sanitizer?" OFF)
+
+
+set(CMAKE_C_STANDARD 90)
+set(CMAKE_C_EXTENSIONS ON)  # required for M_PI and M_SQRT2
+
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 
 if (USE_ASAN)
   set(ASANLIB "asan")

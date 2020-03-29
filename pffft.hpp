@@ -1,6 +1,31 @@
-/* Copyright (c) 2013  Julien Pommier ( pommier@modartt.com )
+/* Copyright (c) 2020  Dario Mambro ( dario.mambro@gmail.com )
    Copyright (c) 2020  Hayati Ayguen ( h_ayguen@web.de )
-   Copyright (c) 2020  Dario Mambro ( dario.mambro@gmail.com )
+
+   Redistribution and use of the Software in source and binary forms,
+   with or without modification, is permitted provided that the
+   following conditions are met:
+
+   - Neither the names of PFFFT, nor the names of its
+   sponsors or contributors may be used to endorse or promote products
+   derived from this Software without specific prior written permission.
+
+   - Redistributions of source code must retain the above copyright
+   notices, this list of conditions, and the disclaimer below.
+
+   - Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions, and the disclaimer below in the
+   documentation and/or other materials provided with the
+   distribution.
+
+   THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+   NONINFRINGEMENT. IN NO EVENT SHALL THE CONTRIBUTORS OR COPYRIGHT
+   HOLDERS BE LIABLE FOR ANY CLAIM, INDIRECT, INCIDENTAL, SPECIAL,
+   EXEMPLARY, OR CONSEQUENTIAL DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+   ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS WITH THE
+   SOFTWARE.
 */
 
 #pragma once
@@ -63,10 +88,9 @@ public:
                    Scalar* dft_ab,
                    const Scalar scaling);
 
-  template<typename S>
-  static S* alignedAlloc(int length);
-
   static void alignedFree(void* ptr);
+
+  static T * alignedAllocType(int length);
 
   static Scalar* alignedAllocScalar(int length);
 
@@ -125,6 +149,7 @@ class Setup<float>
 
 public:
   typedef float Scalar;
+  typedef float TType;
 
   Setup()
     : self(nullptr)
@@ -177,11 +202,16 @@ public:
     pffft_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
   }
 
-  template<typename S>
-  static S* allocate(int length)
+  static TType* allocateType(int length)
   {
-    const int bytes = sizeof(S) * length;
-    return static_cast<S*>(pffft_aligned_malloc(bytes));
+    const int bytes = sizeof(TType) * length;
+    return static_cast<TType*>(pffft_aligned_malloc(bytes));
+  }
+
+  static Scalar* allocate(int length)
+  {
+    const int bytes = sizeof(Scalar) * length;
+    return static_cast<Scalar*>(pffft_aligned_malloc(bytes));
   }
 };
 
@@ -192,6 +222,7 @@ class Setup<std::complex<float>>
 
 public:
   typedef float Scalar;
+  typedef std::complex<float> TType;
 
   Setup()
     : self(nullptr)
@@ -236,11 +267,16 @@ public:
     pffft_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
   }
 
-  template<typename S>
-  static S* allocate(const int length)
+  static TType* allocateType(int length)
   {
-    const int bytes = sizeof(S) * length;
-    return static_cast<S*>(pffft_aligned_malloc(bytes));
+    const int bytes = sizeof(TType) * length;
+    return static_cast<TType*>(pffft_aligned_malloc(bytes));
+  }
+
+  static Scalar* allocate(const int length)
+  {
+    const int bytes = sizeof(Scalar) * length;
+    return static_cast<Scalar*>(pffft_aligned_malloc(bytes));
   }
 };
 
@@ -251,6 +287,7 @@ class Setup<double>
 
 public:
   typedef double Scalar;
+  typedef double TType;
 
   Setup()
     : self(nullptr)
@@ -306,11 +343,16 @@ public:
     pffftd_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
   }
 
-  template<typename S>
-  static S* allocate(int length)
+  static TType* allocateType(int length)
   {
-    const int bytes = sizeof(S) * length;
-    return static_cast<S*>(pffftd_aligned_malloc(bytes));
+    const int bytes = sizeof(TType) * length;
+    return static_cast<TType*>(pffft_aligned_malloc(bytes));
+  }
+
+  static Scalar* allocate(int length)
+  {
+    const int bytes = sizeof(Scalar) * length;
+    return static_cast<Scalar*>(pffftd_aligned_malloc(bytes));
   }
 };
 
@@ -321,6 +363,7 @@ class Setup<std::complex<double>>
 
 public:
   typedef double Scalar;
+  typedef std::complex<double> TType;
 
   Setup()
     : self(nullptr)
@@ -373,11 +416,16 @@ public:
     pffftd_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
   }
 
-  template<typename S>
-  static S* allocate(int length)
+  static TType* allocateType(int length)
   {
-    const int bytes = sizeof(S) * length;
-    return static_cast<S*>(pffftd_aligned_malloc(bytes));
+    const int bytes = sizeof(TType) * length;
+    return static_cast<TType*>(pffft_aligned_malloc(bytes));
+  }
+
+  static Scalar* allocate(int length)
+  {
+    const int bytes = sizeof(Scalar) * length;
+    return static_cast<Scalar*>(pffftd_aligned_malloc(bytes));
   }
 };
 
@@ -507,26 +555,27 @@ Fft<T>::alignedFree(void* ptr)
   pffft_aligned_free(ptr);
 }
 
+
+template<typename T>
+inline T*
+pffft::Fft<T>::alignedAllocType(int length)
+{
+  return Setup<T>::allocateType(length);
+}
+
 template<typename T>
 inline typename pffft::Fft<T>::Scalar*
 pffft::Fft<T>::alignedAllocScalar(int length)
 {
-  return alignedAlloc<Scalar>(length);
+  return reinterpret_cast< Scalar* >( Setup<T>::allocate(length) );
 }
 
 template<typename T>
 inline std::complex<typename pffft::Fft<T>::Scalar>*
 Fft<T>::alignedAllocComplex(int length)
 {
-  return alignedAlloc<std::complex<Scalar>>(length);
-}
-
-template<typename T>
-template<typename S>
-inline S*
-Fft<T>::alignedAlloc(int length)
-{
-  return Setup<T>::allocate<S>(length);
+  return reinterpret_cast< std::complex<Scalar>* >( Setup<T>::allocate(2 * length) );
 }
 
 } // namespace pffft
+

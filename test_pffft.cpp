@@ -1,5 +1,7 @@
 /*
-  Copyright (c) 2013 Julien Pommier.
+  Copyright (c) 2013  Julien Pommier ( pommier@modartt.com )
+  Copyright (c) 2020  Dario Mambro ( dario.mambro@gmail.com )
+  Copyright (c) 2020  Hayati Ayguen ( h_ayguen@web.de )
 
   Small test & bench for PFFFT, comparing its performance with the scalar
   FFTPACK, FFTW, and Apple vDSP
@@ -53,19 +55,17 @@ template<typename T>
 bool
 Ttest(int N, bool useOrdered)
 {
-  using Fft = typename pffft::Fft<T>;
-  using Scalar = typename Fft::Scalar;
+  typedef typename pffft::Fft<T> Fft;
+  typedef typename Fft::Scalar Scalar;
 
-  bool cplx = std::is_same<T, std::complex<float>>::value ||
-              std::is_same<T, std::complex<double>>::value;
+  bool cplx = ( sizeof(T) == sizeof(std::complex<Scalar>) );
 
-  double EXPECTED_DYN_RANGE =
-    std::is_same<double, Scalar>::value ? 215.0 : 140.0;
+  double EXPECTED_DYN_RANGE = ( sizeof(double) == sizeof(Scalar) ) ? 215.0 : 140.0;
 
   int Nsca = (cplx ? N * 2 : N);
   int Ncplx = (cplx ? N : N / 2);
-  T* X = Fft::alignedAlloc<T>(Nsca);
-  T* Z = Fft::alignedAlloc<T>(Nsca);
+  T* X = Fft::alignedAllocType(Nsca);
+  T* Z = Fft::alignedAllocType(Nsca);
   Scalar* R = Fft::alignedAllocScalar(Nsca);
   std::complex<Scalar>* Y = Fft::alignedAllocComplex(Nsca);
   int k, j, m, iter, kmaxOther;
@@ -307,7 +307,7 @@ main(int argc, char** argv)
   }
 
   if (!resFFT)
-    printf("all pffft transform tests (FORWARD/BACKWARD, REAL/COMPLEX) "
+    printf("all pffft transform tests (FORWARD/BACKWARD, REAL/COMPLEX, float/double) "
            "succeeded successfully.\n");
 
   resAll = resNextPw2 | resIsPw2 | resFFT;
