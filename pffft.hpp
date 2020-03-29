@@ -152,7 +152,7 @@ public:
   typedef float TType;
 
   Setup()
-    : self(nullptr)
+    : self(NULL)
   {}
 
   void prepareLength(int length)
@@ -216,7 +216,7 @@ public:
 };
 
 template<>
-class Setup<std::complex<float>>
+class Setup< std::complex<float> >
 {
   PFFFT_Setup* self;
 
@@ -225,7 +225,7 @@ public:
   typedef std::complex<float> TType;
 
   Setup()
-    : self(nullptr)
+    : self(NULL)
   {}
 
   ~Setup() { pffft_destroy_setup(self); }
@@ -290,7 +290,7 @@ public:
   typedef double TType;
 
   Setup()
-    : self(nullptr)
+    : self(NULL)
   {}
 
   ~Setup() { pffftd_destroy_setup(self); }
@@ -299,7 +299,7 @@ public:
   {
     if (self) {
       pffftd_destroy_setup(self);
-      self = nullptr;
+      self = NULL;
     }
     if (length > 0) {
       self = pffftd_new_setup(length, PFFFT_REAL);
@@ -357,7 +357,7 @@ public:
 };
 
 template<>
-class Setup<std::complex<double>>
+class Setup< std::complex<double> >
 {
   PFFFTD_Setup* self;
 
@@ -366,7 +366,7 @@ public:
   typedef std::complex<double> TType;
 
   Setup()
-    : self(nullptr)
+    : self(NULL)
   {}
 
   ~Setup() { pffftd_destroy_setup(self); }
@@ -435,7 +435,7 @@ template<typename T>
 inline Fft<T>::Fft(int length, int stackThresholdLen)
   : length(0)
   , stackThresholdLen(stackThresholdLen)
-  , work(nullptr)
+  , work(NULL)
 {
   prepareLength(length);
 }
@@ -450,7 +450,7 @@ template<typename T>
 inline void
 Fft<T>::prepareLength(int newLength)
 {
-  const bool wasOnHeap = work != nullptr;
+  const bool wasOnHeap = ( work != NULL );
 
   const bool useHeap = newLength > stackThresholdLen;
 
@@ -464,7 +464,7 @@ Fft<T>::prepareLength(int newLength)
 
   if (work) {
     pffft_aligned_free(work);
-    work = nullptr;
+    work = NULL;
   }
 
   if (useHeap) {

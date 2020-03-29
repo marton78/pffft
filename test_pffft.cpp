@@ -235,10 +235,11 @@ bool
 test(int N, bool useComplex, bool useOrdered)
 {
   if (useComplex) {
-    return Ttest<std::complex<float>>(N, useOrdered) &&
-           Ttest<std::complex<double>>(N, useOrdered);
+    return Ttest< std::complex<float> >(N, useOrdered) &&
+           Ttest< std::complex<double> >(N, useOrdered);
   } else {
-    return Ttest<float>(N, useOrdered) && Ttest<double>(N, useOrdered);
+    return Ttest<float>(N, useOrdered) &&
+           Ttest<double>(N, useOrdered);
   }
 }
 
