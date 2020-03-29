@@ -10,8 +10,10 @@ option(USE_KISS  "use KissFFT in fft benchmark? - if exists in subdir" ON)
 option(USE_ASAN  "use GCC's address sanitizer?" OFF)
 
 
-set(CMAKE_C_STANDARD 90)
-set(CMAKE_C_EXTENSIONS ON)  # required for gcc function attribures (inline)
+# C90 requires the gcc extensions for function attributes like always_inline
+# C99 provides the function attributes: no gcc extensions required
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_EXTENSIONS OFF)
 
 set(CMAKE_CXX_STANDARD 98)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

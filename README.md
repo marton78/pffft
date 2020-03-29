@@ -67,22 +67,29 @@ more code than I planned..
 
 ## The code:
 
-Good old C:
-FFT API is very very simple, just make sure that you read the comments in `pffft.h`.
-Fast convolution API is also very simple, just make sure that you read the comments 
+### Good old C:
+The FFT API is very very simple, just make sure that you read the comments in `pffft.h`.
+
+The Fast convolution's API is also very simple, just make sure that you read the comments 
 in `pffastconv.h`.
 
+### C++:
+A simple C++ wrapper is available in `pffft.hpp`.
 
-C++: a simple C++ wrapper is available in `pffft.hpp`.
 
+### Git:
 This archive's source can be downloaded with git including the submodules:
-
 ```
-git clone --recursive https://github.com/hayguen/pffft.git`
+git clone --recursive https://github.com/hayguen/pffft.git
 ```
 
 With `--recursive` the submodules for Green and Kiss-FFT are also fetched,
 to use them in the benchmark. You can omit the `--recursive`-option.
+
+For retrieving the submodules later:
+```
+git submodule update --init
+```
 
 
 ## CMake:
