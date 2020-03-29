@@ -59,6 +59,16 @@
  */
 
 
+/* define own constants required to turn off g++ extensions .. */
+#ifndef M_PI
+  #define M_PI    3.14159265358979323846  /* pi */
+#endif
+
+#ifndef M_SQRT2
+  #define M_SQRT2 1.41421356237309504880  /* sqrt(2) */
+#endif
+
+
 /* detect bugs with the vector support macros */
 void FUNC_VALIDATE_SIMD() {
 #ifndef PFFFT_SIMD_DISABLE
@@ -435,7 +445,7 @@ static NEVER_INLINE(void) radf4_ps(int ido, int l1, const v4sf *RESTRICT cc, v4s
     const v4sf *RESTRICT cc_ = cc, * RESTRICT cc_end = cc + l1ido; 
     v4sf * RESTRICT ch_ = ch;
     while (cc < cc_end) {
-      // this loop represents between 25% and 40% of total radf4_ps cost !
+      /* this loop represents between 25% and 40% of total radf4_ps cost ! */
       v4sf a0 = cc[0], a1 = cc[l1ido];
       v4sf a2 = cc[2*l1ido], a3 = cc[3*l1ido];
       v4sf tr1 = VADD(a1, a3);
@@ -482,11 +492,11 @@ static NEVER_INLINE(void) radf4_ps(int ido, int l1, const v4sf *RESTRICT cc, v4s
         tr2 = VADD(pc[0],cr3);
         tr3 = VSUB(pc[0],cr3);
         ch[i - 1 + 4*k] = VADD(tr1,tr2);
-        ch[ic - 1 + 4*k + 3*ido] = VSUB(tr2,tr1); // at this point tr1 and tr2 can be disposed
+        ch[ic - 1 + 4*k + 3*ido] = VSUB(tr2,tr1); /* at this point tr1 and tr2 can be disposed */
         ti1 = VADD(ci2,ci4);
         ti4 = VSUB(ci2,ci4);
         ch[i - 1 + 4*k + 2*ido] = VADD(ti4,tr3);
-        ch[ic - 1 + 4*k + 1*ido] = VSUB(tr3,ti4); // dispose tr3, ti4
+        ch[ic - 1 + 4*k + 1*ido] = VSUB(tr3,ti4); /* dispose tr3, ti4 */
         ti2 = VADD(pc[1],ci3);
         ti3 = VSUB(pc[1],ci3);
         ch[i + 4*k] = VADD(ti1, ti2);
@@ -628,7 +638,7 @@ static void radf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT 
     ch_ref(1, 3, k) = VADD(SVMUL(ti11, ci5), SVMUL(ti12, ci4));
     ch_ref(ido, 4, k) = VADD(cc_ref(1, k, 1), VADD(SVMUL(tr12, cr2), SVMUL(tr11, cr3)));
     ch_ref(1, 5, k) = VSUB(SVMUL(ti12, ci5), SVMUL(ti11, ci4));
-    //printf("pffft: radf5, k=%d ch_ref=%f, ci4=%f\n", k, ch_ref(1, 5, k), ci4);
+    /* printf("pffft: radf5, k=%d ch_ref=%f, ci4=%f\n", k, ch_ref(1, 5, k), ci4); */
   }
   if (ido == 1) {
     return;
@@ -654,11 +664,11 @@ static void radf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT 
       cr4 = VSUB(di3, di4);
       ci3 = VADD(di3, di4);
       ch_ref(i - 1, 1, k) = VADD(cc_ref(i - 1, k, 1), VADD(cr2, cr3));
-      ch_ref(i, 1, k) = VSUB(cc_ref(i, k, 1), VADD(ci2, ci3));//
+      ch_ref(i, 1, k) = VSUB(cc_ref(i, k, 1), VADD(ci2, ci3));
       tr2 = VADD(cc_ref(i - 1, k, 1), VADD(SVMUL(tr11, cr2), SVMUL(tr12, cr3)));
-      ti2 = VSUB(cc_ref(i, k, 1), VADD(SVMUL(tr11, ci2), SVMUL(tr12, ci3)));//
+      ti2 = VSUB(cc_ref(i, k, 1), VADD(SVMUL(tr11, ci2), SVMUL(tr12, ci3)));
       tr3 = VADD(cc_ref(i - 1, k, 1), VADD(SVMUL(tr12, cr2), SVMUL(tr11, cr3)));
-      ti3 = VSUB(cc_ref(i, k, 1), VADD(SVMUL(tr12, ci2), SVMUL(tr11, ci3)));//
+      ti3 = VSUB(cc_ref(i, k, 1), VADD(SVMUL(tr12, ci2), SVMUL(tr11, ci3)));
       tr5 = VADD(SVMUL(ti11, cr5), SVMUL(ti12, cr4));
       ti5 = VADD(SVMUL(ti11, ci5), SVMUL(ti12, ci4));
       tr4 = VSUB(SVMUL(ti12, cr5), SVMUL(ti11, cr4));
@@ -1008,12 +1018,12 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
 
 struct SETUP_STRUCT {
   int     N;
-  int     Ncvec; // nb of complex simd vectors (N/4 if PFFFT_COMPLEX, N/8 if PFFFT_REAL)
+  int     Ncvec;  /* nb of complex simd vectors (N/4 if PFFFT_COMPLEX, N/8 if PFFFT_REAL) */
   int ifac[15];
   pffft_transform_t transform;
-  v4sf *data; // allocated room for twiddle coefs
-  float *e;    // points into 'data' , N/4*3 elements
-  float *twiddle; // points into 'data', N/4 elements
+  v4sf *data;     /* allocated room for twiddle coefs */
+  float *e;       /* points into 'data', N/4*3 elements */
+  float *twiddle; /* points into 'data', N/4 elements */
 };
 
 SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
@@ -1024,7 +1034,7 @@ SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
      handle other cases (or maybe just switch to a scalar fft, I don't know..) */
   if (transform == PFFFT_REAL) { assert((N%(2*SIMD_SZ*SIMD_SZ))==0 && N>0); }
   if (transform == PFFFT_COMPLEX) { assert((N%(SIMD_SZ*SIMD_SZ))==0 && N>0); }
-  //assert((N % 32) == 0);
+  /* assert((N % 32) == 0); */
   s->N = N;
   s->transform = transform;  
   /* nb of complex simd vectors */
@@ -1080,7 +1090,7 @@ static void reversed_copy(int N, const v4sf *in, int in_stride, v4sf *out) {
   int k;
   INTERLEAVE2(in[0], in[1], g0, g1); in += in_stride;
   
-  *--out = VSWAPHL(g0, g1); // [g0l, g0h], [g1l g1h] -> [g1l, g0h]
+  *--out = VSWAPHL(g0, g1); /* [g0l, g0h], [g1l g1h] -> [g1l, g0h] */
   for (k=1; k < N; ++k) {
     v4sf h0, h1;
     INTERLEAVE2(in[0], in[1], h0, h1); in += in_stride;
@@ -1146,7 +1156,7 @@ void FUNC_ZREORDER(SETUP_STRUCT *setup, const float *in, float *out, pffft_direc
 }
 
 void FUNC_CPLX_FINALIZE(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
-  int k, dk = Ncvec/SIMD_SZ; // number of 4x4 matrix blocks
+  int k, dk = Ncvec/SIMD_SZ; /* number of 4x4 matrix blocks */
   v4sf r0, i0, r1, i1, r2, i2, r3, i3;
   v4sf sr0, dr0, sr1, dr1, si0, di0, si1, di1;
   assert(in != out);
@@ -1190,7 +1200,7 @@ void FUNC_CPLX_FINALIZE(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
 }
 
 void FUNC_CPLX_PREPROCESS(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
-  int k, dk = Ncvec/SIMD_SZ; // number of 4x4 matrix blocks
+  int k, dk = Ncvec/SIMD_SZ; /* number of 4x4 matrix blocks */
   v4sf r0, i0, r1, i1, r2, i2, r3, i3;
   v4sf sr0, dr0, sr1, dr1, si0, di0, si1, di1;
   assert(in != out);
@@ -1245,15 +1255,15 @@ static ALWAYS_INLINE(void) FUNC_REAL_FINALIZE_4X4(const v4sf *in0, const v4sf *i
     [0   0   0   0  -1   1  -1   1]   [i3]    
   */
   
-  //cerr << "matrix initial, before e , REAL:\n 1: " << r0 << "\n 1: " << r1 << "\n 1: " << r2 << "\n 1: " << r3 << "\n";
-  //cerr << "matrix initial, before e, IMAG :\n 1: " << i0 << "\n 1: " << i1 << "\n 1: " << i2 << "\n 1: " << i3 << "\n";
+  /* cerr << "matrix initial, before e , REAL:\n 1: " << r0 << "\n 1: " << r1 << "\n 1: " << r2 << "\n 1: " << r3 << "\n"; */
+  /* cerr << "matrix initial, before e, IMAG :\n 1: " << i0 << "\n 1: " << i1 << "\n 1: " << i2 << "\n 1: " << i3 << "\n"; */
 
   VCPLXMUL(r1,i1,e[0],e[1]);
   VCPLXMUL(r2,i2,e[2],e[3]);
   VCPLXMUL(r3,i3,e[4],e[5]);
 
-  //cerr << "matrix initial, real part:\n 1: " << r0 << "\n 1: " << r1 << "\n 1: " << r2 << "\n 1: " << r3 << "\n";
-  //cerr << "matrix initial, imag part:\n 1: " << i0 << "\n 1: " << i1 << "\n 1: " << i2 << "\n 1: " << i3 << "\n";
+  /* cerr << "matrix initial, real part:\n 1: " << r0 << "\n 1: " << r1 << "\n 1: " << r2 << "\n 1: " << r3 << "\n"; */
+  /* cerr << "matrix initial, imag part:\n 1: " << i0 << "\n 1: " << i1 << "\n 1: " << i2 << "\n 1: " << i3 << "\n"; */
 
   sr0 = VADD(r0,r2); dr0 = VSUB(r0,r2); 
   sr1 = VADD(r1,r3); dr1 = VSUB(r3,r1);
@@ -1281,7 +1291,7 @@ static ALWAYS_INLINE(void) FUNC_REAL_FINALIZE_4X4(const v4sf *in0, const v4sf *i
 }
 
 static NEVER_INLINE(void) FUNC_REAL_FINALIZE(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
-  int k, dk = Ncvec/SIMD_SZ; // number of 4x4 matrix blocks
+  int k, dk = Ncvec/SIMD_SZ; /* number of 4x4 matrix blocks */
   /* fftpack order is f0r f1r f1i f2r f2i ... f(n-1)r f(n-1)i f(n)r */
 
   v4sf_union cr, ci, *uout = (v4sf_union*)out;
@@ -1374,7 +1384,7 @@ static ALWAYS_INLINE(void) FUNC_REAL_PREPROCESS_4X4(const v4sf *in,
 }
 
 static NEVER_INLINE(void) FUNC_REAL_PREPROCESS(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
-  int k, dk = Ncvec/SIMD_SZ; // number of 4x4 matrix blocks
+  int k, dk = Ncvec/SIMD_SZ; /* number of 4x4 matrix blocks */
   /* fftpack order is f0r f1r f1i f2r f2i ... f(n-1)r f(n-1)i f(n)r */
 
   v4sf_union Xr, Xi, *uout = (v4sf_union*)out;
@@ -1386,7 +1396,7 @@ static NEVER_INLINE(void) FUNC_REAL_PREPROCESS(int Ncvec, const v4sf *in, v4sf *
     Xi.f[k] = ((float*)in)[8*k+4];
   }
 
-  FUNC_REAL_PREPROCESS_4X4(in, e, out+1, 1); // will write only 6 values
+  FUNC_REAL_PREPROCESS_4X4(in, e, out+1, 1); /* will write only 6 values */
 
   /*
     [Xr0 Xr1 Xr2 Xr3 Xi0 Xi1 Xi2 Xi3]
@@ -1420,7 +1430,7 @@ void FUNC_TRANSFORM_INTERNAL(SETUP_STRUCT *setup, const float *finput, float *fo
   int k, Ncvec   = setup->Ncvec;
   int nf_odd = (setup->ifac[1] & 1);
 
-  // temporary buffer is allocated on the stack if the scratch pointer is NULL
+  /* temporary buffer is allocated on the stack if the scratch pointer is NULL */
   int stack_allocate = (scratch == 0 ? Ncvec*2 : 1);
   VLA_ARRAY_ON_STACK(v4sf, scratch_on_stack, stack_allocate);
 
@@ -1431,7 +1441,7 @@ void FUNC_TRANSFORM_INTERNAL(SETUP_STRUCT *setup, const float *finput, float *fo
 
   assert(VALIGNED(finput) && VALIGNED(foutput));
 
-  //assert(finput != foutput);
+  /* assert(finput != foutput); */
   if (direction == PFFFT_FORWARD) {
     ib = !ib;
     if (setup->transform == PFFFT_REAL) { 
@@ -1452,7 +1462,7 @@ void FUNC_TRANSFORM_INTERNAL(SETUP_STRUCT *setup, const float *finput, float *fo
     } else ib = !ib;
   } else {
     if (vinput == buff[ib]) { 
-      ib = !ib; // may happen when finput == foutput
+      ib = !ib; /* may happen when finput == foutput */
     }
     if (ordered) {
       FUNC_ZREORDER(setup, (float*)vinput, (float*)buff[ib], PFFFT_BACKWARD);
@@ -1522,7 +1532,9 @@ void FUNC_ZCONVOLVE_ACCUMULATE(SETUP_STRUCT *s, const float *a, const float *b, 
   abr = ((v4sf_union*)vab)[0].f[0];
   abi = ((v4sf_union*)vab)[1].f[0];
  
-#ifdef ZCONVOLVE_USING_INLINE_ASM // inline asm version, unfortunately miscompiled by clang 3.2, at least on ubuntu.. so this will be restricted to gcc
+#ifdef ZCONVOLVE_USING_INLINE_ASM
+  /* inline asm version, unfortunately miscompiled by clang 3.2,
+   * at least on ubuntu.. so this will be restricted to gcc */
   const float *a_ = a, *b_ = b; float *ab_ = ab;
   int N = Ncvec;
   asm volatile("mov         r8, %2                  \n"
@@ -1558,7 +1570,8 @@ void FUNC_ZCONVOLVE_ACCUMULATE(SETUP_STRUCT *s, const float *a, const float *b, 
                "subs        %3, #2                  \n"
                "bne         1b                      \n"
                : "+r"(a_), "+r"(b_), "+r"(ab_), "+r"(N) : "r"(scaling) : "r8", "q0","q1","q2","q3","q4","q5","q6","q7","q8","q9", "q10","q11","q12","q13","q15","memory");
-#else // default routine, works fine for non-arm cpus with current compilers
+#else
+  /* default routine, works fine for non-arm cpus with current compilers */
   for (i=0; i < Ncvec; i += 2) {
     v4sf ar, ai, br, bi;
     ar = va[2*i+0]; ai = va[2*i+1];
@@ -1634,9 +1647,9 @@ void FUNC_ZCONVOLVE_NO_ACCU(SETUP_STRUCT *s, const float *a, const float *b, flo
 }
 
 
-#else // defined(PFFFT_SIMD_DISABLE)
+#else /* defined(PFFFT_SIMD_DISABLE) */
 
-// standard routine using scalar floats, without SIMD stuff.
+/* standard routine using scalar floats, without SIMD stuff. */
 
 #define pffft_zreorder_nosimd FUNC_ZREORDER
 void pffft_zreorder_nosimd(SETUP_STRUCT *setup, const float *in, float *out, pffft_direction_t direction) {
@@ -1664,7 +1677,7 @@ void pffft_transform_internal_nosimd(SETUP_STRUCT *setup, const float *input, fl
   int Ncvec   = setup->Ncvec;
   int nf_odd = (setup->ifac[1] & 1);
 
-  // temporary buffer is allocated on the stack if the scratch pointer is NULL
+  /* temporary buffer is allocated on the stack if the scratch pointer is NULL */
   int stack_allocate = (scratch == 0 ? Ncvec*2 : 1);
   VLA_ARRAY_ON_STACK(v4sf, scratch_on_stack, stack_allocate);
   float *buff[2];
@@ -1672,7 +1685,7 @@ void pffft_transform_internal_nosimd(SETUP_STRUCT *setup, const float *input, fl
   if (scratch == 0) scratch = scratch_on_stack;
   buff[0] = output; buff[1] = scratch;
 
-  if (setup->transform == PFFFT_COMPLEX) ordered = 0; // it is always ordered.
+  if (setup->transform == PFFFT_COMPLEX) ordered = 0; /* it is always ordered. */
   ib = (nf_odd ^ ordered ? 1 : 0);
 
   if (direction == PFFFT_FORWARD) {
@@ -1688,7 +1701,7 @@ void pffft_transform_internal_nosimd(SETUP_STRUCT *setup, const float *input, fl
     }
   } else {    
     if (input == buff[ib]) { 
-      ib = !ib; // may happen when finput == foutput
+      ib = !ib; /* may happen when finput == foutput */
     }
     if (ordered) {
       FUNC_ZREORDER(setup, input, buff[!ib], PFFFT_BACKWARD); 
@@ -1704,7 +1717,7 @@ void pffft_transform_internal_nosimd(SETUP_STRUCT *setup, const float *input, fl
   }
   if (buff[ib] != output) {
     int k;
-    // extra copy required -- this situation should happens only when finput == foutput
+    /* extra copy required -- this situation should happens only when finput == foutput */
     assert(input==output);
     for (k=0; k < Ncvec; ++k) {
       float a = buff[ib][2*k], b = buff[ib][2*k+1];
@@ -1722,7 +1735,7 @@ void pffft_zconvolve_accumulate_nosimd(SETUP_STRUCT *s, const float *a, const fl
   int k; /* was i -- but always used "2*i" - except at for() */
 
   if (s->transform == PFFFT_REAL) {
-    // take care of the fftpack ordering
+    /* take care of the fftpack ordering */
     ab[0] += a[0]*b[0]*scaling;
     ab[NcvecMulTwo-1] += a[NcvecMulTwo-1]*b[NcvecMulTwo-1]*scaling;
     ++ab; ++a; ++b; NcvecMulTwo -= 2;
@@ -1744,7 +1757,7 @@ void pffft_zconvolve_no_accu_nosimd(SETUP_STRUCT *s, const float *a, const float
   int k; /* was i -- but always used "2*i" - except at for() */
 
   if (s->transform == PFFFT_REAL) {
-    // take care of the fftpack ordering
+    /* take care of the fftpack ordering */
     ab[0] += a[0]*b[0]*scaling;
     ab[NcvecMulTwo-1] += a[NcvecMulTwo-1]*b[NcvecMulTwo-1]*scaling;
     ++ab; ++a; ++b; NcvecMulTwo -= 2;
@@ -1760,7 +1773,7 @@ void pffft_zconvolve_no_accu_nosimd(SETUP_STRUCT *s, const float *a, const float
 }
 
 
-#endif // defined(PFFFT_SIMD_DISABLE)
+#endif /* defined(PFFFT_SIMD_DISABLE) */
 
 void FUNC_TRANSFORM_UNORDRD(SETUP_STRUCT *setup, const float *input, float *output, float *work, pffft_direction_t direction) {
   FUNC_TRANSFORM_INTERNAL(setup, input, output, (v4sf*)work, direction, 0);

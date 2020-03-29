@@ -41,6 +41,11 @@
 #include <string.h>
 #include <time.h>
 
+/* define own constants required to turn off g++ extensions .. */
+#ifndef M_PI
+  #define M_PI    3.14159265358979323846  /* pi */
+#endif
+
 /* maximum allowed phase error in degree */
 #define DEG_ERR_LIMIT 1E-4
 

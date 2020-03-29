@@ -69,11 +69,11 @@
 
 #include "pf_scalar_double.h"
 
-// shortcuts for complex multiplcations
+/* shortcuts for complex multiplcations */
 #define VCPLXMUL(ar,ai,br,bi) { v4sf tmp; tmp=VMUL(ar,bi); ar=VMUL(ar,br); ar=VSUB(ar,VMUL(ai,bi)); ai=VMUL(ai,br); ai=VADD(ai,tmp); }
 #define VCPLXMULCONJ(ar,ai,br,bi) { v4sf tmp; tmp=VMUL(ar,bi); ar=VMUL(ar,br); ar=VADD(ar,VMUL(ai,bi)); ai=VMUL(ai,br); ai=VSUB(ai,tmp); }
 #ifndef SVMUL
-// multiply a scalar with a vector
+/* multiply a scalar with a vector */
 #define SVMUL(f,v) VMUL(LD_PS1(f),v)
 #endif
 
@@ -123,10 +123,11 @@ static void Vvalidate_simd() {
          a2.f[0], a2.f[1], a2.f[2], a2.f[3], a3.f[0], a3.f[1], a3.f[2], a3.f[3]); 
   assertv4(a0, 0, 4, 8, 12); assertv4(a1, 1, 5, 9, 13); assertv4(a2, 2, 6, 10, 14); assertv4(a3, 3, 7, 11, 15);
 }
-#endif //!PFFFT_SIMD_DISABLE
+#endif /* !PFFFT_SIMD_DISABLE */
 
-/* SSE and co like 16-bytes aligned pointers */
-#define MALLOC_V4SF_ALIGNMENT 64 // with a 64-byte alignment, we are even aligned on L2 cache lines...
+/* SSE and co like 16-bytes aligned pointers
+ * with a 64-byte alignment, we are even aligned on L2 cache lines... */
+#define MALLOC_V4SF_ALIGNMENT 64
 
 static
 void *Valigned_malloc(size_t nb_bytes) {

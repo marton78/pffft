@@ -33,6 +33,10 @@
 #include <assert.h>
 #include <string.h>
 
+/* define own constants required to turn off g++ extensions .. */
+#ifndef M_PI
+  #define M_PI    3.14159265358979323846  /* pi */
+#endif
 
 /* EXPECTED_DYN_RANGE in dB:
  * single precision float has 24 bits mantissa

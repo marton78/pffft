@@ -82,7 +82,7 @@
 #ifndef PFFFT_DOUBLE_H
 #define PFFFT_DOUBLE_H
 
-#include <stddef.h> // for size_t
+#include <stddef.h> /* for size_t */
 
 #ifdef __cplusplus
 extern "C" {

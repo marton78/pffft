@@ -11,7 +11,7 @@ option(USE_ASAN  "use GCC's address sanitizer?" OFF)
 
 
 set(CMAKE_C_STANDARD 90)
-set(CMAKE_C_EXTENSIONS ON)  # required for M_PI and M_SQRT2
+set(CMAKE_C_EXTENSIONS ON)  # required for gcc function attribures (inline)
 
 set(CMAKE_CXX_STANDARD 98)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

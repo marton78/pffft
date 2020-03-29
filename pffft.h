@@ -77,7 +77,7 @@
 #ifndef PFFFT_H
 #define PFFFT_H
 
-#include <stddef.h> // for size_t
+#include <stddef.h> /* for size_t */
 
 #ifdef __cplusplus
 extern "C" {

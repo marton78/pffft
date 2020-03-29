@@ -26,7 +26,7 @@
    CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS WITH THE
    SOFTWARE.
 */
-   
+
 /*
    PFFASTCONV : a Pretty Fast Fast Convolution
 
@@ -50,7 +50,7 @@
 #ifndef PFFASTCONV_H
 #define PFFASTCONV_H
 
-#include <stddef.h> // for size_t
+#include <stddef.h> /* for size_t */
 #include "pffft.h"
 
 

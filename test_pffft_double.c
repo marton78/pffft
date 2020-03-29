@@ -37,6 +37,10 @@ Note: adapted for double precision dynamic range version.
 #include <assert.h>
 #include <string.h>
 
+/* define own constants required to turn off g++ extensions .. */
+#ifndef M_PI
+  #define M_PI    3.14159265358979323846  /* pi */
+#endif
 
 #define EXPECTED_DYN_RANGE  215.0
 

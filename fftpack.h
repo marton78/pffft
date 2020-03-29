@@ -49,7 +49,7 @@
 extern "C" {
 #endif
 
-// just define FFTPACK_DOUBLE_PRECISION if you want to build it as a double precision fft
+/* just define FFTPACK_DOUBLE_PRECISION if you want to build it as a double precision fft */
 
 #ifndef FFTPACK_DOUBLE_PRECISION
   typedef float fftpack_real;

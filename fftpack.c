@@ -66,6 +66,16 @@ static real c_abs(f77complex *c) { return sqrt(c->r*c->r + c->i*c->i); }
 static double dmax(double a, double b) { return a < b ? b : a; }
 #endif
 
+/* define own constants required to turn off g++ extensions .. */
+#ifndef M_PI
+  #define M_PI    3.14159265358979323846  /* pi */
+#endif
+
+#ifndef M_SQRT2
+  #define M_SQRT2 1.41421356237309504880  /* sqrt(2) */
+#endif
+
+
 /* translated by f2c (version 20061008), and slightly edited */
 
 static void passfb(integer *nac, integer ido, integer ip, integer l1, integer idl1, 
@@ -3109,4 +3119,4 @@ int main(void)
 
   return all_ok ? 0 : 1;
 }
-#endif //TESTING_FFTPACK
+#endif /* TESTING_FFTPACK */
