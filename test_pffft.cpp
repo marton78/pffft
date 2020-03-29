@@ -63,16 +63,10 @@ Ttest(int N, bool useOrdered)
   typedef typename pffft::Fft<T> Fft;
   typedef typename Fft::Scalar Scalar;
 
-  bool cplx = ( sizeof(T) == sizeof(std::complex<Scalar>) );
+  const bool cplx = Fft::isComplexTransform();
 
-  double EXPECTED_DYN_RANGE = ( sizeof(double) == sizeof(Scalar) ) ? 215.0 : 140.0;
+  const double EXPECTED_DYN_RANGE = Fft::isDoubleScalar() ? 215.0 : 140.0;
 
-  int Nsca = (cplx ? N * 2 : N);
-  int Ncplx = (cplx ? N : N / 2);
-  T* X = Fft::alignedAllocType(Nsca);
-  T* Z = Fft::alignedAllocType(Nsca);
-  Scalar* R = Fft::alignedAllocScalar(Nsca);
-  std::complex<Scalar>* Y = Fft::alignedAllocComplex(Nsca);
   int k, j, m, iter, kmaxOther;
   bool retError = false;
   double freq, dPhi, phi, phi0;
@@ -81,11 +75,18 @@ Ttest(int N, bool useOrdered)
 
   assert(pffft::isPowerOfTwo(N));
 
-  Fft fft = Fft(N);
+  Fft fft = Fft(N);  // instantiate and prepareLength() for length N
 
-  Scalar* Xs = reinterpret_cast<Scalar*>(X);
-  Scalar* Ys = reinterpret_cast<Scalar*>(Y);
-  Scalar* Zs = reinterpret_cast<Scalar*>(Z);
+  T* X = fft.allocateOrigin();                      // for X = input vector
+  std::complex<Scalar>* Y = fft.allocateSpectrum(); // for Y = forward(X)
+  Scalar* R = fft.allocateInternalLayout();         // for R = forwardInternalLayout(X)
+  T* Z = fft.allocateOrigin();                      // for Z = inverse(Y) = inverse( forward(X) )
+                                                    //  or Z = inverseInternalLayout(R)
+
+  // work with complex - without the capabilities of a higher c++ standard
+  Scalar* Xs = reinterpret_cast<Scalar*>(X); // for X = input vector
+  Scalar* Ys = reinterpret_cast<Scalar*>(Y); // for Y = forward(X)
+  Scalar* Zs = reinterpret_cast<Scalar*>(Z); // for Z = inverse(Y) = inverse( forward(X) )
 
   for (k = m = 0; k < (cplx ? N : (1 + N / 2)); k += N / 16, ++m) {
     amp = ((m % 3) == 0) ? 1.0F : 1.1F;
@@ -122,7 +123,7 @@ Ttest(int N, bool useOrdered)
         fft.forward(X, Y);
       else {
         fft.forwardInternalLayout(X, R); /* temporarily use R for reordering */
-        fft.reorderSpectrum(R, Y, PFFFT_FORWARD);
+        fft.reorderSpectrum(R, Y, PFFFT_FORWARD);  /* reorder into Y[] for power calculations */
       }
 
       pwrOther = -1.0;
@@ -204,12 +205,15 @@ Ttest(int N, bool useOrdered)
       }
 
       /* now convert spectrum back */
-      fft.inverse(Y, Z);
+      if (useOrdered)
+        fft.inverse(Y, Z);
+      else
+        fft.inverseInternalLayout(R, Z);  /* inverse() from internal Layout */
 
       errSum = 0.0;
       for (j = 0; j < (cplx ? (2 * N) : N); ++j) {
         /* scale back */
-        Z[j] /= N;
+        Zs[j] /= N;
         /* square sum errors over real (and imag parts) */
         err = (Xs[j] - Zs[j]) * (Xs[j] - Zs[j]);
         errSum += err;
@@ -232,6 +236,7 @@ Ttest(int N, bool useOrdered)
   pffft::alignedFree(X);
   pffft::alignedFree(Y);
   pffft::alignedFree(Z);
+  pffft::alignedFree(R);
 
   return retError;
 }

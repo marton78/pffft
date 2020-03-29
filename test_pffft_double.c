@@ -61,6 +61,7 @@ int test(int N, int cplx, int useOrdered) {
   int Ndouble = (cplx ? N*2 : N);
   double *X = pffftd_aligned_malloc((unsigned)Ndouble * sizeof(double));
   double *Y = pffftd_aligned_malloc((unsigned)Ndouble * sizeof(double));
+  double *R = pffftd_aligned_malloc((unsigned)Ndouble * sizeof(double));
   double *Z = pffftd_aligned_malloc((unsigned)Ndouble * sizeof(double));
   double *W = pffftd_aligned_malloc((unsigned)Ndouble * sizeof(double));
   int k, j, m, iter, kmaxOther, retError = 0;
@@ -115,8 +116,8 @@ int test(int N, int cplx, int useOrdered) {
         pffftd_transform_ordered(s, X, Y, W, PFFFT_FORWARD );
       else
       {
-        pffftd_transform(s, X, Z, W, PFFFT_FORWARD );  /* temporarily use Z for reordering */
-        pffftd_zreorder(s, Z, Y, PFFFT_FORWARD );
+        pffftd_transform(s, X, R, W, PFFFT_FORWARD );  /* use R for reordering */
+        pffftd_zreorder(s, R, Y, PFFFT_FORWARD ); /* reorder into Y[] for power calculations */
       }
 
       pwrOther = -1.0;
@@ -175,7 +176,10 @@ int test(int N, int cplx, int useOrdered) {
 
 
       /* now convert spectrum back */
-      pffftd_transform_ordered(s, Y, Z, W, PFFFT_BACKWARD);
+      if (useOrdered)
+        pffftd_transform_ordered(s, Y, Z, W, PFFFT_BACKWARD);
+      else
+        pffftd_transform(s, R, Z, W, PFFFT_BACKWARD);
 
       errSum = 0.0;
       for ( j = 0; j < (cplx ? (2*N) : N); ++j )
@@ -201,6 +205,7 @@ int test(int N, int cplx, int useOrdered) {
   pffftd_aligned_free(X);
   pffftd_aligned_free(Y);
   pffftd_aligned_free(Z);
+  pffftd_aligned_free(R);
   pffftd_aligned_free(W);
 
   return retError;

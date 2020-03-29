@@ -56,6 +56,7 @@ class Fft
 {
 public:
   typedef typename Setup<T>::Scalar Scalar;
+  typedef T TType;
 
   Fft(int length, int stackThresholdLen = 4096);
 
@@ -87,6 +88,25 @@ public:
                    const Scalar* dft_b,
                    Scalar* dft_ab,
                    const Scalar scaling);
+
+
+  int getSpectrumSize() const { return isComplexTransform() ? length : ( length / 2 ); }
+
+  int getInternalLayoutSize() const { return isComplexTransform() ? ( 2 * length ) : length; }
+
+
+  T* allocateOrigin() const { return alignedAllocType(length); }
+
+  std::complex<Scalar>* allocateSpectrum() const { return alignedAllocComplex( getSpectrumSize() ); }
+
+  Scalar* allocateInternalLayout() const { return alignedAllocScalar( getInternalLayoutSize() ); }
+
+
+  static bool isComplexTransform() { return sizeof(T) != sizeof(Scalar); }
+
+  static bool isFloatScalar() { return sizeof(Scalar) == sizeof(float); }
+
+  static bool isDoubleScalar() { return sizeof(Scalar) == sizeof(double); }
 
   static void alignedFree(void* ptr);
 
