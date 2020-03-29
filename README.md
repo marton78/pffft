@@ -1,4 +1,4 @@
-# PFFFT: a pretty fast FFT.
+# PFFFT: a pretty fast FFT and fast convolution with PFFASTCONV
 
 ## TL;DR
 
@@ -7,6 +7,10 @@ complex vectors. It tries do it fast, it tries to be correct, and it
 tries to be small. Computations do take advantage of SSE1 instructions
 on x86 cpus, Altivec on powerpc cpus, and NEON on ARM cpus. The
 license is BSD-like.
+
+
+PFFASTCONV does fast convolution (FIR filtering), of single precision 
+real vectors, utilizing the PFFFT library. The license is BSD-like.
 
 
 ## Why does it exist:
@@ -63,8 +67,13 @@ more code than I planned..
 
 ## The code:
 
-Only two files, in good old C, `pffft.c` and `pffft.h`. The API is very
-very simple, just make sure that you read the comments in `pffft.h`.
+Good old C:
+FFT API is very very simple, just make sure that you read the comments in `pffft.h`.
+Fast convolution API is also very simple, just make sure that you read the comments 
+in `pffastconv.h`.
+
+
+C++: a simple C++ wrapper is available in `pffft.hpp`.
 
 This archive's source can be downloaded with git including the submodules:
 
@@ -77,10 +86,9 @@ to use them in the benchmark. You can omit the `--recursive`-option.
 
 
 ## CMake:
-The core are still the 2 files; that's everything you need.
-There's now CMake support to build the static library `libPFFFT.a` from
-these files, plus the additional `libFFTPACK.a` library. Later one's
-sources are there anyway for the benchmark.
+There's now CMake support to build the static libraries `libPFFFT.a` 
+and `libPFFASTCONV.a` from the source files, plus the additional 
+`libFFTPACK.a` library. Later one's sources are there anyway for the benchmark.
 
 
 ## Comparison with other FFTs:
