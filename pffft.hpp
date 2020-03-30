@@ -52,6 +52,12 @@ template<typename T>
 class Setup;
 }
 
+#if __cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1900)
+
+template<typename T>
+using AlignedVector = typename std::vector< T, PFAlloc<T> > ;
+
+#endif
 
 // T can be float, double, std::complex<float> or std::complex<double>
 template<typename T>
@@ -61,9 +67,20 @@ public:
   typedef typename Setup<T>::Scalar Scalar;
   typedef T value_type;
 
+#if __cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1900)
+
+  using ValueVector = AlignedVector<T>;
+  using ComplexVector = AlignedVector<std::complex<Scalar>>;
+  using InternalLayoutVector = AlignedVector<Scalar>;
+
+#else
+  
   typedef std::vector< T, PFAlloc<T> > ValueVector;
   typedef std::vector< std::complex<Scalar>, PFAlloc< std::complex<Scalar> > > ComplexVector;
   typedef std::vector< Scalar, PFAlloc<Scalar> > InternalLayoutVector;
+
+#endif
+
 
   // static retrospection functions
 

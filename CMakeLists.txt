@@ -138,6 +138,12 @@ add_executable( test_pffft_cpp test_pffft.cpp )
 target_compile_definitions(test_pffft_cpp PRIVATE _USE_MATH_DEFINES)
 target_link_libraries( test_pffft_cpp  PFFFT ${ASANLIB} )
 
+add_executable( test_pffft_cpp_11 test_pffft.cpp )
+target_compile_definitions(test_pffft_cpp_11 PRIVATE _USE_MATH_DEFINES)
+target_link_libraries( test_pffft_cpp_11  PFFFT ${ASANLIB} )
+
+set_property(TARGET test_pffft_cpp_11 PROPERTY CXX_STANDARD 11)
+set_property(TARGET test_pffft_cpp_11 PROPERTY CXX_STANDARD_REQUIRED ON)
 
 add_executable(test_pffastconv   test_pffastconv.c )
 target_compile_definitions(test_pffastconv PRIVATE _USE_MATH_DEFINES)
