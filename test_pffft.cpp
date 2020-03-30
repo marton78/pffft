@@ -77,12 +77,22 @@ Ttest(int N, bool useOrdered)
 
   Fft fft = Fft(N);  // instantiate and prepareLength() for length N
 
-  // with C++11 and auto - this gets a bit easier
+#if __cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1900)
+
+  pffft::AlignedVector<T> X = fft.valueVector(); // for X = input vector
+  pffft::AlignedVector<std::complex<Scalar>> Y = fft.spectrumVector(); // for Y = forward(X)
+  pffft::AlignedVector<Scalar> R = fft.internalLayoutVector();         // for R = forwardInternalLayout(X)
+  pffft::AlignedVector<T> Z = fft.valueVector();   // for Z = inverse(Y) = inverse( forward(X) )
+                                                   //  or Z = inverseInternalLayout(R)
+#else
+
+// with C++11 and auto - this gets a bit easier
   typename Fft::ValueVector   X = fft.valueVector();     // for X = input vector
   typename Fft::ComplexVector Y = fft.spectrumVector();  // for Y = forward(X)
   typename Fft::InternalLayoutVector R = fft.internalLayoutVector(); // for R = forwardInternalLayout(X)
   typename Fft::ValueVector   Z = fft.valueVector();     // for Z = inverse(Y) = inverse( forward(X) )
                                                          //  or Z = inverseInternalLayout(R)
+#endif
 
   // work with complex - without the capabilities of a higher c++ standard
   Scalar* Xs = reinterpret_cast<Scalar*>(X.data()); // for X = input vector
