@@ -44,18 +44,32 @@ namespace pffft {
 // enum { PFFFT_REAL, PFFFT_COMPLEX }
 typedef pffft_transform_t TransformType;
 
-template<typename T>
-class PFAlloc;
+// helper to define 'Scalar' and 'Complex' (in namespace pffft)
+template<typename T> struct Types {};
+template<> struct Types<float>  { typedef float  Scalar; typedef std::complex<Scalar> Complex; };
+template<> struct Types<double> { typedef double Scalar; typedef std::complex<Scalar> Complex; };
+template<> struct Types< std::complex<float> >  { typedef float  Scalar; typedef std::complex<float>  Complex; };
+template<> struct Types< std::complex<double> > { typedef double Scalar; typedef std::complex<double> Complex; };
+
+// Allocator
+template<typename T> class PFAlloc;
 
 namespace {
-template<typename T>
-class Setup;
+  template<typename T> class Setup;
 }
 
-#if __cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1900)
+#if (__cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1900))
 
 template<typename T>
-using AlignedVector = typename std::vector< T, PFAlloc<T> > ;
+using AlignedVector = typename std::vector< T, PFAlloc<T> >;
+
+#else
+
+template <typename T>
+struct AlignedVector : public std::vector< T, PFAlloc<T> > {
+  AlignedVector() : std::vector< T, PFAlloc<T> >() { }
+  AlignedVector(int N) : std::vector< T, PFAlloc<T> >(N) { }
+};
 
 #endif
 
@@ -64,23 +78,9 @@ template<typename T>
 class Fft
 {
 public:
-  typedef typename Setup<T>::Scalar Scalar;
   typedef T value_type;
-
-#if __cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1900)
-
-  using ValueVector = AlignedVector<T>;
-  using ComplexVector = AlignedVector<std::complex<Scalar>>;
-  using InternalLayoutVector = AlignedVector<Scalar>;
-
-#else
-  
-  typedef std::vector< T, PFAlloc<T> > ValueVector;
-  typedef std::vector< std::complex<Scalar>, PFAlloc< std::complex<Scalar> > > ComplexVector;
-  typedef std::vector< Scalar, PFAlloc<Scalar> > InternalLayoutVector;
-
-#endif
-
+  typedef typename Types<T>::Scalar  Scalar;
+  typedef typename Types<T>::Complex Complex;
 
   // static retrospection functions
 
@@ -117,11 +117,11 @@ public:
   ////
   ////////////////////////////////////////////
 
-  ValueVector valueVector() const { return ValueVector(length); }
+  AlignedVector<T> valueVector() const { return AlignedVector<T>(length); }
 
-  ComplexVector spectrumVector() const { return ComplexVector( getSpectrumSize() ); }
+  AlignedVector<Complex> spectrumVector() const { return AlignedVector<Complex>( getSpectrumSize() ); }
 
-  InternalLayoutVector internalLayoutVector() const { return InternalLayoutVector( getInternalLayoutSize() ); }
+  AlignedVector<Scalar> internalLayoutVector() const { return AlignedVector<Scalar>( getInternalLayoutSize() ); }
 
   ////////////////////////////////////////////
   // although using Vectors for output ..
@@ -129,10 +129,10 @@ public:
 
   // core API, having the spectrum in canonical order
 
-  ComplexVector& forward(const ValueVector& input, ComplexVector& spectrum)
+  AlignedVector<Complex> & forward(const AlignedVector<T> & input, AlignedVector<Complex> & spectrum)
     { forward( input.data(), spectrum.data() ); return spectrum; }
 
-  ValueVector& inverse(const ComplexVector& spectrum, ValueVector& output)
+  AlignedVector<T> & inverse(const AlignedVector<Complex> & spectrum, AlignedVector<T> & output)
     { inverse( spectrum.data(), output.data() ); return output; }
 
   // provide additional functions with spectrum in some internal Layout.
@@ -140,36 +140,36 @@ public:
   // these are useful in special applications, like fast convolution,
   // where inverse() is following anyway ..
 
-  InternalLayoutVector& forwardToInternalLayout(
-          const ValueVector& input,
-          InternalLayoutVector& spectrum_internal_layout
+  AlignedVector<Scalar> & forwardToInternalLayout(
+          const AlignedVector<T> & input,
+          AlignedVector<Scalar> & spectrum_internal_layout
         )
     { forwardToInternalLayout( input.data(), spectrum_internal_layout.data() ); return spectrum_internal_layout; }
 
-  ValueVector& inverseFromInternalLayout(
-          const InternalLayoutVector& spectrum_internal_layout,
-          ValueVector& output
+  AlignedVector<T> & inverseFromInternalLayout(
+          const AlignedVector<Scalar> & spectrum_internal_layout,
+          AlignedVector<T> & output
         )
     { inverseFromInternalLayout( spectrum_internal_layout.data(), output.data() ); return output; }
 
   void reorderSpectrum(
-          const InternalLayoutVector& input,
-          ComplexVector &output
+          const AlignedVector<Scalar> & input,
+          AlignedVector<Complex> & output
         )
     { reorderSpectrum( input.data(), output.data() ); }
 
-  InternalLayoutVector& convolveAccumulate(
-          const InternalLayoutVector& spectrum_internal_a,
-          const InternalLayoutVector& spectrum_internal_b,
-          InternalLayoutVector& spectrum_internal_ab,
+  AlignedVector<Scalar> & convolveAccumulate(
+          const AlignedVector<Scalar> & spectrum_internal_a,
+          const AlignedVector<Scalar> & spectrum_internal_b,
+          AlignedVector<Scalar> & spectrum_internal_ab,
           const Scalar scaling
         )
     { convolveAccumulate( spectrum_internal_a.data(), spectrum_internal_b.data(), spectrum_internal_ab.data(), scaling ); return spectrum_internal_ab; }
 
-  InternalLayoutVector& convolve(
-          const InternalLayoutVector& spectrum_internal_a,
-          const InternalLayoutVector& spectrum_internal_b,
-          InternalLayoutVector& spectrum_internal_ab,
+  AlignedVector<Scalar> & convolve(
+          const AlignedVector<Scalar> & spectrum_internal_a,
+          const AlignedVector<Scalar> & spectrum_internal_b,
+          AlignedVector<Scalar> & spectrum_internal_ab,
           const Scalar scaling
         )
     { convolve( spectrum_internal_a.data(), spectrum_internal_b.data(), spectrum_internal_ab.data(), scaling ); return spectrum_internal_ab; }
@@ -193,13 +193,13 @@ public:
 
   static Scalar* alignedAllocScalar(int length);
 
-  static std::complex<Scalar>* alignedAllocComplex(int length);
+  static Complex* alignedAllocComplex(int length);
 
   // core API, having the spectrum in canonical order
 
-  std::complex<Scalar>* forward(const T* input, std::complex<Scalar>* spectrum);
+  Complex* forward(const T* input, Complex* spectrum);
 
-  T* inverse(const std::complex<Scalar>* spectrum, T* output);
+  T* inverse(const Complex* spectrum, T* output);
 
 
   // provide additional functions with spectrum in some internal Layout.
@@ -212,7 +212,7 @@ public:
 
   T* inverseFromInternalLayout(const Scalar* spectrum_internal_layout, T* output);
 
-  void reorderSpectrum(const Scalar* input, std::complex<Scalar>* output );
+  void reorderSpectrum(const Scalar* input, Complex* output );
 
   Scalar* convolveAccumulate(const Scalar* spectrum_internal_a,
                              const Scalar* spectrum_internal_b,
@@ -276,7 +276,7 @@ alignedFree(void* ptr)
 namespace {
 
 template<typename T>
-struct Setup
+class Setup
 {};
 
 template<>
@@ -285,8 +285,8 @@ class Setup<float>
   PFFFT_Setup* self;
 
 public:
-  typedef float Scalar;
   typedef float value_type;
+  typedef Types< value_type >::Scalar Scalar;
 
   Setup()
     : self(NULL)
@@ -358,8 +358,8 @@ class Setup< std::complex<float> >
   PFFFT_Setup* self;
 
 public:
-  typedef float Scalar;
   typedef std::complex<float> value_type;
+  typedef Types< value_type >::Scalar Scalar;
 
   Setup()
     : self(NULL)
@@ -423,8 +423,8 @@ class Setup<double>
   PFFFTD_Setup* self;
 
 public:
-  typedef double Scalar;
   typedef double value_type;
+  typedef Types< value_type >::Scalar Scalar;
 
   Setup()
     : self(NULL)
@@ -499,8 +499,8 @@ class Setup< std::complex<double> >
   PFFFTD_Setup* self;
 
 public:
-  typedef double Scalar;
   typedef std::complex<double> value_type;
+  typedef Types< value_type >::Scalar Scalar;
 
   Setup()
     : self(NULL)
@@ -611,8 +611,8 @@ Fft<T>::prepareLength(int newLength)
 }
 
 template<typename T>
-inline std::complex<typename Fft<T>::Scalar>*
-Fft<T>::forward(const T* input, std::complex<Scalar>* spectrum)
+inline typename Fft<T>::Complex *
+Fft<T>::forward(const T* input, Complex * spectrum)
 {
   setup.transform_ordered(reinterpret_cast<const Scalar*>(input),
                           reinterpret_cast<Scalar*>(spectrum),
@@ -623,7 +623,7 @@ Fft<T>::forward(const T* input, std::complex<Scalar>* spectrum)
 
 template<typename T>
 inline T*
-Fft<T>::inverse(std::complex<Scalar> const* spectrum, T* output)
+Fft<T>::inverse(Complex const* spectrum, T* output)
 {
   setup.transform_ordered(reinterpret_cast<const Scalar*>(spectrum),
                           reinterpret_cast<Scalar*>(output),
@@ -656,7 +656,7 @@ Fft<T>::inverseFromInternalLayout(const Scalar* spectrum_internal_layout, T* out
 
 template<typename T>
 inline void
-Fft<T>::reorderSpectrum( const Scalar* input, std::complex<Scalar>* output )
+Fft<T>::reorderSpectrum( const Scalar* input, Complex* output )
 {
   setup.reorder(input, reinterpret_cast<Scalar*>(output), PFFFT_FORWARD);
 }
@@ -706,10 +706,10 @@ pffft::Fft<T>::alignedAllocScalar(int length)
 }
 
 template<typename T>
-inline std::complex<typename pffft::Fft<T>::Scalar>*
+inline typename Fft<T>::Complex *
 Fft<T>::alignedAllocComplex(int length)
 {
-  return reinterpret_cast< std::complex<Scalar>* >( Setup<T>::allocate(2 * length) );
+  return reinterpret_cast< Complex* >( Setup<T>::allocate(2 * length) );
 }
 
 

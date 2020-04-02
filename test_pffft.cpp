@@ -60,18 +60,12 @@ template<typename T>
 bool
 Ttest(int N, bool useOrdered)
 {
-  typedef typename pffft::Fft<T> Fft;
-  typedef typename Fft::Scalar Scalar;
+  typedef pffft::Fft<T> Fft;
+  typedef typename pffft::Fft<T>::Scalar  FftScalar;
+  typedef typename Fft::Complex FftComplex;
 
-  const bool cplx = Fft::isComplexTransform();
-
+  const bool cplx = pffft::Fft<T>::isComplexTransform();
   const double EXPECTED_DYN_RANGE = Fft::isDoubleScalar() ? 215.0 : 140.0;
-
-  int k, j, m, iter, kmaxOther;
-  bool retError = false;
-  double freq, dPhi, phi, phi0;
-  double pwr, pwrCar, pwrOther, err, errSum, mag, expextedMag;
-  double amp = 1.0;
 
   assert(pffft::isPowerOfTwo(N));
 
@@ -79,25 +73,33 @@ Ttest(int N, bool useOrdered)
 
 #if __cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1900)
 
-  pffft::AlignedVector<T> X = fft.valueVector(); // for X = input vector
-  pffft::AlignedVector<std::complex<Scalar>> Y = fft.spectrumVector(); // for Y = forward(X)
-  pffft::AlignedVector<Scalar> R = fft.internalLayoutVector();         // for R = forwardInternalLayout(X)
-  pffft::AlignedVector<T> Z = fft.valueVector();   // for Z = inverse(Y) = inverse( forward(X) )
-                                                   //  or Z = inverseInternalLayout(R)
+  // possible ways to declare/instatiate aligned vectors with C++11
+  //   some lines require a typedef of above
+  auto X = fft.valueVector();                    // for X = input vector
+  pffft::AlignedVector<typename Fft::Complex> Y = fft.spectrumVector();  // for Y = forward(X)
+  pffft::AlignedVector<FftScalar> R = fft.internalLayoutVector(); // for R = forwardInternalLayout(X)
+  pffft::AlignedVector<T> Z = fft.valueVector(); // for Z = inverse(Y) = inverse( forward(X) )
+                                                 //  or Z = inverseInternalLayout(R)
 #else
 
-// with C++11 and auto - this gets a bit easier
-  typename Fft::ValueVector   X = fft.valueVector();     // for X = input vector
-  typename Fft::ComplexVector Y = fft.spectrumVector();  // for Y = forward(X)
-  typename Fft::InternalLayoutVector R = fft.internalLayoutVector(); // for R = forwardInternalLayout(X)
-  typename Fft::ValueVector   Z = fft.valueVector();     // for Z = inverse(Y) = inverse( forward(X) )
-                                                         //  or Z = inverseInternalLayout(R)
+  // possible ways to declare/instatiate aligned vectors with C++98
+  pffft::AlignedVector<T> X = fft.valueVector();     // for X = input vector
+  pffft::AlignedVector<FftComplex>   Y = fft.spectrumVector();  // for Y = forward(X)
+  pffft::AlignedVector<typename Fft::Scalar>  R = fft.internalLayoutVector(); // for R = forwardInternalLayout(X)
+  pffft::AlignedVector<T> Z = fft.valueVector();     // for Z = inverse(Y) = inverse( forward(X) )
+                                                     //  or Z = inverseInternalLayout(R)
 #endif
 
   // work with complex - without the capabilities of a higher c++ standard
-  Scalar* Xs = reinterpret_cast<Scalar*>(X.data()); // for X = input vector
-  Scalar* Ys = reinterpret_cast<Scalar*>(Y.data()); // for Y = forward(X)
-  Scalar* Zs = reinterpret_cast<Scalar*>(Z.data()); // for Z = inverse(Y) = inverse( forward(X) )
+  FftScalar* Xs = reinterpret_cast<FftScalar*>(X.data()); // for X = input vector
+  FftScalar* Ys = reinterpret_cast<FftScalar*>(Y.data()); // for Y = forward(X)
+  FftScalar* Zs = reinterpret_cast<FftScalar*>(Z.data()); // for Z = inverse(Y) = inverse( forward(X) )
+
+  int k, j, m, iter, kmaxOther;
+  bool retError = false;
+  double freq, dPhi, phi, phi0;
+  double pwr, pwrCar, pwrOther, err, errSum, mag, expextedMag;
+  double amp = 1.0;
 
   for (k = m = 0; k < (cplx ? N : (1 + N / 2)); k += N / 16, ++m) {
     amp = ((m % 3) == 0) ? 1.0F : 1.1F;
