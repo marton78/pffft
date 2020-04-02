@@ -84,7 +84,7 @@ public:
 
   // static retrospection functions
 
-  static bool isComplexTransform() { return sizeof(T) != sizeof(Scalar); }
+  static bool isComplexTransform() { return sizeof(T) == sizeof(Complex); }
 
   static bool isFloatScalar() { return sizeof(Scalar) == sizeof(float); }
 
@@ -117,11 +117,10 @@ public:
   ////
   ////////////////////////////////////////////
 
-  AlignedVector<T> valueVector() const { return AlignedVector<T>(length); }
-
-  AlignedVector<Complex> spectrumVector() const { return AlignedVector<Complex>( getSpectrumSize() ); }
-
-  AlignedVector<Scalar> internalLayoutVector() const { return AlignedVector<Scalar>( getInternalLayoutSize() ); }
+  // create suitably preallocated vector for one FFT
+  AlignedVector<T>       valueVector() const;
+  AlignedVector<Complex> spectrumVector() const;
+  AlignedVector<Scalar>  internalLayoutVector() const;
 
   ////////////////////////////////////////////
   // although using Vectors for output ..
@@ -129,11 +128,9 @@ public:
 
   // core API, having the spectrum in canonical order
 
-  AlignedVector<Complex> & forward(const AlignedVector<T> & input, AlignedVector<Complex> & spectrum)
-    { forward( input.data(), spectrum.data() ); return spectrum; }
+  AlignedVector<Complex> & forward(const AlignedVector<T> & input, AlignedVector<Complex> & spectrum);
 
-  AlignedVector<T> & inverse(const AlignedVector<Complex> & spectrum, AlignedVector<T> & output)
-    { inverse( spectrum.data(), output.data() ); return output; }
+  AlignedVector<T> & inverse(const AlignedVector<Complex> & spectrum, AlignedVector<T> & output);
 
   // provide additional functions with spectrum in some internal Layout.
   // these are faster, cause the implementation omits the reordering.
@@ -142,39 +139,27 @@ public:
 
   AlignedVector<Scalar> & forwardToInternalLayout(
           const AlignedVector<T> & input,
-          AlignedVector<Scalar> & spectrum_internal_layout
-        )
-    { forwardToInternalLayout( input.data(), spectrum_internal_layout.data() ); return spectrum_internal_layout; }
+          AlignedVector<Scalar> & spectrum_internal_layout );
 
   AlignedVector<T> & inverseFromInternalLayout(
           const AlignedVector<Scalar> & spectrum_internal_layout,
-          AlignedVector<T> & output
-        )
-    { inverseFromInternalLayout( spectrum_internal_layout.data(), output.data() ); return output; }
+          AlignedVector<T> & output );
 
   void reorderSpectrum(
           const AlignedVector<Scalar> & input,
-          AlignedVector<Complex> & output
-        )
-    { reorderSpectrum( input.data(), output.data() ); }
+          AlignedVector<Complex> & output );
 
   AlignedVector<Scalar> & convolveAccumulate(
           const AlignedVector<Scalar> & spectrum_internal_a,
           const AlignedVector<Scalar> & spectrum_internal_b,
           AlignedVector<Scalar> & spectrum_internal_ab,
-          const Scalar scaling
-        )
-    { convolveAccumulate( spectrum_internal_a.data(), spectrum_internal_b.data(), spectrum_internal_ab.data(), scaling ); return spectrum_internal_ab; }
+          const Scalar scaling );
 
   AlignedVector<Scalar> & convolve(
           const AlignedVector<Scalar> & spectrum_internal_a,
           const AlignedVector<Scalar> & spectrum_internal_b,
           AlignedVector<Scalar> & spectrum_internal_ab,
-          const Scalar scaling
-        )
-    { convolve( spectrum_internal_a.data(), spectrum_internal_b.data(), spectrum_internal_ab.data(), scaling ); return spectrum_internal_ab; }
-
-
+          const Scalar scaling );
 
 
   ////////////////////////////////////////////
@@ -190,9 +175,7 @@ public:
   static void alignedFree(void* ptr);
 
   static T * alignedAllocType(int length);
-
   static Scalar* alignedAllocScalar(int length);
-
   static Complex* alignedAllocComplex(int length);
 
   // core API, having the spectrum in canonical order
@@ -566,7 +549,8 @@ public:
   }
 };
 
-}
+} // end of anonymous namespace for Setup<>
+
 
 template<typename T>
 inline Fft<T>::Fft(int length, int stackThresholdLen)
@@ -609,6 +593,102 @@ Fft<T>::prepareLength(int newLength)
     work = static_cast<Scalar*>(pffft_aligned_malloc(bytesToAllocate));
   }
 }
+
+
+template<typename T>
+inline AlignedVector<T>
+Fft<T>::valueVector() const
+{
+  return AlignedVector<T>(length);
+}
+
+template<typename T>
+inline AlignedVector< typename Fft<T>::Complex >
+Fft<T>::spectrumVector() const
+{
+  return AlignedVector<Complex>( getSpectrumSize() );
+}
+
+template<typename T>
+inline AlignedVector< typename Fft<T>::Scalar >
+Fft<T>::internalLayoutVector() const
+{
+  return AlignedVector<Scalar>( getInternalLayoutSize() );
+}
+
+
+template<typename T>
+inline AlignedVector< typename Fft<T>::Complex > &
+Fft<T>::forward(const AlignedVector<T> & input, AlignedVector<Complex> & spectrum)
+{
+  forward( input.data(), spectrum.data() );
+  return spectrum;
+}
+
+template<typename T>
+inline AlignedVector<T> &
+Fft<T>::inverse(const AlignedVector<Complex> & spectrum, AlignedVector<T> & output)
+{
+  inverse( spectrum.data(), output.data() );
+  return output;
+}
+
+
+template<typename T>
+inline AlignedVector< typename Fft<T>::Scalar > &
+Fft<T>::forwardToInternalLayout(
+    const AlignedVector<T> & input,
+    AlignedVector<Scalar> & spectrum_internal_layout )
+{
+  forwardToInternalLayout( input.data(), spectrum_internal_layout.data() );
+  return spectrum_internal_layout;
+}
+
+template<typename T>
+inline AlignedVector<T> &
+Fft<T>::inverseFromInternalLayout(
+    const AlignedVector<Scalar> & spectrum_internal_layout,
+    AlignedVector<T> & output )
+{
+  inverseFromInternalLayout( spectrum_internal_layout.data(), output.data() );
+  return output;
+}
+
+template<typename T>
+inline void
+Fft<T>::reorderSpectrum(
+    const AlignedVector<Scalar> & input,
+    AlignedVector<Complex> & output )
+{
+  reorderSpectrum( input.data(), output.data() );
+}
+
+template<typename T>
+inline AlignedVector< typename Fft<T>::Scalar > &
+Fft<T>::convolveAccumulate(
+    const AlignedVector<Scalar> & spectrum_internal_a,
+    const AlignedVector<Scalar> & spectrum_internal_b,
+    AlignedVector<Scalar> & spectrum_internal_ab,
+    const Scalar scaling )
+{
+  convolveAccumulate( spectrum_internal_a.data(), spectrum_internal_b.data(),
+                      spectrum_internal_ab.data(), scaling );
+  return spectrum_internal_ab;
+}
+
+template<typename T>
+inline AlignedVector< typename Fft<T>::Scalar > &
+Fft<T>::convolve(
+    const AlignedVector<Scalar> & spectrum_internal_a,
+    const AlignedVector<Scalar> & spectrum_internal_b,
+    AlignedVector<Scalar> & spectrum_internal_ab,
+    const Scalar scaling )
+{
+  convolve( spectrum_internal_a.data(), spectrum_internal_b.data(),
+            spectrum_internal_ab.data(), scaling );
+  return spectrum_internal_ab;
+}
+
 
 template<typename T>
 inline typename Fft<T>::Complex *
