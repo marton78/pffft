@@ -126,9 +126,9 @@ set_property(TARGET PFFASTCONV APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
 )
 
 
-add_executable( test_pffft  test_pffft.c )
-target_compile_definitions(test_pffft PRIVATE _USE_MATH_DEFINES)
-target_link_libraries( test_pffft  PFFFT ${ASANLIB} )
+add_executable( test_pffft_float  test_pffft.c )
+target_compile_definitions(test_pffft_float PRIVATE _USE_MATH_DEFINES)
+target_link_libraries( test_pffft_float  PFFFT ${ASANLIB} )
 
 add_executable( test_pffft_double  test_pffft_double.c )
 target_compile_definitions(test_pffft_double PRIVATE _USE_MATH_DEFINES)
