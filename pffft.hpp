@@ -44,7 +44,7 @@ namespace pffft {
 // enum { PFFFT_REAL, PFFFT_COMPLEX }
 typedef pffft_transform_t TransformType;
 
-// helper to define 'Scalar' and 'Complex' (in namespace pffft)
+// define 'Scalar' and 'Complex' (in namespace pffft)
 template<typename T> struct Types {};
 template<> struct Types<float>  { typedef float  Scalar; typedef std::complex<Scalar> Complex; };
 template<> struct Types<double> { typedef double Scalar; typedef std::complex<Scalar> Complex; };
@@ -60,11 +60,13 @@ namespace {
 
 #if (__cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1900))
 
+// define AlignedVector<T> utilizing 'using' in C++11
 template<typename T>
 using AlignedVector = typename std::vector< T, PFAlloc<T> >;
 
 #else
 
+// define AlignedVector<T> having to derive std::vector<>
 template <typename T>
 struct AlignedVector : public std::vector< T, PFAlloc<T> > {
   AlignedVector() : std::vector< T, PFAlloc<T> >() { }
@@ -78,33 +80,56 @@ template<typename T>
 class Fft
 {
 public:
+
+  // define types value_type, Scalar and Complex
   typedef T value_type;
   typedef typename Types<T>::Scalar  Scalar;
   typedef typename Types<T>::Complex Complex;
 
   // static retrospection functions
-
-  static bool isComplexTransform() { return sizeof(T) == sizeof(Complex); }
-
-  static bool isFloatScalar() { return sizeof(Scalar) == sizeof(float); }
-
+  static bool isComplexTransform()  { return sizeof(T) == sizeof(Complex); }
+  static bool isFloatScalar()  { return sizeof(Scalar) == sizeof(float); }
   static bool isDoubleScalar() { return sizeof(Scalar) == sizeof(double); }
 
   //////////////////
 
+  /*
+   * Contructor, with transformation length, preparing transforms.
+   *
+   * For length <= stackThresholdLen, the stack is used for the internal
+   * work memory. for bigger length', the heap is used.
+   *
+   * Using the stack is probably the best strategy for small
+   * FFTs, say for N <= 4096). Threads usually have a small stack, that
+   * there's no sufficient amount of memory, usually leading to a crash!
+   */
   Fft( int length, int stackThresholdLen = 4096 );
 
   ~Fft();
 
-  // set transformation length,
-  //   which is identical to forward()'s input vector's size,
-  //   and also equals inverse()'s output vector size
+  /*
+   * prepare for transformation length 'newLength'.
+   * length is identical to forward()'s input vector's size,
+   * and also equals inverse()'s output vector size.
+   * this function is no simple setter. it pre-calculates twiddle factors.
+   */
   void prepareLength(int newLength);
 
+  /*
+   * retrieve the transformation length.
+   */
   int getLength() const { return length; }
 
+  /*
+   * retrieve size of complex spectrum vector,
+   * the output of forward()
+   */
   int getSpectrumSize() const { return isComplexTransform() ? length : ( length / 2 ); }
 
+  /*
+   * retrieve size of spectrum vector - in internal layout;
+   * the output of forwardToInternalLayout()
+   */
   int getInternalLayoutSize() const { return isComplexTransform() ? ( 2 * length ) : length; }
 
 
@@ -117,7 +142,7 @@ public:
   ////
   ////////////////////////////////////////////
 
-  // create suitably preallocated vector for one FFT
+  // create suitably preallocated aligned vector for one FFT
   AlignedVector<T>       valueVector() const;
   AlignedVector<Complex> spectrumVector() const;
   AlignedVector<Scalar>  internalLayoutVector() const;
@@ -128,34 +153,111 @@ public:
 
   // core API, having the spectrum in canonical order
 
+  /*
+   * Perform the forward Fourier transform.
+   *
+   * Transforms are not scaled: inverse(forward(x)) = N*x.
+   * Typically you will want to scale the backward transform by 1/N.
+   *
+   * The output 'spectrum' is canonically ordered - as expected.
+   *
+   * a) for complex input isComplexTransform() == true,
+   *    and transformation length N  the output array is complex:
+   *   index k in 0 .. N/2 -1  corresponds to frequency k * Samplerate / N
+   *   index k in N/2 .. N -1  corresponds to frequency (k -N) * Samplerate / N,
+   *     resulting in negative frequencies
+   *
+   * b) for real input isComplexTransform() == false,
+   *    and transformation length N  the output array is 'mostly' complex:
+   *   index k in 1 .. N/2 -1  corresponds to frequency k * Samplerate / N
+   *   index k == 0 is a special case:
+   *     the real() part contains the result for the DC frequency 0,
+   *     the imag() part contains the result for the Nyquist frequency Samplerate/2
+   *   both 0-frequency and half frequency components, which are real,
+   *   are assembled in the first entry as  F(0)+i*F(N/2).
+   *
+   * input and output may alias - if you do nasty type conversion.
+   * return is just the given output parameter 'spectrum'.
+   */
   AlignedVector<Complex> & forward(const AlignedVector<T> & input, AlignedVector<Complex> & spectrum);
 
+  /*
+   * Perform the inverse Fourier transform, see forward().
+   * return is just the given output parameter 'output'.
+   */
   AlignedVector<T> & inverse(const AlignedVector<Complex> & spectrum, AlignedVector<T> & output);
+
 
   // provide additional functions with spectrum in some internal Layout.
   // these are faster, cause the implementation omits the reordering.
   // these are useful in special applications, like fast convolution,
   // where inverse() is following anyway ..
 
+  /*
+   * Perform the forward Fourier transform - similar to forward(), BUT:
+   *
+   * The z-domain data is stored in the most efficient order
+   * for transforming it back, or using it for convolution.
+   * If you need to have its content sorted in the "usual" canonical order,
+   * either use forward(), or call reorderSpectrum() after calling
+   * forwardToInternalLayout(), and before the backward fft
+   *
+   * return is just the given output parameter 'spectrum_internal_layout'.
+   */
   AlignedVector<Scalar> & forwardToInternalLayout(
           const AlignedVector<T> & input,
           AlignedVector<Scalar> & spectrum_internal_layout );
 
+  /*
+   * Perform the inverse Fourier transform, see forwardToInternalLayout()
+   *
+   * return is just the given output parameter 'output'.
+   */
   AlignedVector<T> & inverseFromInternalLayout(
           const AlignedVector<Scalar> & spectrum_internal_layout,
           AlignedVector<T> & output );
 
+  /*
+   * Reorder the spectrum from internal layout to have the
+   * frequency components in the correct "canonical" order.
+   * see forward() for a description of the canonical order.
+   *
+   * input and output should not alias.
+   */
   void reorderSpectrum(
           const AlignedVector<Scalar> & input,
           AlignedVector<Complex> & output );
 
-  AlignedVector<Scalar> & convolveAccumulate(
+  /*
+   * Perform a multiplication of the frequency components of
+   * spectrum_internal_a and spectrum_internal_b
+   * into spectrum_internal_ab.
+   * The arrays should have been obtained with forwardToInternalLayout)
+   * and should *not* have been reordered with reorderSpectrum().
+   *
+   * the operation performed is:
+   *  spectrum_internal_ab = (spectrum_internal_a * spectrum_internal_b)*scaling
+   *
+   * The spectrum_internal_[a][b], pointers may alias.
+   * return is just the given output parameter 'spectrum_internal_ab'.
+   */
+  AlignedVector<Scalar> & convolve(
           const AlignedVector<Scalar> & spectrum_internal_a,
           const AlignedVector<Scalar> & spectrum_internal_b,
           AlignedVector<Scalar> & spectrum_internal_ab,
           const Scalar scaling );
 
-  AlignedVector<Scalar> & convolve(
+  /*
+   * Perform a multiplication and accumulation of the frequency components
+   * - similar to convolve().
+   *
+   * the operation performed is:
+   *  spectrum_internal_ab += (spectrum_internal_a * spectrum_internal_b)*scaling
+   *
+   * The spectrum_internal_[a][b], pointers may alias.
+   * return is just the given output parameter 'spectrum_internal_ab'.
+   */
+  AlignedVector<Scalar> & convolveAccumulate(
           const AlignedVector<Scalar> & spectrum_internal_a,
           const AlignedVector<Scalar> & spectrum_internal_b,
           AlignedVector<Scalar> & spectrum_internal_ab,
@@ -169,6 +271,10 @@ public:
   ////
   //// the special allocation is required cause SIMD
   //// implementations require aligned memory
+  ////
+  //// Method descriptions are equal to the methods above,
+  //// having  AlignedVector<T> parameters - instead of raw pointers.
+  //// That is why following methods have no documentation.
   ////
   ////////////////////////////////////////////
 
@@ -197,16 +303,15 @@ public:
 
   void reorderSpectrum(const Scalar* input, Complex* output );
 
-  Scalar* convolveAccumulate(const Scalar* spectrum_internal_a,
-                             const Scalar* spectrum_internal_b,
-                             Scalar* spectrum_internal_ab,
-                             const Scalar scaling);
-
   Scalar* convolve(const Scalar* spectrum_internal_a,
                    const Scalar* spectrum_internal_b,
                    Scalar* spectrum_internal_ab,
                    const Scalar scaling);
 
+  Scalar* convolveAccumulate(const Scalar* spectrum_internal_a,
+                             const Scalar* spectrum_internal_b,
+                             Scalar* spectrum_internal_ab,
+                             const Scalar scaling);
 
 private:
   Setup<T> setup;
@@ -558,6 +663,11 @@ inline Fft<T>::Fft(int length, int stackThresholdLen)
   , stackThresholdLen(stackThresholdLen)
   , work(NULL)
 {
+#if (__cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1900))
+  static_assert( sizeof(Complex) == 2 * sizeof(Scalar), "pffft requires sizeof(std::complex<>) == 2 * sizeof(Scalar)" );
+#elif defined(__GNUC__)
+  char static_assert_like[(sizeof(Complex) == 2 * sizeof(Scalar)) ? 1 : -1]; // pffft requires sizeof(std::complex<>) == 2 * sizeof(Scalar)
+#endif
   prepareLength(length);
 }
 
