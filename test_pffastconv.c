@@ -1,29 +1,8 @@
 /*
   Copyright (c) 2013 Julien Pommier.
-
-  Small test & bench for PFFFT, comparing its performance with the scalar FFTPACK, FFTW, and Apple vDSP
-
-  How to build: 
-
-  on linux, with fftw3:
-  gcc -o test_pffft -DHAVE_FFTW -msse -mfpmath=sse -O3 -Wall -W pffft.c test_pffft.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -lfftw3f -lm
-
-  on macos, without fftw3:
-  clang -o test_pffft -DHAVE_VECLIB -O3 -Wall -W pffft.c test_pffft.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -framework Accelerate
-
-  on macos, with fftw3:
-  clang -o test_pffft -DHAVE_FFTW -DHAVE_VECLIB -O3 -Wall -W pffft.c test_pffft.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -lfftw3f -framework Accelerate
-
-  as alternative: replace clang by gcc.
-
-  on windows, with visual c++:
-  cl /Ox -D_USE_MATH_DEFINES /arch:SSE test_pffft.c pffft.c fftpack.c
-  
-  build without SIMD instructions:
-  gcc -o test_pffft -DPFFFT_SIMD_DISABLE -O3 -Wall -W pffft.c test_pffft.c fftpack.c -lm
-
+  Copyright (c) 2019  Hayati Ayguen ( h_ayguen@web.de )
  */
- 
+
 #define _WANT_SNAN  1
 
 #include "pffft.h"
@@ -49,8 +28,9 @@
    SSE/Altivec/NEON -- adding support for other platforms with 4-element
    vectors should be limited to these macros 
 */
-#include "pf_float.h"
-
+#if 0
+#include "simd/pf_float.h"
+#endif
 
 #if defined(_MSC_VER)
 #  define RESTRICT __restrict
@@ -453,160 +433,6 @@ int slow_conv_B(void * setup, const float * input, int len, float *output, const
 }
 
 
-int slow_conv_SIMD(void * setup, const float * input, int len, float *output, const float *Yref, int applyFlush)
-{
-  v4sf_union sum;
-  struct ConvSetup * p = (struct ConvSetup*)setup;
-  (void)Yref;
-  (void)applyFlush;
-
-#if defined(PFFFT_SIMD_DISABLE) || !(defined(__x86_64__) || defined(_M_X64) || defined(i386) || defined(_M_IX86))
-  return 0;
-#endif
-#if SIMD_SZ != 4
-  #error "Error: SIMD_SZ != 4 not implemented!"
-  return 0;
-#endif
-
-  if (p->flags & PFFASTCONV_SYMMETRIC)
-  {
-    const float * RESTRICT X = input;
-    const float * RESTRICT Hrev = p->H;
-    float * RESTRICT Y = output;
-    const int Nr = ((p->flags & PFFASTCONV_CPLX_INP_OUT) ? 2 : 1) * p->N;
-    const int lenNr = ((p->flags & PFFASTCONV_CPLX_INP_OUT) ? 2 : 1) * (len - p->N);
-    const int h = Nr / 2 -SIMD_SZ;
-    const int E = Nr -SIMD_SZ;
-    int i, j;
-
-    assert(VALIGNED(Hrev));
-
-    if (p->flags & PFFASTCONV_CPLX_INP_OUT)
-    {
-      for ( i = 0; i <= lenNr; i += 2 )
-      {
-        const int k = i + E;
-        sum.v = VZERO();
-        for ( j = 0; j <= h; j += SIMD_SZ )
-        {
-          v4sf t = VLOAD_UNALIGNED(X +(k-j));
-          sum.v = VMADD( VADD( VLOAD_UNALIGNED(X+(i+j)), VREV_C(t) ) , VLOAD_ALIGNED(Hrev+j), sum.v );
-        }
-        Y[i  ] = sum.f[0] + sum.f[2];
-        Y[i+1] = sum.f[1] + sum.f[3];
-      }
-      return i/2;
-    }
-    else
-    {
-      for ( i = 0; i <= lenNr; ++i )
-      {
-        const int k = i + E;
-        sum.v = VZERO();
-        for ( j = 0; j <= h; j += SIMD_SZ )
-        {
-          v4sf t = VLOAD_UNALIGNED(X +(k-j));
-          sum.v = VMADD( VADD( VLOAD_UNALIGNED(X+(i+j)), VREV_S(t) ) , VLOAD_ALIGNED(Hrev+j), sum.v );
-        }
-        Y[i] = (sum.f[0] + sum.f[1]) + (sum.f[2] + sum.f[3]);
-      }
-      return i;
-    }
-  }
-  else
-  {
-    const float * RESTRICT X = input;
-    const float * RESTRICT Hrev = p->H;
-    float * RESTRICT Y = output;
-    const int Nr = ((p->flags & PFFASTCONV_CPLX_INP_OUT) ? 2 : 1) * p->N;
-    const int lenNr = ((p->flags & PFFASTCONV_CPLX_INP_OUT) ? 2 : 1) * (len - p->N);
-    int i, j;
-
-    assert(VALIGNED(Hrev));
-
-    if (p->flags & PFFASTCONV_CPLX_INP_OUT)
-    {
-      for ( i = 0; i <= lenNr; i += 2 )
-      {
-        sum.v = VZERO();
-        for ( j = 0; j < Nr; j += SIMD_SZ )
-          sum.v = VMADD( VLOAD_UNALIGNED(X+(i+j)), VLOAD_ALIGNED(Hrev+j), sum.v );
-        Y[i  ] = sum.f[0] + sum.f[2];
-        Y[i+1] = sum.f[1] + sum.f[3];
-      }
-      return i/2;
-    }
-    else
-    {
-      if ( (Nr & 3) == 0 )
-      {
-        for ( i = 0; i <= lenNr; ++i )
-        {
-          sum.v = VZERO();
-          for ( j = 0; j < Nr; j += SIMD_SZ )
-            sum.v = VMADD( VLOAD_UNALIGNED(X+(i+j)), VLOAD_ALIGNED(Hrev+j), sum.v );
-          Y[i] = (sum.f[0] + sum.f[1]) + (sum.f[2] + sum.f[3]);
-        }
-        return i;
-      }
-      else
-      {
-        const int M = Nr & (~3);
-        for ( i = 0; i <= lenNr; ++i )
-        {
-          float tailSum = 0.0;
-          sum.v = VZERO();
-          for (j = 0; j < M; j += SIMD_SZ )
-            sum.v = VMADD( VLOAD_UNALIGNED(X+(i+j)), VLOAD_ALIGNED(Hrev+j), sum.v );
-          for ( ; j < Nr; ++j )
-            tailSum += X[i+j] * Hrev[j];
-          Y[i] = (sum.f[0] + sum.f[1]) + (sum.f[2] + sum.f[3]) + tailSum;
-        }
-        return i;
-      }
-    }
-  }
-
-}
-
-
-void * convSimdSetup( float * H, int N, int * BlkLen, int flags )
-{
-  struct ConvSetup * p = (struct ConvSetup*) convSetupRev( H, N, BlkLen, flags );
-  int NomMul = 1, DenMul = 1;
-
-  if (!p)
-    return p;
-
-#if defined(PFFFT_SIMD_DISABLE) || (SIMD_SZ != 4) || !(defined(__x86_64__) || defined(_M_X64) || defined(i386) || defined(_M_IX86))
-  p->pfn = slow_conv_B;
-  return p;
-#endif
-
-  if (p->flags & PFFASTCONV_SYMMETRIC)
-  {
-    if (p->flags & PFFASTCONV_CPLX_INP_OUT)
-      NomMul = DenMul = 1;
-    else
-      DenMul = 2;
-  }
-  else
-  {
-    if (p->flags & PFFASTCONV_CPLX_INP_OUT)
-      NomMul = 2;
-    else
-    {
-      p->pfn = slow_conv_SIMD;
-      return p;
-    }
-  }
-
-  p->pfn = ( ( (NomMul * p->N) % (DenMul * SIMD_SZ) ) != 0 ) ? slow_conv_B : slow_conv_SIMD;
-  return p;
-}
-
-
-
 int fast_conv(void * setup, const float * X, int len, float *Y, const float *Yref, int applyFlush)
 {
   (void)Yref;
@@ -657,27 +483,28 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
   int i, j, numErrOverLimit, iter;
   int retErr = 0;
 
-  const int iSlowSIMDalgo = 3;
-  /*                                  0               1               2               3                  4                   5                   6                   7                   8                   9                      10              */
-  pfnConvSetup   aSetup[NUMY]     = { convSetupRev,   convSetupRev,   convSetupRev,   convSimdSetup,     fastConvSetup,      fastConvSetup,      fastConvSetup,      fastConvSetup,      fastConvSetup,      fastConvSetup,         fastConvSetup   };
-  pfnConvDestroy aDestroy[NUMY]   = { convDestroyRev, convDestroyRev, convDestroyRev, convSimdDestroy,   fastConvDestroy,    fastConvDestroy,    fastConvDestroy,    fastConvDestroy,    fastConvDestroy,    fastConvDestroy,       fastConvDestroy };
-  pfnGetConvFnPtr aGetFnPtr[NUMY] = { NULL,           NULL,           NULL,           ConvGetFnPtrRev,   NULL,               NULL,               NULL,               NULL,               NULL,               NULL,                  NULL,           };
-  pfnConvolution aConv[NUMY]      = { slow_conv_R,    slow_conv_A,    slow_conv_B,    NULL,              fast_conv,          fast_conv,          fast_conv,          fast_conv,          fast_conv,          fast_conv,             fast_conv       };
-  const char * convText[NUMY]     = { "R(non-simd)",  "A(non-simd)",  "B(non-simd)",  "slow_simd",       "fast_conv_64",     "fast_conv_128",    "fast_conv_256",    "fast_conv_512",    "fast_conv_1K",     "fast_conv_2K",        "fast_conv_4K"  };
-  int    aFastAlgo[NUMY]          = { 0,              0,              0,              0,                 1,                  1,                  1,                  1,                  1,                  1,                     1               };
-  void * aSetupCfg[NUMY]          = { NULL,           NULL,           NULL,           NULL,              NULL,               NULL,               NULL,               NULL,               NULL,               NULL,                  NULL            };
-  int    aBlkLen[NUMY]            = { 1024,           1024,           1024,           1024,              64,                 128,                256,                512,                1024,               2048,                  4096            };
+  /*                                  0               1               2               3                   4                   5                   6                   7                   8                      9  */
+  pfnConvSetup   aSetup[NUMY]     = { convSetupRev,   convSetupRev,   convSetupRev,   fastConvSetup,      fastConvSetup,      fastConvSetup,      fastConvSetup,      fastConvSetup,      fastConvSetup,         fastConvSetup   };
+  pfnConvDestroy aDestroy[NUMY]   = { convDestroyRev, convDestroyRev, convDestroyRev, fastConvDestroy,    fastConvDestroy,    fastConvDestroy,    fastConvDestroy,    fastConvDestroy,    fastConvDestroy,       fastConvDestroy };
+  pfnGetConvFnPtr aGetFnPtr[NUMY] = { NULL,           NULL,           NULL,           NULL,               NULL,               NULL,               NULL,               NULL,               NULL,                  NULL,           };
+  pfnConvolution aConv[NUMY]      = { slow_conv_R,    slow_conv_A,    slow_conv_B,    fast_conv,          fast_conv,          fast_conv,          fast_conv,          fast_conv,          fast_conv,             fast_conv       };
+  const char * convText[NUMY]     = { "R(non-simd)",  "A(non-simd)",  "B(non-simd)",  "fast_conv_64",     "fast_conv_128",    "fast_conv_256",    "fast_conv_512",    "fast_conv_1K",     "fast_conv_2K",        "fast_conv_4K"  };
+  int    aFastAlgo[NUMY]          = { 0,              0,              0,              1,                  1,                  1,                  1,                  1,                  1,                     1               };
+  void * aSetupCfg[NUMY]          = { NULL,           NULL,           NULL,           NULL,               NULL,               NULL,               NULL,               NULL,               NULL,                  NULL            };
+  int    aBlkLen[NUMY]            = { 1024,           1024,           1024,           64,                 128,                256,                512,                1024,               2048,                  4096            };
 #if 1
-  int    aRunAlgo[NUMY]           = { 1,              1,              1,              1,                 FILTERLEN<64,       FILTERLEN<128,      FILTERLEN<256,      FILTERLEN<512,      FILTERLEN<1024,     FILTERLEN<2048,        FILTERLEN<4096  };
+  int    aRunAlgo[NUMY]           = { 1,              1,              1,              FILTERLEN<64,       FILTERLEN<128,      FILTERLEN<256,      FILTERLEN<512,      FILTERLEN<1024,     FILTERLEN<2048,        FILTERLEN<4096  };
+#elif 0
+  int    aRunAlgo[NUMY]           = { 1,              0,              0,              0 && FILTERLEN<64,  1 && FILTERLEN<128, 1 && FILTERLEN<256, 0 && FILTERLEN<512, 0 && FILTERLEN<1024, 0 && FILTERLEN<2048,  0 && FILTERLEN<4096  };
 #else
-  int    aRunAlgo[NUMY]           = { 1,              0,              0,              0,                 0 && FILTERLEN<64,  1 && FILTERLEN<128, 1 && FILTERLEN<256, 0 && FILTERLEN<512, 0 && FILTERLEN<1024, 0 && FILTERLEN<2048,  0 && FILTERLEN<4096  };
+  int    aRunAlgo[NUMY]           = { 1,              1,              1,              0 && FILTERLEN<64,  0 && FILTERLEN<128, 1 && FILTERLEN<256, 0 && FILTERLEN<512, 0 && FILTERLEN<1024, 0 && FILTERLEN<2048,  0 && FILTERLEN<4096  };
 #endif
   double aSpeedFactor[NUMY], aDuration[NUMY], procSmpPerSec[NUMY];
 
   X = pffastconv_malloc( (unsigned)(len+4) * sizeof(float) );
   for ( i=0; i < NUMY; ++i)
   {
-    if ( i < 2 )
+    if ( 1 || i < 2 )
       Y[i] = pffastconv_malloc( (unsigned)len * sizeof(float) );
     else
       Y[i] = Y[1];
@@ -874,12 +701,10 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
         {
           if (iMaxSpeedSlowAlgo >= 0 )
             printf("fastest slow algorithm is '%s' at speed %f X ; abs duration %f ms\n", convText[iMaxSpeedSlowAlgo], aSpeedFactor[iMaxSpeedSlowAlgo], 1000.0 * aDuration[iMaxSpeedSlowAlgo]);
-          if (0 != iMaxSpeedSlowAlgo && 0 != iSlowSIMDalgo && aRunAlgo[0])
+          if (0 != iMaxSpeedSlowAlgo && aRunAlgo[0])
             printf("slow algorithm '%s' at speed %f X ; abs duration %f ms\n", convText[0], aSpeedFactor[0], 1000.0 * aDuration[0]);
-          if (1 != iMaxSpeedSlowAlgo && 1 != iSlowSIMDalgo && aRunAlgo[1])
+          if (1 != iMaxSpeedSlowAlgo && aRunAlgo[1])
             printf("slow algorithm '%s' at speed %f X ; abs duration %f ms\n", convText[1], aSpeedFactor[1], 1000.0 * aDuration[1]);
-          if (iSlowSIMDalgo != iMaxSpeedSlowAlgo && aRunAlgo[iSlowSIMDalgo])
-            printf("slow algorithm '%s' at speed %f X ; abs duration %f ms\n", convText[iSlowSIMDalgo], aSpeedFactor[iSlowSIMDalgo], 1000.0 * aDuration[iSlowSIMDalgo]);
 
           if (iFirstFastAlgo >= 0 && iFirstFastAlgo != iMaxSpeedFastAlgo && aRunAlgo[iFirstFastAlgo])
             printf("first   fast algorithm is '%s' at speed %f X ; abs duration %f ms\n", convText[iFirstFastAlgo],    aSpeedFactor[iFirstFastAlgo],    1000.0 * aDuration[iFirstFastAlgo]);
@@ -969,7 +794,7 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
   pffastconv_free(X);
   for ( i=0; i < NUMY; ++i)
   {
-    if ( i < 2 )
+    if ( 1 || i < 2 )
       pffastconv_free( Y[i] );
     if (!aRunAlgo[i])
       continue;
@@ -981,6 +806,10 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
   return retErr;
 }
 
+/* small functions inside pffft.c that will detect (compiler) bugs with respect to simd instructions */
+void validate_pffft_simd();
+int  validate_pffft_simd_ex(FILE * DbgOut);
+
 
 int main(int argc, char **argv)
 {
@@ -990,6 +819,13 @@ int main(int argc, char **argv)
   int testReal = 1, testCplx = 1, testSymetric = 0;
 
   for ( i = 1; i < argc; ++i ) {
+
+    if (!strcmp(argv[i], "--test-simd")) {
+      int numErrs = validate_pffft_simd_ex(stdout);
+      fprintf( ( numErrs != 0 ? stderr : stdout ), "validate_pffft_simd_ex() returned %d errors!\n", numErrs);
+      return ( numErrs > 0 ? 1 : 0 );
+    }
+
     if (!strcmp(argv[i], "--no-len")) {
       testOutLens = 0;
     }
@@ -1012,7 +848,7 @@ int main(int argc, char **argv)
       testSymetric = 1;
     }
     else /* if (!strcmp(argv[i], "--help")) */ {
-      printf("usage: %s [--no-len] [--no-bench] [--quick|--slow] [--real|--cplx] [--sym]\n", argv[0]);
+      printf("usage: %s [--test-simd] [--no-len] [--no-bench] [--quick|--slow] [--real|--cplx] [--sym]\n", argv[0]);
       exit(1);
     }
   }

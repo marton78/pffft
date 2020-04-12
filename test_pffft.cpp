@@ -256,11 +256,29 @@ bool
 test(int N, bool useComplex, bool useOrdered)
 {
   if (useComplex) {
-    return Ttest< std::complex<float> >(N, useOrdered) &&
-           Ttest< std::complex<double> >(N, useOrdered);
+    return
+#ifdef PFFFT_ENABLE_FLOAT
+           Ttest< std::complex<float> >(N, useOrdered)
+#endif
+#if defined(PFFFT_ENABLE_FLOAT) && defined(PFFFT_ENABLE_DOUBLE)
+        &&
+#endif
+#ifdef PFFFT_ENABLE_DOUBLE
+           Ttest< std::complex<double> >(N, useOrdered)
+#endif
+           ;
   } else {
-    return Ttest<float>(N, useOrdered) &&
-           Ttest<double>(N, useOrdered);
+    return
+#ifdef PFFFT_ENABLE_FLOAT
+           Ttest<float>(N, useOrdered)
+#endif
+#if defined(PFFFT_ENABLE_FLOAT) && defined(PFFFT_ENABLE_DOUBLE)
+        &&
+#endif
+#ifdef PFFFT_ENABLE_DOUBLE
+           Ttest<double>(N, useOrdered)
+#endif
+           ;
   }
 }
 
@@ -276,7 +294,11 @@ main(int argc, char** argv)
   resIsPw2 = 0;
   for (k = 0; k < (sizeof(inp_power_of_two) / sizeof(inp_power_of_two[0]));
        ++k) {
-    N = pffft::nextPowerOfTwo(inp_power_of_two[k]);
+#ifdef PFFFT_ENABLE_FLOAT
+    N = pffft::Fft<float>::nextPowerOfTwo(inp_power_of_two[k]);
+#else
+    N = pffft::Fft<double>::nextPowerOfTwo(inp_power_of_two[k]);
+#endif
     if (N != ref_power_of_two[k]) {
       resNextPw2 = 1;
       printf("pffft_next_power_of_two(%d) does deliver %d, which is not "
@@ -286,7 +308,11 @@ main(int argc, char** argv)
              ref_power_of_two[k]);
     }
 
-    result = pffft::isPowerOfTwo(inp_power_of_two[k]);
+#ifdef PFFFT_ENABLE_FLOAT
+    result = pffft::Fft<float>::isPowerOfTwo(inp_power_of_two[k]);
+#else
+    result = pffft::Fft<double>::isPowerOfTwo(inp_power_of_two[k]);
+#endif
     if (inp_power_of_two[k] == ref_power_of_two[k]) {
       if (!result) {
         resIsPw2 = 1;
@@ -329,8 +355,17 @@ main(int argc, char** argv)
   }
 
   if (!resFFT)
-    printf("all pffft transform tests (FORWARD/BACKWARD, REAL/COMPLEX, float/double) "
-           "succeeded successfully.\n");
+    printf("all pffft transform tests (FORWARD/BACKWARD, REAL/COMPLEX, "
+#ifdef PFFFT_ENABLE_FLOAT
+           "float"
+#endif
+#if defined(PFFFT_ENABLE_FLOAT) && defined(PFFFT_ENABLE_DOUBLE)
+            "/"
+#endif
+#ifdef PFFFT_ENABLE_DOUBLE
+           "double"
+#endif
+           ") succeeded successfully.\n");
 
   resAll = resNextPw2 | resIsPw2 | resFFT;
   if (!resAll)

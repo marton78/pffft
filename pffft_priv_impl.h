@@ -69,13 +69,6 @@
 #endif
 
 
-/* detect bugs with the vector support macros */
-void FUNC_VALIDATE_SIMD() {
-#ifndef PFFFT_SIMD_DISABLE
-  Vvalidate_simd();
-#endif
-}
-
 void *FUNC_ALIGNED_MALLOC(size_t nb_bytes) {
   return Valigned_malloc(nb_bytes);
 }
@@ -85,6 +78,9 @@ void FUNC_ALIGNED_FREE(void *p) {
 }
 
 int FUNC_SIMD_SIZE() { return SIMD_SZ; }
+
+const char * FUNC_SIMD_ARCH() { return VARCH; }
+
 
 /*
   passf2 and passb2 has been merged here, fsign = -1 for passf2, +1 for passb2
@@ -1082,7 +1078,7 @@ void FUNC_DESTROY(SETUP_STRUCT *s) {
   free(s);
 }
 
-#if !defined(PFFFT_SIMD_DISABLE)
+#if ( SIMD_SZ == 4 )    /* !defined(PFFFT_SIMD_DISABLE) */
 
 /* [0 0 1 2 3 4 5 6 7 8] -> [0 8 7 6 5 4 3 2 1] */
 static void reversed_copy(int N, const v4sf *in, int in_stride, v4sf *out) {
@@ -1647,7 +1643,7 @@ void FUNC_ZCONVOLVE_NO_ACCU(SETUP_STRUCT *s, const float *a, const float *b, flo
 }
 
 
-#else /* defined(PFFFT_SIMD_DISABLE) */
+#else  /* #if ( SIMD_SZ == 4 )   * !defined(PFFFT_SIMD_DISABLE) */
 
 /* standard routine using scalar floats, without SIMD stuff. */
 
@@ -1773,7 +1769,8 @@ void pffft_zconvolve_no_accu_nosimd(SETUP_STRUCT *s, const float *a, const float
 }
 
 
-#endif /* defined(PFFFT_SIMD_DISABLE) */
+#endif /* #if ( SIMD_SZ == 4 )    * !defined(PFFFT_SIMD_DISABLE) */
+
 
 void FUNC_TRANSFORM_UNORDRD(SETUP_STRUCT *setup, const float *input, float *output, float *work, pffft_direction_t direction) {
   FUNC_TRANSFORM_INTERNAL(setup, input, output, (v4sf*)work, direction, 0);
@@ -1782,6 +1779,422 @@ void FUNC_TRANSFORM_UNORDRD(SETUP_STRUCT *setup, const float *input, float *outp
 void FUNC_TRANSFORM_ORDERED(SETUP_STRUCT *setup, const float *input, float *output, float *work, pffft_direction_t direction) {
   FUNC_TRANSFORM_INTERNAL(setup, input, output, (v4sf*)work, direction, 1);
 }
+
+
+#if ( SIMD_SZ == 4 )
+
+#define assertv4(v,f0,f1,f2,f3) assert(v.f[0] == (f0) && v.f[1] == (f1) && v.f[2] == (f2) && v.f[3] == (f3))
+
+/* detect bugs with the vector support macros */
+void FUNC_VALIDATE_SIMD_A() {
+  float f[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
+  v4sf_union a0, a1, a2, a3, t, u; 
+  memcpy(a0.f, f, 4*sizeof(float));
+  memcpy(a1.f, f+4, 4*sizeof(float));
+  memcpy(a2.f, f+8, 4*sizeof(float));
+  memcpy(a3.f, f+12, 4*sizeof(float));
+
+  t = a0; u = a1; t.v = VZERO();
+  printf("VZERO=[%2g %2g %2g %2g]\n", t.f[0], t.f[1], t.f[2], t.f[3]); assertv4(t, 0, 0, 0, 0);
+  t.v = VADD(a1.v, a2.v);
+  printf("VADD(4:7,8:11)=[%2g %2g %2g %2g]\n", t.f[0], t.f[1], t.f[2], t.f[3]); assertv4(t, 12, 14, 16, 18);
+  t.v = VMUL(a1.v, a2.v);
+  printf("VMUL(4:7,8:11)=[%2g %2g %2g %2g]\n", t.f[0], t.f[1], t.f[2], t.f[3]); assertv4(t, 32, 45, 60, 77);
+  t.v = VMADD(a1.v, a2.v,a0.v);
+  printf("VMADD(4:7,8:11,0:3)=[%2g %2g %2g %2g]\n", t.f[0], t.f[1], t.f[2], t.f[3]); assertv4(t, 32, 46, 62, 80);
+
+  INTERLEAVE2(a1.v,a2.v,t.v,u.v);
+  printf("INTERLEAVE2(4:7,8:11)=[%2g %2g %2g %2g] [%2g %2g %2g %2g]\n", t.f[0], t.f[1], t.f[2], t.f[3], u.f[0], u.f[1], u.f[2], u.f[3]);
+  assertv4(t, 4, 8, 5, 9); assertv4(u, 6, 10, 7, 11);
+  UNINTERLEAVE2(a1.v,a2.v,t.v,u.v);
+  printf("UNINTERLEAVE2(4:7,8:11)=[%2g %2g %2g %2g] [%2g %2g %2g %2g]\n", t.f[0], t.f[1], t.f[2], t.f[3], u.f[0], u.f[1], u.f[2], u.f[3]);
+  assertv4(t, 4, 6, 8, 10); assertv4(u, 5, 7, 9, 11);
+
+  t.v=LD_PS1(f[15]);
+  printf("LD_PS1(15)=[%2g %2g %2g %2g]\n", t.f[0], t.f[1], t.f[2], t.f[3]);
+  assertv4(t, 15, 15, 15, 15);
+  t.v = VSWAPHL(a1.v, a2.v);
+  printf("VSWAPHL(4:7,8:11)=[%2g %2g %2g %2g]\n", t.f[0], t.f[1], t.f[2], t.f[3]);
+  assertv4(t, 8, 9, 6, 7);
+  VTRANSPOSE4(a0.v, a1.v, a2.v, a3.v);
+  printf("VTRANSPOSE4(0:3,4:7,8:11,12:15)=[%2g %2g %2g %2g] [%2g %2g %2g %2g] [%2g %2g %2g %2g] [%2g %2g %2g %2g]\n", 
+         a0.f[0], a0.f[1], a0.f[2], a0.f[3], a1.f[0], a1.f[1], a1.f[2], a1.f[3], 
+         a2.f[0], a2.f[1], a2.f[2], a2.f[3], a3.f[0], a3.f[1], a3.f[2], a3.f[3]); 
+  assertv4(a0, 0, 4, 8, 12); assertv4(a1, 1, 5, 9, 13); assertv4(a2, 2, 6, 10, 14); assertv4(a3, 3, 7, 11, 15);
+}
+
+
+static void pffft_assert1( float result, float ref, const char * vartxt, const char * functxt, int * numErrs, const char * f, int lineNo )
+{
+  if ( !( fabsf( result - ref ) < 0.01F ) )
+  {
+    fprintf(stderr, "%s: assert for %s at %s(%d)\n  expected %f  value %f\n", functxt, vartxt, f, lineNo, ref, result);
+    ++(*numErrs);
+  }
+}
+
+static void pffft_assert4( const v4sf_union V, float a, float b, float c, float d, const char * functxt, int * numErrs, const char * f, int lineNo )
+{
+  pffft_assert1( V.f[0], a, "[0]", functxt, numErrs, f, lineNo );
+  pffft_assert1( V.f[1], b, "[1]", functxt, numErrs, f, lineNo );
+  pffft_assert1( V.f[2], c, "[2]", functxt, numErrs, f, lineNo );
+  pffft_assert1( V.f[3], d, "[3]", functxt, numErrs, f, lineNo );
+}
+
+#define PFFFT_ASSERT4( V, a, b, c, d, FUNCTXT )  pffft_assert4( V, a, b, c, d, FUNCTXT, &numErrs, __FILE__, __LINE__ )
+
+
+int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
+{
+  int numErrs = 0;
+
+  {
+    v4sf_union C;
+    int k;
+    for ( k = 0; k < 4; ++k )  C.f[k] = 30 + k+1;
+
+    if (DbgOut) {
+      fprintf(DbgOut, "\ninput: { }\n" );
+    }
+    C.v = VZERO();
+    if (DbgOut) {
+      fprintf(DbgOut, "VZERO(a) => C) => {\n" );
+      fprintf(DbgOut, "  Out C:  %f, %f, %f, %f\n", C.f[0], C.f[1], C.f[2], C.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    PFFFT_ASSERT4( C, 0.0F, 0.0F, 0.0F, 0.0F, "VZERO() Out C" );
+  }
+
+  {
+    v4sf_union C;
+    float a = 42.0F;
+    int k;
+    for ( k = 0; k < 4; ++k )  C.f[k] = 30 + k+1;
+
+    if (DbgOut) {
+      fprintf(DbgOut, "\ninput: a = {\n" );
+      fprintf(DbgOut, "  Inp a:  %f\n", a );
+      fprintf(DbgOut, "}\n" );
+    }
+    C.v = LD_PS1(a);
+    if (DbgOut) {
+      fprintf(DbgOut, "LD_PS1(a) => C) => {\n" );
+      fprintf(DbgOut, "  Out C:  %f, %f, %f, %f\n", C.f[0], C.f[1], C.f[2], C.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    PFFFT_ASSERT4( C, 42.0F, 42.0F, 42.0F, 42.0F, "LD_PS1() Out C" );
+  }
+
+  {
+    v4sf_union C;
+    float a[16];
+    int numAligned = 0, numUnaligned = 0;
+    int k;
+    const char * pUn;
+    for ( k = 0; k < 16; ++k ) a[k] = k+1;
+
+    for ( k = 0; k + 3 < 16; ++k )
+    {
+      const float * ptr = &a[k];
+      if (DbgOut)
+        fprintf(DbgOut, "\ninput: a = [ %f, %f, %f, %f ]\n", ptr[0], ptr[1], ptr[2], ptr[3] );
+      if ( VALIGNED(ptr) )
+      {
+        C.v = VLOAD_ALIGNED( ptr );
+        pUn = "";
+        ++numAligned;
+      }
+      else
+      {
+        C.v = VLOAD_UNALIGNED( ptr );
+        pUn = "UN";
+        ++numUnaligned;
+      }
+      if (DbgOut) {
+        fprintf(DbgOut, "C = VLOAD_%sALIGNED(&a[%d]) => {\n", pUn, k );
+        fprintf(DbgOut, "  Out C:  %f, %f, %f, %f\n", C.f[0], C.f[1], C.f[2], C.f[3] );
+        fprintf(DbgOut, "}\n" );
+      }
+      //PFFFT_ASSERT4( C, 32.0F, 34.0F, 36.0F, 38.0F, "VADD(): Out C" );
+      
+      if ( numAligned >= 1 && numUnaligned >= 4 )
+        break;
+    }
+    if ( numAligned < 1 ) {
+      fprintf(stderr, "VALIGNED() should have found at least 1 occurence!");
+      ++numErrs;
+    }
+    if ( numUnaligned < 4 ) {
+      fprintf(stderr, "!VALIGNED() should have found at least 4 occurences!");
+      ++numErrs;
+    }
+  }
+
+  {
+    v4sf_union A, B, C;
+    int k;
+    for ( k = 0; k < 4; ++k )  A.f[k] = 10 + k+1;
+    for ( k = 0; k < 4; ++k )  B.f[k] = 20 + k+1;
+    for ( k = 0; k < 4; ++k )  C.f[k] = 30 + k+1;
+
+    if (DbgOut) {
+      fprintf(DbgOut, "\ninput: A,B = {\n" );
+      fprintf(DbgOut, "  Inp A:  %f, %f, %f, %f\n", A.f[0], A.f[1], A.f[2], A.f[3] );
+      fprintf(DbgOut, "  Inp B:  %f, %f, %f, %f\n", B.f[0], B.f[1], B.f[2], B.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    C.v = VADD(A.v, B.v);
+    if (DbgOut) {
+      fprintf(DbgOut, "C = VADD(A,B) => {\n" );
+      fprintf(DbgOut, "  Out C:  %f, %f, %f, %f\n", C.f[0], C.f[1], C.f[2], C.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    PFFFT_ASSERT4( A, 11.0F, 12.0F, 13.0F, 14.0F, "VADD(): Inp A" );
+    PFFFT_ASSERT4( B, 21.0F, 22.0F, 23.0F, 24.0F, "VADD(): Inp B" );
+    PFFFT_ASSERT4( C, 32.0F, 34.0F, 36.0F, 38.0F, "VADD(): Out C" );
+  }
+
+  {
+    v4sf_union A, B, C;
+    int k;
+    for ( k = 0; k < 4; ++k )  A.f[k] = 20 + 2*k+1;
+    for ( k = 0; k < 4; ++k )  B.f[k] = 10 + k+1;
+    for ( k = 0; k < 4; ++k )  C.f[k] = 30 + k+1;
+
+    if (DbgOut) {
+      fprintf(DbgOut, "\ninput: A,B = {\n" );
+      fprintf(DbgOut, "  Inp A:  %f, %f, %f, %f\n", A.f[0], A.f[1], A.f[2], A.f[3] );
+      fprintf(DbgOut, "  Inp B:  %f, %f, %f, %f\n", B.f[0], B.f[1], B.f[2], B.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    C.v = VSUB(A.v, B.v);
+    if (DbgOut) {
+      fprintf(DbgOut, "C = VSUB(A,B) => {\n" );
+      fprintf(DbgOut, "  Out C:  %f, %f, %f, %f\n", C.f[0], C.f[1], C.f[2], C.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    PFFFT_ASSERT4( A, 21.0F, 23.0F, 25.0F, 27.0F, "VSUB(): Inp A" );
+    PFFFT_ASSERT4( B, 11.0F, 12.0F, 13.0F, 14.0F, "VSUB(): Inp B" );
+    PFFFT_ASSERT4( C, 10.0F, 11.0F, 12.0F, 13.0F, "VSUB(): Out C" );
+  }
+
+  {
+    v4sf_union A, B, C;
+    int k;
+    for ( k = 0; k < 4; ++k )  A.f[k] = 10 + k+1;
+    for ( k = 0; k < 4; ++k )  B.f[k] = k+1;
+    for ( k = 0; k < 4; ++k )  C.f[k] = 30 + k+1;
+
+    if (DbgOut) {
+      fprintf(DbgOut, "\ninput: A,B = {\n" );
+      fprintf(DbgOut, "  Inp A:  %f, %f, %f, %f\n", A.f[0], A.f[1], A.f[2], A.f[3] );
+      fprintf(DbgOut, "  Inp B:  %f, %f, %f, %f\n", B.f[0], B.f[1], B.f[2], B.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    C.v = VMUL(A.v, B.v);
+    if (DbgOut) {
+      fprintf(DbgOut, "C = VMUL(A,B) => {\n" );
+      fprintf(DbgOut, "  Out C:  %f, %f, %f, %f\n", C.f[0], C.f[1], C.f[2], C.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    PFFFT_ASSERT4( A, 11.0F, 12.0F, 13.0F, 14.0F, "VMUL(): Inp A" );
+    PFFFT_ASSERT4( B,  1.0F,  2.0F,  3.0F,  4.0F, "VMUL(): Inp B" );
+    PFFFT_ASSERT4( C, 11.0F, 24.0F, 39.0F, 56.0F, "VMUL(): Out C" );
+  }
+
+  {
+    v4sf_union A, B, C, D;
+    int k;
+    for ( k = 0; k < 4; ++k )  A.f[k] = 10 + k+1;
+    for ( k = 0; k < 4; ++k )  B.f[k] = k+1;
+    for ( k = 0; k < 4; ++k )  C.f[k] = 10 + k;
+    for ( k = 0; k < 4; ++k )  D.f[k] = 40 + k+1;
+
+    if (DbgOut) {
+      fprintf(DbgOut, "\ninput: A,B,C = {\n" );
+      fprintf(DbgOut, "  Inp A:  %f, %f, %f, %f\n", A.f[0], A.f[1], A.f[2], A.f[3] );
+      fprintf(DbgOut, "  Inp B:  %f, %f, %f, %f\n", B.f[0], B.f[1], B.f[2], B.f[3] );
+      fprintf(DbgOut, "  Inp C:  %f, %f, %f, %f\n", C.f[0], C.f[1], C.f[2], C.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    D.v = VMADD(A.v, B.v, C.v);
+    if (DbgOut) {
+      fprintf(DbgOut, "D = VMADD(A,B,C) => {\n" );
+      fprintf(DbgOut, "  Out D:  %f, %f, %f, %f\n", D.f[0], D.f[1], D.f[2], D.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    PFFFT_ASSERT4( A, 11.0F, 12.0F, 13.0F, 14.0F, "VMADD(): Inp A" );
+    PFFFT_ASSERT4( B,  1.0F,  2.0F,  3.0F,  4.0F, "VMADD(): Inp B" );
+    PFFFT_ASSERT4( C, 10.0F, 11.0F, 12.0F, 13.0F, "VMADD(): Inp C" );
+    PFFFT_ASSERT4( D, 21.0F, 35.0F, 51.0F, 69.0F, "VMADD(): Out D" );
+  }
+
+  {
+    v4sf_union A, B, C, D;
+    int k;
+    for ( k = 0; k < 4; ++k )  A.f[k] = 10 + k+1;
+    for ( k = 0; k < 4; ++k )  B.f[k] = 20 + k+1;
+    for ( k = 0; k < 4; ++k )  C.f[k] = 30 + k+1;
+    for ( k = 0; k < 4; ++k )  D.f[k] = 40 + k+1;
+
+    if (DbgOut) {
+      fprintf(DbgOut, "\ninput: A,B = {\n" );
+      fprintf(DbgOut, "  Inp A:  %f, %f, %f, %f\n", A.f[0], A.f[1], A.f[2], A.f[3] );
+      fprintf(DbgOut, "  Inp B:  %f, %f, %f, %f\n", B.f[0], B.f[1], B.f[2], B.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    INTERLEAVE2(A.v, B.v, C.v, D.v);
+    if (DbgOut) {
+      fprintf(DbgOut, "INTERLEAVE2(A,B, => C,D) => {\n" );
+      fprintf(DbgOut, "  Out C:  %f, %f, %f, %f\n", C.f[0], C.f[1], C.f[2], C.f[3] );
+      fprintf(DbgOut, "  Out D:  %f, %f, %f, %f\n", D.f[0], D.f[1], D.f[2], D.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    PFFFT_ASSERT4( A, 11.0F, 12.0F, 13.0F, 14.0F, "INTERLEAVE2() Inp A" );
+    PFFFT_ASSERT4( B, 21.0F, 22.0F, 23.0F, 24.0F, "INTERLEAVE2() Inp B" );
+    PFFFT_ASSERT4( C, 11.0F, 21.0F, 12.0F, 22.0F, "INTERLEAVE2() Out C" );
+    PFFFT_ASSERT4( D, 13.0F, 23.0F, 14.0F, 24.0F, "INTERLEAVE2() Out D" );
+  }
+
+  {
+    v4sf_union A, B, C, D;
+    int k;
+    for ( k = 0; k < 4; ++k )  A.f[k] = 10 + k+1;
+    for ( k = 0; k < 4; ++k )  B.f[k] = 20 + k+1;
+    for ( k = 0; k < 4; ++k )  C.f[k] = 30 + k+1;
+    for ( k = 0; k < 4; ++k )  D.f[k] = 40 + k+1;
+
+    if (DbgOut) {
+      fprintf(DbgOut, "\ninput: A,B = {\n" );
+      fprintf(DbgOut, "  Inp A:  %f, %f, %f, %f\n", A.f[0], A.f[1], A.f[2], A.f[3] );
+      fprintf(DbgOut, "  Inp B:  %f, %f, %f, %f\n", B.f[0], B.f[1], B.f[2], B.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    UNINTERLEAVE2(A.v, B.v, C.v, D.v);
+    if (DbgOut) {
+      fprintf(DbgOut, "UNINTERLEAVE2(A,B, => C,D) => {\n" );
+      fprintf(DbgOut, "  Out C:  %f, %f, %f, %f\n", C.f[0], C.f[1], C.f[2], C.f[3] );
+      fprintf(DbgOut, "  Out D:  %f, %f, %f, %f\n", D.f[0], D.f[1], D.f[2], D.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    PFFFT_ASSERT4( A, 11.0F, 12.0F, 13.0F, 14.0F, "UNINTERLEAVE2() Inp A" );
+    PFFFT_ASSERT4( B, 21.0F, 22.0F, 23.0F, 24.0F, "UNINTERLEAVE2() Inp B" );
+    PFFFT_ASSERT4( C, 11.0F, 13.0F, 21.0F, 23.0F, "UNINTERLEAVE2() Out C" );
+    PFFFT_ASSERT4( D, 12.0F, 14.0F, 22.0F, 24.0F, "UNINTERLEAVE2() Out D" );
+  }
+
+  {
+    v4sf_union A, B, C, D;
+    int k;
+    for ( k = 0; k < 4; ++k )  A.f[k] = 10 + k+1;
+    for ( k = 0; k < 4; ++k )  B.f[k] = 20 + k+1;
+    for ( k = 0; k < 4; ++k )  C.f[k] = 30 + k+1;
+    for ( k = 0; k < 4; ++k )  D.f[k] = 40 + k+1;
+
+    if (DbgOut) {
+      fprintf(DbgOut, "\ninput: A,B,C,D = {\n" );
+      fprintf(DbgOut, "  Inp A:  %f, %f, %f, %f\n", A.f[0], A.f[1], A.f[2], A.f[3] );
+      fprintf(DbgOut, "  Inp B:  %f, %f, %f, %f\n", B.f[0], B.f[1], B.f[2], B.f[3] );
+      fprintf(DbgOut, "  Inp C:  %f, %f, %f, %f\n", C.f[0], C.f[1], C.f[2], C.f[3] );
+      fprintf(DbgOut, "  Inp D:  %f, %f, %f, %f\n", D.f[0], D.f[1], D.f[2], D.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    VTRANSPOSE4(A.v, B.v, C.v, D.v);
+    if (DbgOut) {
+      fprintf(DbgOut, "VTRANSPOSE4(A,B,C,D) => {\n" );
+      fprintf(DbgOut, "  Out A:  %f, %f, %f, %f\n", A.f[0], A.f[1], A.f[2], A.f[3] );
+      fprintf(DbgOut, "  Out B:  %f, %f, %f, %f\n", B.f[0], B.f[1], B.f[2], B.f[3] );
+      fprintf(DbgOut, "  Out C:  %f, %f, %f, %f\n", C.f[0], C.f[1], C.f[2], C.f[3] );
+      fprintf(DbgOut, "  Out D:  %f, %f, %f, %f\n", D.f[0], D.f[1], D.f[2], D.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    PFFFT_ASSERT4( A, 11.0F, 21.0F, 31.0F, 41.0F, "VTRANSPOSE4(): Out A" );
+    PFFFT_ASSERT4( B, 12.0F, 22.0F, 32.0F, 42.0F, "VTRANSPOSE4(): Out B" );
+    PFFFT_ASSERT4( C, 13.0F, 23.0F, 33.0F, 43.0F, "VTRANSPOSE4(): Out C" );
+    PFFFT_ASSERT4( D, 14.0F, 24.0F, 34.0F, 44.0F, "VTRANSPOSE4(): Out D" );
+  }
+
+  {
+    v4sf_union A, B, C;
+    int k;
+    for ( k = 0; k < 4; ++k )  A.f[k] = 10 + k+1;
+    for ( k = 0; k < 4; ++k )  B.f[k] = 20 + k+1;
+    for ( k = 0; k < 4; ++k )  C.f[k] = 30 + k+1;
+
+    if (DbgOut) {
+      fprintf(DbgOut, "\ninput: A,B = {\n" );
+      fprintf(DbgOut, "  Inp A:  %f, %f, %f, %f\n", A.f[0], A.f[1], A.f[2], A.f[3] );
+      fprintf(DbgOut, "  Inp B:  %f, %f, %f, %f\n", B.f[0], B.f[1], B.f[2], B.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    C.v = VSWAPHL(A.v, B.v);
+    if (DbgOut) {
+      fprintf(DbgOut, "C = VSWAPHL(A,B) => {\n" );
+      fprintf(DbgOut, "  Out C:  %f, %f, %f, %f\n", C.f[0], C.f[1], C.f[2], C.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    PFFFT_ASSERT4( A, 11.0F, 12.0F, 13.0F, 14.0F, "VSWAPHL(): Inp A" );
+    PFFFT_ASSERT4( B, 21.0F, 22.0F, 23.0F, 24.0F, "VSWAPHL(): Inp B" );
+    PFFFT_ASSERT4( C, 21.0F, 22.0F, 13.0F, 14.0F, "VSWAPHL(): Out C" );
+  }
+
+  {
+    v4sf_union A, C;
+    int k;
+    for ( k = 0; k < 4; ++k )  A.f[k] = 10 + k+1;
+    for ( k = 0; k < 4; ++k )  C.f[k] = 30 + k+1;
+
+    if (DbgOut) {
+      fprintf(DbgOut, "\ninput: A = {\n" );
+      fprintf(DbgOut, "  Inp A:  %f, %f, %f, %f\n", A.f[0], A.f[1], A.f[2], A.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    C.v = VREV_S(A.v);
+    if (DbgOut) {
+      fprintf(DbgOut, "C = VREV_S(A) => {\n" );
+      fprintf(DbgOut, "  Out C:  %f, %f, %f, %f\n", C.f[0], C.f[1], C.f[2], C.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    PFFFT_ASSERT4( A, 11.0F, 12.0F, 13.0F, 14.0F, "VREV_S(): Inp A" );
+    PFFFT_ASSERT4( C, 14.0F, 13.0F, 12.0F, 11.0F, "VREV_S(): Out C" );
+  }
+
+  {
+    v4sf_union A, C;
+    int k;
+    for ( k = 0; k < 4; ++k )  A.f[k] = 10 + k+1;
+
+    if (DbgOut) {
+      fprintf(DbgOut, "\ninput: A = {\n" );
+      fprintf(DbgOut, "  Inp A:  %f, %f, %f, %f\n", A.f[0], A.f[1], A.f[2], A.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    C.v = VREV_C(A.v);
+    if (DbgOut) {
+      fprintf(DbgOut, "C = VREV_C(A) => {\n" );
+      fprintf(DbgOut, "  Out C:  %f, %f, %f, %f\n", C.f[0], C.f[1], C.f[2], C.f[3] );
+      fprintf(DbgOut, "}\n" );
+    }
+    PFFFT_ASSERT4( A, 11.0F, 12.0F, 13.0F, 14.0F, "VREV_C(): Inp A" );
+    PFFFT_ASSERT4( C, 13.0F, 14.0F, 11.0F, 12.0F, "VREV_C(): Out A" );
+  }
+
+  return numErrs;
+}
+
+#else  /* if ( SIMD_SZ == 4 ) */
+
+void FUNC_VALIDATE_SIMD_A()
+{
+}
+
+int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
+{
+  return -1;
+}
+
+#endif  /* end if ( SIMD_SZ == 4 ) */
+
 
 
 int FUNC_NEXT_POWER_OF_TWO(int N) {

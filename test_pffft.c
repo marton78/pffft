@@ -24,7 +24,18 @@
 
  */
 
+#ifdef PFFFT_ENABLE_FLOAT
 #include "pffft.h"
+
+typedef float pffft_scalar;
+#else
+/*
+Note: adapted for double precision dynamic range version.
+*/
+#include "pffft_double.h"
+
+typedef double pffft_scalar;
+#endif
 
 #include <math.h>
 #include <stdio.h>
@@ -43,7 +54,11 @@
  * => 24 Bits * 6 dB = 144 dB
  * allow a few dB tolerance (even 144 dB looks good on my PC)
  */
+#ifdef PFFFT_ENABLE_FLOAT
 #define EXPECTED_DYN_RANGE  140.0
+#else
+#define EXPECTED_DYN_RANGE  215.0
+#endif
 
 /* maximum allowed phase error in degree */
 #define DEG_ERR_LIMIT   1E-4
@@ -60,19 +75,31 @@
 
 int test(int N, int cplx, int useOrdered) {
   int Nfloat = (cplx ? N*2 : N);
-  float *X = pffft_aligned_malloc((unsigned)Nfloat * sizeof(float));
-  float *Y = pffft_aligned_malloc((unsigned)Nfloat * sizeof(float));
-  float *R = pffft_aligned_malloc((unsigned)Nfloat * sizeof(float));
-  float *Z = pffft_aligned_malloc((unsigned)Nfloat * sizeof(float));
-  float *W = pffft_aligned_malloc((unsigned)Nfloat * sizeof(float));
-  int k, j, m, iter, kmaxOther, retError = 0;
+#ifdef PFFFT_ENABLE_FLOAT
+  pffft_scalar *X = pffft_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
+  pffft_scalar *Y = pffft_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
+  pffft_scalar *R = pffft_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
+  pffft_scalar *Z = pffft_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
+  pffft_scalar *W = pffft_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
+#else
+  pffft_scalar *X = pffftd_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
+  pffft_scalar *Y = pffftd_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
+  pffft_scalar *R = pffftd_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
+  pffft_scalar *Z = pffftd_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
+  pffft_scalar *W = pffftd_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
+#endif
+  pffft_scalar amp = (pffft_scalar)1.0;
   double freq, dPhi, phi, phi0;
   double pwr, pwrCar, pwrOther, err, errSum, mag, expextedMag;
-  float amp = 1.0F;
+  int k, j, m, iter, kmaxOther, retError = 0;
 
+#ifdef PFFFT_ENABLE_FLOAT
   assert( pffft_is_power_of_two(N) );
-
   PFFFT_Setup *s = pffft_new_setup(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
+#else
+  assert( pffftd_is_power_of_two(N) );
+  PFFFTD_Setup *s = pffftd_new_setup(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
+#endif
   assert(s);
   if (!s) {
     printf("Error setting up PFFFT!\n");
@@ -81,7 +108,7 @@ int test(int N, int cplx, int useOrdered) {
 
   for ( k = m = 0; k < (cplx? N : (1 + N/2) ); k += N/16, ++m )
   {
-    amp = ( (m % 3) == 0 ) ? 1.0F : 1.1F;
+    amp = (pffft_scalar)( ( (m % 3) == 0 ) ? 1.0 : 1.1 );
     freq = (k < N/2) ? ((double)k / N) : ((double)(k-N) / N);
     dPhi = 2.0 * M_PI * freq;
     if ( dPhi < 0.0 )
@@ -100,11 +127,11 @@ int test(int N, int cplx, int useOrdered) {
       for ( j = 0; j < N; ++j )
       {
         if (cplx) {
-          X[2*j] = amp * (float)cos(phi);  /* real part */
-          X[2*j+1] = amp * (float)sin(phi);  /* imag part */
+          X[2*j] = amp * (pffft_scalar)cos(phi);  /* real part */
+          X[2*j+1] = amp * (pffft_scalar)sin(phi);  /* imag part */
         }
         else
-          X[j] = amp * (float)cos(phi);  /* only real part */
+          X[j] = amp * (pffft_scalar)cos(phi);  /* only real part */
 
         /* phase increment .. stay normalized - cos()/sin() might degrade! */
         phi += dPhi;
@@ -113,6 +140,7 @@ int test(int N, int cplx, int useOrdered) {
       }
 
       /* forward transform from X --> Y  .. using work buffer W */
+#ifdef PFFFT_ENABLE_FLOAT
       if ( useOrdered )
         pffft_transform_ordered(s, X, Y, W, PFFFT_FORWARD );
       else
@@ -120,6 +148,15 @@ int test(int N, int cplx, int useOrdered) {
         pffft_transform(s, X, R, W, PFFFT_FORWARD );  /* use R for reordering */
         pffft_zreorder(s, R, Y, PFFFT_FORWARD ); /* reorder into Y[] for power calculations */
       }
+#else
+      if ( useOrdered )
+        pffftd_transform_ordered(s, X, Y, W, PFFFT_FORWARD );
+      else
+      {
+        pffftd_transform(s, X, R, W, PFFFT_FORWARD );  /* use R for reordering */
+        pffftd_zreorder(s, R, Y, PFFFT_FORWARD ); /* reorder into Y[] for power calculations */
+      }
+#endif
 
       pwrOther = -1.0;
       pwrCar = 0;
@@ -177,10 +214,17 @@ int test(int N, int cplx, int useOrdered) {
 
 
       /* now convert spectrum back */
+#ifdef PFFFT_ENABLE_FLOAT
       if (useOrdered)
         pffft_transform_ordered(s, Y, Z, W, PFFFT_BACKWARD);
       else
         pffft_transform(s, R, Z, W, PFFFT_BACKWARD);
+#else
+      if (useOrdered)
+        pffftd_transform_ordered(s, Y, Z, W, PFFFT_BACKWARD);
+      else
+        pffftd_transform(s, R, Z, W, PFFFT_BACKWARD);
+#endif
 
       errSum = 0.0;
       for ( j = 0; j < (cplx ? (2*N) : N); ++j )
@@ -202,36 +246,72 @@ int test(int N, int cplx, int useOrdered) {
     }
 
   }
+#ifdef PFFFT_ENABLE_FLOAT
   pffft_destroy_setup(s);
   pffft_aligned_free(X);
   pffft_aligned_free(Y);
   pffft_aligned_free(Z);
   pffft_aligned_free(R);
   pffft_aligned_free(W);
+#else
+  pffftd_destroy_setup(s);
+  pffftd_aligned_free(X);
+  pffftd_aligned_free(Y);
+  pffftd_aligned_free(Z);
+  pffftd_aligned_free(R);
+  pffftd_aligned_free(W);
+#endif
 
   return retError;
 }
+
+/* small functions inside pffft.c that will detect (compiler) bugs with respect to simd instructions */
+void validate_pffft_simd();
+int  validate_pffft_simd_ex(FILE * DbgOut);
+void validate_pffftd_simd();
+int  validate_pffftd_simd_ex(FILE * DbgOut);
 
 
 
 int main(int argc, char **argv)
 {
-  int N, result, resN, resAll, k, resNextPw2, resIsPw2, resFFT;
+  int N, result, resN, resAll, i, k, resNextPw2, resIsPw2, resFFT;
 
   int inp_power_of_two[] = { 1, 2, 3, 4, 5, 6, 7, 8,  9, 511, 512,  513 };
   int ref_power_of_two[] = { 1, 2, 4, 4, 8, 8, 8, 8, 16, 512, 512, 1024 };
 
+  for ( i = 1; i < argc; ++i ) {
+
+    if (!strcmp(argv[i], "--test-simd")) {
+#ifdef PFFFT_ENABLE_FLOAT
+      int numErrs = validate_pffft_simd_ex(stdout);
+#else
+      int numErrs = validate_pffftd_simd_ex(stdout);
+#endif
+      fprintf( ( numErrs != 0 ? stderr : stdout ), "validate_pffft_simd_ex() returned %d errors!\n", numErrs);
+      return ( numErrs > 0 ? 1 : 0 );
+    }
+  }
+
   resNextPw2 = 0;
   resIsPw2 = 0;
   for ( k = 0; k < (sizeof(inp_power_of_two)/sizeof(inp_power_of_two[0])); ++k) {
+#ifdef PFFFT_ENABLE_FLOAT
     N = pffft_next_power_of_two(inp_power_of_two[k]);
+#else
+    N = pffftd_next_power_of_two(inp_power_of_two[k]);
+#endif
     if (N != ref_power_of_two[k]) {
       resNextPw2 = 1;
       printf("pffft_next_power_of_two(%d) does deliver %d, which is not reference result %d!\n",
         inp_power_of_two[k], N, ref_power_of_two[k] );
     }
 
+#ifdef PFFFT_ENABLE_FLOAT
     result = pffft_is_power_of_two(inp_power_of_two[k]);
+#else
+    result = pffftd_is_power_of_two(inp_power_of_two[k]);
+#endif
     if (inp_power_of_two[k] == ref_power_of_two[k]) {
       if (!result) {
         resIsPw2 = 1;
@@ -272,8 +352,13 @@ int main(int argc, char **argv)
       printf("tests for size %d succeeded successfully.\n", N);
   }
 
-  if (!resFFT)
-    printf("all pffft transform tests (FORWARD/BACKWARD, REAL/COMPLEX) succeeded successfully.\n");
+  if (!resFFT) {
+#ifdef PFFFT_ENABLE_FLOAT
+    printf("all pffft transform tests (FORWARD/BACKWARD, REAL/COMPLEX, float) succeeded successfully.\n");
+#else
+    printf("all pffft transform tests (FORWARD/BACKWARD, REAL/COMPLEX, double) succeeded successfully.\n");
+#endif
+  }
 
   resAll = resNextPw2 | resIsPw2 | resFFT;
   if (!resAll)

@@ -208,7 +208,8 @@ extern "C" {
   /* return 4 or 1 wether support AVX instructions was enabled when building pffft-double.c */
   int pffftd_simd_size();
 
-  void validate_pffftd_simd();
+  /* return string identifier of used architecture (SSE/NEON/Altivec/..) */
+  const char * pffftd_simd_arch();
 
 #ifdef __cplusplus
 }

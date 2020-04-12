@@ -105,9 +105,7 @@
    AVX -- adding support for other platforms with 4-element
    vectors should be limited to these macros 
 */
-
-
-#include "pf_double.h"
+#include "simd/pf_double.h"
 
 /* have code comparable with this definition */
 #define float double
@@ -126,7 +124,9 @@
 #define FUNC_ALIGNED_MALLOC        pffftd_aligned_malloc
 #define FUNC_ALIGNED_FREE          pffftd_aligned_free
 #define FUNC_SIMD_SIZE             pffftd_simd_size
-#define FUNC_VALIDATE_SIMD         validate_pffftd_simd
+#define FUNC_SIMD_ARCH             pffftd_simd_arch
+#define FUNC_VALIDATE_SIMD_A       validate_pffftd_simd
+#define FUNC_VALIDATE_SIMD_EX      validate_pffftd_simd_ex
 
 #define FUNC_CPLX_FINALIZE         pffftd_cplx_finalize
 #define FUNC_CPLX_PREPROCESS       pffftd_cplx_preprocess

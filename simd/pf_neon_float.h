@@ -9,7 +9,7 @@
    Laboratory, the University Corporation for Atmospheric Research,
    nor the names of its sponsors or contributors may be used to
    endorse or promote products derived from this Software without
-   specific prior written permission.  
+   specific prior written permission.
 
    - Redistributions of source code must retain the above copyright
    notices, this list of conditions, and the disclaimer below.
@@ -37,9 +37,19 @@
   ARM NEON support macros
 */
 #if !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_ENABLE_NEON) && (defined(__arm__) || defined(__aarch64__) || defined(__arm64__))
+#pragma message __FILE__ ": ARM NEON macros are defined"
+
 #  include <arm_neon.h>
 typedef float32x4_t v4sf;
+
 #  define SIMD_SZ 4
+
+typedef union v4sf_union {
+  v4sf  v;
+  float f[SIMD_SZ];
+} v4sf_union;
+
+#  define VARCH "NEON"
 #  define VREQUIRES_ALIGN 0  /* usually no alignment required */
 #  define VZERO() vdupq_n_f32(0)
 #  define VMUL(a,b) vmulq_f32(a,b)
@@ -47,8 +57,8 @@ typedef float32x4_t v4sf;
 #  define VMADD(a,b,c) vmlaq_f32(c,a,b)
 #  define VSUB(a,b) vsubq_f32(a,b)
 #  define LD_PS1(p) vld1q_dup_f32(&(p))
-#  define VLOAD_UNALIGNED(ptr)  (*(ptr))
-#  define VLOAD_ALIGNED(ptr)    (*(ptr))
+#  define VLOAD_UNALIGNED(ptr)  (*((v4sf*)(ptr)))
+#  define VLOAD_ALIGNED(ptr)    (*((v4sf*)(ptr)))
 #  define INTERLEAVE2(in1, in2, out1, out2) { float32x4x2_t tmp__ = vzipq_f32(in1,in2); out1=tmp__.val[0]; out2=tmp__.val[1]; }
 #  define UNINTERLEAVE2(in1, in2, out1, out2) { float32x4x2_t tmp__ = vuzpq_f32(in1,in2); out1=tmp__.val[0]; out2=tmp__.val[1]; }
 #  define VTRANSPOSE4(x0,x1,x2,x3) {                                    \
@@ -61,7 +71,16 @@ typedef float32x4_t v4sf;
 // marginally faster version
 //#  define VTRANSPOSE4(x0,x1,x2,x3) { asm("vtrn.32 %q0, %q1;\n vtrn.32 %q2,%q3\n vswp %f0,%e2\n vswp %f1,%e3" : "+w"(x0), "+w"(x1), "+w"(x2), "+w"(x3)::); }
 #  define VSWAPHL(a,b) vcombine_f32(vget_low_f32(b), vget_high_f32(a))
+
+/* reverse/flip all floats */
+#  define VREV_S(a)    _mm_shuffle_ps(a, a, _MM_SHUFFLE(0,1,2,3))
+/* reverse/flip complex floats */
+#  define VREV_C(a)    _mm_shuffle_ps(a, a, _MM_SHUFFLE(1,0,3,2))
+
 #  define VALIGNED(ptr) ((((uintptr_t)(ptr)) & 0x3) == 0)
+
+#else
+/* #pragma message __FILE__ ": ARM NEON macros are not defined" */
 #endif
 
 #endif /* PF_NEON_FLT_H */

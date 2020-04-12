@@ -35,8 +35,12 @@
 #include <limits>
 
 namespace {
+#if defined(PFFFT_ENABLE_FLOAT) || ( !defined(PFFFT_ENABLE_FLOAT) && !defined(PFFFT_ENABLE_DOUBLE) )
 #include "pffft.h"
+#endif
+#if defined(PFFFT_ENABLE_DOUBLE)
 #include "pffft_double.h"
+#endif
 }
 
 namespace pffft {
@@ -44,12 +48,57 @@ namespace pffft {
 // enum { PFFFT_REAL, PFFFT_COMPLEX }
 typedef pffft_transform_t TransformType;
 
-// define 'Scalar' and 'Complex' (in namespace pffft)
+// define 'Scalar' and 'Complex' (in namespace pffft) with template Types<>
+// and other type specific helper functions
 template<typename T> struct Types {};
-template<> struct Types<float>  { typedef float  Scalar; typedef std::complex<Scalar> Complex; };
-template<> struct Types<double> { typedef double Scalar; typedef std::complex<Scalar> Complex; };
-template<> struct Types< std::complex<float> >  { typedef float  Scalar; typedef std::complex<float>  Complex; };
-template<> struct Types< std::complex<double> > { typedef double Scalar; typedef std::complex<double> Complex; };
+#if defined(PFFFT_ENABLE_FLOAT) || ( !defined(PFFFT_ENABLE_FLOAT) && !defined(PFFFT_ENABLE_DOUBLE) )
+template<> struct Types<float>  {
+  typedef float  Scalar;
+  typedef std::complex<Scalar> Complex;
+  static Scalar* alignedAlloc(int N) { return (Scalar*)pffft_aligned_malloc( N * sizeof(Scalar) ); }
+  static void    alignedFree(void *ptr) { pffft_aligned_free(ptr); }
+  static int minFFtsize() { return pffft_min_fft_size(PFFFT_REAL); }
+  static int nextPowerOfTwo(int N) { return pffft_next_power_of_two(N); }
+  static bool isPowerOfTwo(int N) { return pffft_is_power_of_two(N); }
+  static int simd_size() { return pffft_simd_size(); }
+  static const char * simd_arch() { return pffft_simd_arch(); }
+};
+template<> struct Types< std::complex<float> >  {
+  typedef float  Scalar;
+  typedef std::complex<float>  Complex;
+  static Complex* alignedAlloc(int N) { return (Complex*)pffft_aligned_malloc( N * sizeof(Complex) ); }
+  static void     alignedFree(void *ptr) { pffft_aligned_free(ptr); }
+  static int minFFtsize() { return pffft_min_fft_size(PFFFT_COMPLEX); }
+  static int nextPowerOfTwo(int N) { return pffft_next_power_of_two(N); }
+  static bool isPowerOfTwo(int N) { return pffft_is_power_of_two(N); }
+  static int simd_size() { return pffft_simd_size(); }
+  static const char * simd_arch() { return pffft_simd_arch(); }
+};
+#endif
+#if defined(PFFFT_ENABLE_DOUBLE)
+template<> struct Types<double> {
+  typedef double Scalar;
+  typedef std::complex<Scalar> Complex;
+  static Scalar* alignedAlloc(int N) { return (Scalar*)pffftd_aligned_malloc( N * sizeof(Scalar) ); }
+  static void    alignedFree(void *ptr) { pffftd_aligned_free(ptr); }
+  static int minFFtsize() { return pffftd_min_fft_size(PFFFT_REAL); }
+  static int nextPowerOfTwo(int N) { return pffftd_next_power_of_two(N); }
+  static bool isPowerOfTwo(int N) { return pffftd_is_power_of_two(N); }
+  static int simd_size() { return pffftd_simd_size(); }
+  static const char * simd_arch() { return pffftd_simd_arch(); }
+};
+template<> struct Types< std::complex<double> > {
+  typedef double Scalar;
+  typedef std::complex<double> Complex;
+  static Complex* alignedAlloc(int N) { return (Complex*)pffftd_aligned_malloc( N * sizeof(Complex) ); }
+  static void     alignedFree(void *ptr) { pffftd_aligned_free(ptr); }
+  static int minFFtsize() { return pffftd_min_fft_size(PFFFT_COMPLEX); }
+  static int nextPowerOfTwo(int N) { return pffftd_next_power_of_two(N); }
+  static bool isPowerOfTwo(int N) { return pffftd_is_power_of_two(N); }
+  static int simd_size() { return pffftd_simd_size(); }
+  static const char * simd_arch() { return pffftd_simd_arch(); }
+};
+#endif
 
 // Allocator
 template<typename T> class PFAlloc;
@@ -75,7 +124,9 @@ struct AlignedVector : public std::vector< T, PFAlloc<T> > {
 
 #endif
 
+
 // T can be float, double, std::complex<float> or std::complex<double>
+//   define PFFFT_ENABLE_DOUBLE before include this file for double and std::complex<double>
 template<typename T>
 class Fft
 {
@@ -90,6 +141,14 @@ public:
   static bool isComplexTransform()  { return sizeof(T) == sizeof(Complex); }
   static bool isFloatScalar()  { return sizeof(Scalar) == sizeof(float); }
   static bool isDoubleScalar() { return sizeof(Scalar) == sizeof(double); }
+
+  // simple helper to get minimum possible fft length
+  static int minFFtsize() { return Types<T>::minFFtsize(); }
+  // simple helper to determine next power of 2 - without inexact/rounding floating point operations
+  static int nextPowerOfTwo(int N) { return Types<T>::nextPowerOfTwo(N); }
+  static bool isPowerOfTwo(int N) { return Types<T>::isPowerOfTwo(N); }
+  static int simd_size() { return Types<T>::simd_size(); }
+  static const char * simd_arch() { return Types<T>::simd_arch(); }
 
   //////////////////
 
@@ -321,41 +380,6 @@ private:
 };
 
 
-////////////////////////////////////////////
-////
-//// PUBLIC HELPER FUNCTIONS
-////
-////////////////////////////////////////////
-
-/* simple helper to get minimum possible fft length */
-int
-minFFtsize(const TransformType transform)
-{
-  return pffft_min_fft_size(transform);
-}
-
-/* simple helper to determine next power of 2
-   - without inexact/rounding floating point operations
-*/
-int
-nextPowerOfTwo(const int N)
-{
-  return pffft_next_power_of_two(N);
-}
-
-/* simple helper to determine if power of 2 - returns bool */
-bool
-isPowerOfTwo(const int N)
-{
-  return pffft_is_power_of_two(N);
-}
-
-void
-alignedFree(void* ptr)
-{
-  pffft_aligned_free(ptr);
-}
-
 
 ////////////////////////////////////////////////////////////////////
 
@@ -366,6 +390,8 @@ namespace {
 template<typename T>
 class Setup
 {};
+
+#if defined(PFFFT_ENABLE_FLOAT) || ( !defined(PFFFT_ENABLE_FLOAT) && !defined(PFFFT_ENABLE_DOUBLE) )
 
 template<>
 class Setup<float>
@@ -426,18 +452,6 @@ public:
   {
     pffft_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
   }
-
-  static value_type* allocateType(int length)
-  {
-    const int bytes = sizeof(value_type) * length;
-    return static_cast<value_type*>(pffft_aligned_malloc(bytes));
-  }
-
-  static Scalar* allocate(int length)
-  {
-    const int bytes = sizeof(Scalar) * length;
-    return static_cast<Scalar*>(pffft_aligned_malloc(bytes));
-  }
 };
 
 template<>
@@ -491,19 +505,12 @@ public:
   {
     pffft_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
   }
-
-  static value_type* allocateType(int length)
-  {
-    const int bytes = sizeof(value_type) * length;
-    return static_cast<value_type*>(pffft_aligned_malloc(bytes));
-  }
-
-  static Scalar* allocate(const int length)
-  {
-    const int bytes = sizeof(Scalar) * length;
-    return static_cast<Scalar*>(pffft_aligned_malloc(bytes));
-  }
 };
+
+#endif /* defined(PFFFT_ENABLE_FLOAT) || ( !defined(PFFFT_ENABLE_FLOAT) && !defined(PFFFT_ENABLE_DOUBLE) ) */
+
+
+#if defined(PFFFT_ENABLE_DOUBLE)
 
 template<>
 class Setup<double>
@@ -567,18 +574,6 @@ public:
   {
     pffftd_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
   }
-
-  static value_type* allocateType(int length)
-  {
-    const int bytes = sizeof(value_type) * length;
-    return static_cast<value_type*>(pffft_aligned_malloc(bytes));
-  }
-
-  static Scalar* allocate(int length)
-  {
-    const int bytes = sizeof(Scalar) * length;
-    return static_cast<Scalar*>(pffftd_aligned_malloc(bytes));
-  }
 };
 
 template<>
@@ -640,19 +635,9 @@ public:
   {
     pffftd_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
   }
-
-  static value_type* allocateType(int length)
-  {
-    const int bytes = sizeof(value_type) * length;
-    return static_cast<value_type*>(pffft_aligned_malloc(bytes));
-  }
-
-  static Scalar* allocate(int length)
-  {
-    const int bytes = sizeof(Scalar) * length;
-    return static_cast<Scalar*>(pffftd_aligned_malloc(bytes));
-  }
 };
+
+#endif /* defined(PFFFT_ENABLE_DOUBLE) */
 
 } // end of anonymous namespace for Setup<>
 
@@ -674,7 +659,7 @@ inline Fft<T>::Fft(int length, int stackThresholdLen)
 template<typename T>
 inline Fft<T>::~Fft()
 {
-  pffft_aligned_free(work);
+  Types<T>::alignedFree(work);
 }
 
 template<typename T>
@@ -694,13 +679,12 @@ Fft<T>::prepareLength(int newLength)
   setup.prepareLength(length);
 
   if (work) {
-    pffft_aligned_free(work);
+    Types<T>::alignedFree(work);
     work = NULL;
   }
 
   if (useHeap) {
-    int const bytesToAllocate = length * sizeof(T);
-    work = static_cast<Scalar*>(pffft_aligned_malloc(bytesToAllocate));
+    work = reinterpret_cast<Scalar*>( Types<T>::alignedAlloc(length) );
   }
 }
 
@@ -877,7 +861,7 @@ template<typename T>
 inline void
 Fft<T>::alignedFree(void* ptr)
 {
-  pffft_aligned_free(ptr);
+  Types<T>::alignedFree(ptr);
 }
 
 
@@ -885,21 +869,21 @@ template<typename T>
 inline T*
 pffft::Fft<T>::alignedAllocType(int length)
 {
-  return Setup<T>::allocateType(length);
+  return Types<T>::alignedAlloc(length);
 }
 
 template<typename T>
 inline typename pffft::Fft<T>::Scalar*
 pffft::Fft<T>::alignedAllocScalar(int length)
 {
-  return reinterpret_cast< Scalar* >( Setup<T>::allocate(length) );
+  return Types<Scalar>::alignedAlloc(length);
 }
 
 template<typename T>
 inline typename Fft<T>::Complex *
 Fft<T>::alignedAllocComplex(int length)
 {
-  return reinterpret_cast< Complex* >( Setup<T>::allocate(2 * length) );
+  return Types<Complex>::alignedAlloc(length);
 }
 
 
@@ -970,7 +954,7 @@ class PFAlloc {
 
     // allocate but don't initialize num elements of type T
     pointer allocate (size_type num, const void* = 0) {
-        pointer ret = (pointer)( pffft_aligned_malloc(num*sizeof(T)) );
+        pointer ret = (pointer)( Types<T>::alignedAlloc(num) );
         return ret;
     }
 
@@ -989,7 +973,7 @@ class PFAlloc {
     // deallocate storage p of deleted elements
     void deallocate (pointer p, size_type num) {
         // deallocate memory with pffft
-        pffft_aligned_free((void*)p);
+        Types<T>::alignedFree( (void*)p );
     }
 };
 

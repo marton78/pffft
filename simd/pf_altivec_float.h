@@ -9,7 +9,7 @@
    Laboratory, the University Corporation for Atmospheric Research,
    nor the names of its sponsors or contributors may be used to
    endorse or promote products derived from this Software without
-   specific prior written permission.  
+   specific prior written permission.
 
    - Redistributions of source code must retain the above copyright
    notices, this list of conditions, and the disclaimer below.
@@ -34,12 +34,21 @@
 #define PF_ALTIVEC_FLT_H
 
 /*
-   Altivec support macros 
+   Altivec support macros
 */
 #if !defined(PFFFT_SIMD_DISABLE) && (defined(__ppc__) || defined(__ppc64__))
+#pragma message __FILE__ ": ALTIVEC float macros are defined"
 typedef vector float v4sf;
+
 #  define SIMD_SZ 4
+
+typedef union v4sf_union {
+  v4sf  v;
+  float f[SIMD_SZ];
+} v4sf_union;
+
 #  define VREQUIRES_ALIGN 1  /* not sure, if really required */
+#  define VARCH "ALTIVEC"
 #  define VZERO() ((vector float) vec_splat_u8(0))
 #  define VMUL(a,b) vec_madd(a,b, VZERO())
 #  define VADD(a,b) vec_add(a,b)

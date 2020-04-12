@@ -1,17 +1,9 @@
 /*
-  Copyright (c) 2019 Hayati Ayguen.
-
+  Copyright (c) 2019  Hayati Ayguen ( h_ayguen@web.de )
  */
 
 #include "pffastconv.h"
 #include "pffft.h"
-
-/* detect compiler flavour */
-#if defined(_MSC_VER)
-#  define COMPILER_MSVC
-#elif defined(__GNUC__)
-#  define COMPILER_GCC
-#endif
 
 #include <stdlib.h>
 #include <stdint.h>
@@ -23,40 +15,28 @@
 #define FASTCONV_DBG_OUT  0
 
 
-#if defined(COMPILER_GCC)
-#  define ALWAYS_INLINE(return_type) inline return_type __attribute__ ((always_inline))
+/* detect compiler flavour */
+#if defined(_MSC_VER)
 #  define RESTRICT __restrict
-#elif defined(COMPILER_MSVC)
-#  define ALWAYS_INLINE(return_type) __forceinline return_type
-#  define RESTRICT __restrict
-#endif
-
-
-#ifdef COMPILER_MSVC
 #pragma warning( disable : 4244 4305 4204 4456 )
+#elif defined(__GNUC__)
+#  define RESTRICT __restrict
 #endif
-
-/* 
-   vector support macros: the rest of the code is independant of
-   SSE/Altivec/NEON -- adding support for other platforms with 4-element
-   vectors should be limited to these macros 
-*/
-#include "pf_float.h"
 
 
 void *pffastconv_malloc(size_t nb_bytes)
 {
-  return Valigned_malloc(nb_bytes);
+  return pffft_aligned_malloc(nb_bytes);
 }
 
 void pffastconv_free(void *p)
 {
-  Valigned_free(p);
+  pffft_aligned_free(p);
 }
 
 int pffastconv_simd_size()
 {
-  return SIMD_SZ;
+  return pffft_simd_size();
 }
 
 
@@ -239,7 +219,7 @@ int pffastconv_apply(PFFASTCONV_Setup * s, const float *input_, int cplxInputLen
             s->Xt[j] = X[cplxOff + 2 * j];
           if ( procLen < Nfft )
             memset( s->Xt + procLen, 0, (unsigned)(Nfft - procLen) * sizeof(float) );
-    
+
           pffft_transform(s->st, s->Xt, s->Xf, /* tmp = */ s->Mf, PFFFT_FORWARD);
         }
         else if ( flags & PFFASTCONV_DIRECT_INP )
@@ -254,7 +234,7 @@ int pffastconv_apply(PFFASTCONV_Setup * s, const float *input_, int cplxInputLen
     
           pffft_transform(s->st, s->Xt, s->Xf, /* tmp = */ s->Mf, PFFFT_FORWARD);
         }
-    
+
         pffft_zconvolve_no_accu(s->st, s->Xf, s->Hf, /* tmp = */ s->Mf, s->scale);
 
         if ( flags & PFFASTCONV_CPLX_INP_OUT )
