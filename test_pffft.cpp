@@ -67,7 +67,7 @@ Ttest(int N, bool useOrdered)
   const bool cplx = pffft::Fft<T>::isComplexTransform();
   const double EXPECTED_DYN_RANGE = Fft::isDoubleScalar() ? 215.0 : 140.0;
 
-  assert(pffft::isPowerOfTwo(N));
+  assert(Fft::isPowerOfTwo(N));
 
   Fft fft = Fft(N);  // instantiate and prepareLength() for length N
 
