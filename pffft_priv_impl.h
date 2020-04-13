@@ -69,14 +69,6 @@
 #endif
 
 
-void *FUNC_ALIGNED_MALLOC(size_t nb_bytes) {
-  return Valigned_malloc(nb_bytes);
-}
-
-void FUNC_ALIGNED_FREE(void *p) {
-  Valigned_free(p);
-}
-
 int FUNC_SIMD_SIZE() { return SIMD_SZ; }
 
 const char * FUNC_SIMD_ARCH() { return VARCH; }
@@ -2194,38 +2186,4 @@ int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
 }
 
 #endif  /* end if ( SIMD_SZ == 4 ) */
-
-
-
-int FUNC_NEXT_POWER_OF_TWO(int N) {
-  /* https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2 */
-  /* compute the next highest power of 2 of 32-bit v */
-  unsigned v = N;
-  v--;
-  v |= v >> 1;
-  v |= v >> 2;
-  v |= v >> 4;
-  v |= v >> 8;
-  v |= v >> 16;
-  v++;
-  return v;
-}
-
-int FUNC_IS_POWER_OF_TWO(int N) {
-  /* https://graphics.stanford.edu/~seander/bithacks.html#DetermineIfPowerOf2 */
-  int f = N && !(N & (N - 1));
-  return f;
-}
-
-int FUNC_MIN_FFT_SIZE(pffft_transform_t transform) {
-  /* unfortunately, the fft size must be a multiple of 16 for complex FFTs
-     and 32 for real FFTs -- a lot of stuff would need to be rewritten to
-     handle other cases (or maybe just switch to a scalar fft, I don't know..) */
-  if (transform == PFFFT_REAL)
-    return ( 2 * SIMD_SZ * SIMD_SZ );
-  else if (transform == PFFFT_COMPLEX)
-    return ( SIMD_SZ * SIMD_SZ );
-  else
-    return 1;
-}
 

@@ -97,7 +97,7 @@ endif()
 
 ######################################################
 
-add_library(PFFFT STATIC ${FLOAT_SOURCES} ${DOUBLE_SOURCES} pffft_priv_impl.h pffft.hpp )
+add_library(PFFFT STATIC ${FLOAT_SOURCES} ${DOUBLE_SOURCES} pffft_common.c pffft_priv_impl.h pffft.hpp )
 target_compile_definitions(PFFFT PRIVATE _USE_MATH_DEFINES)
 if (USE_SCALAR_VECT)
   target_compile_definitions(PFFFT PRIVATE PFFFT_SCALVEC_ENABLED=1)

@@ -173,12 +173,21 @@ extern "C" {
      *not* have been reordered with pffft_zreorder (otherwise just
      perform the operation yourself as the dft coefs are stored as
      interleaved complex numbers).
-     
+
      the operation performed is: dft_ab = (dft_a * fdt_b)*scaling
-     
+
      The dft_a, dft_b and dft_ab pointers may alias.
   */
   void pffft_zconvolve_no_accu(PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
+
+  /* return 4 or 1 wether support SSE/NEON/Altivec instructions was enabled when building pffft.c */
+  int pffft_simd_size();
+
+  /* return string identifier of used architecture (SSE/NEON/Altivec/..) */
+  const char * pffft_simd_arch();
+
+
+  /* following functions are identical to the pffftd_ functions */
 
   /* simple helper to get minimum possible fft size */
   int pffft_min_fft_size(pffft_transform_t transform);
@@ -198,12 +207,6 @@ extern "C" {
   */
   void *pffft_aligned_malloc(size_t nb_bytes);
   void pffft_aligned_free(void *);
-
-  /* return 4 or 1 wether support SSE/NEON/Altivec instructions was enabled when building pffft.c */
-  int pffft_simd_size();
-
-  /* return string identifier of used architecture (SSE/NEON/Altivec/..) */
-  const char * pffft_simd_arch();
 
 #ifdef __cplusplus
 }

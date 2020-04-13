@@ -172,19 +172,27 @@ extern "C" {
   void pffftd_zconvolve_accumulate(PFFFTD_Setup *setup, const double *dft_a, const double *dft_b, double *dft_ab, double scaling);
 
   /* 
-    Perform a multiplication of the frequency components of dft_a and
-    dft_b and put result in dft_ab. The arrays should have
-    been obtained with pffft_transform(.., PFFFT_FORWARD) and should
-    *not* have been reordered with pffft_zreorder (otherwise just
-    perform the operation yourself as the dft coefs are stored as
-    interleaved complex numbers).
-     
-    the operation performed is: dft_ab = (dft_a * fdt_b)*scaling
-     
-    The dft_a, dft_b and dft_ab pointers may alias.
+     Perform a multiplication of the frequency components of dft_a and
+     dft_b and put result in dft_ab. The arrays should have
+     been obtained with pffft_transform(.., PFFFT_FORWARD) and should
+     *not* have been reordered with pffft_zreorder (otherwise just
+     perform the operation yourself as the dft coefs are stored as
+     interleaved complex numbers).
+
+     the operation performed is: dft_ab = (dft_a * fdt_b)*scaling
+
+     The dft_a, dft_b and dft_ab pointers may alias.
   */
   void pffftd_zconvolve_no_accu(PFFFTD_Setup *setup, const double *dft_a, const double *dft_b, double*dft_ab, double scaling);
 
+  /* return 4 or 1 wether support AVX instructions was enabled when building pffft-double.c */
+  int pffftd_simd_size();
+
+  /* return string identifier of used architecture (AVX/..) */
+  const char * pffftd_simd_arch();
+
+
+  /* following functions are identical to the pffft_ functions */
 
   /* simple helper to get minimum possible fft size */
   int pffftd_min_fft_size(pffft_transform_t transform);
@@ -204,12 +212,6 @@ extern "C" {
   */
   void *pffftd_aligned_malloc(size_t nb_bytes);
   void pffftd_aligned_free(void *);
-
-  /* return 4 or 1 wether support AVX instructions was enabled when building pffft-double.c */
-  int pffftd_simd_size();
-
-  /* return string identifier of used architecture (SSE/NEON/Altivec/..) */
-  const char * pffftd_simd_arch();
 
 #ifdef __cplusplus
 }

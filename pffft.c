@@ -106,9 +106,6 @@
 #define FUNC_ZREORDER              pffft_zreorder
 #define FUNC_ZCONVOLVE_ACCUMULATE  pffft_zconvolve_accumulate
 #define FUNC_ZCONVOLVE_NO_ACCU     pffft_zconvolve_no_accu
-#define FUNC_MIN_FFT_SIZE          pffft_min_fft_size
-#define FUNC_NEXT_POWER_OF_TWO     pffft_next_power_of_two
-#define FUNC_IS_POWER_OF_TWO       pffft_is_power_of_two
 
 #define FUNC_ALIGNED_MALLOC        pffft_aligned_malloc
 #define FUNC_ALIGNED_FREE          pffft_aligned_free

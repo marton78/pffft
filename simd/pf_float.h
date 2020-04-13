@@ -80,24 +80,5 @@ typedef float vsfscalar;
 #define SVMUL(f,v) VMUL(LD_PS1(f),v)
 #endif
 
-/* SSE and co like 16-bytes aligned pointers
- * with a 64-byte alignment, we are even aligned on L2 cache lines... */
-#define MALLOC_V4SF_ALIGNMENT 64
-
-static
-void *Valigned_malloc(size_t nb_bytes) {
-  void *p, *p0 = malloc(nb_bytes + MALLOC_V4SF_ALIGNMENT);
-  if (!p0) return (void *) 0;
-  p = (void *) (((size_t) p0 + MALLOC_V4SF_ALIGNMENT) & (~((size_t) (MALLOC_V4SF_ALIGNMENT-1))));
-  *((void **) p - 1) = p0;
-  return p;
-}
-
-static
-void Valigned_free(void *p) {
-  if (p) free(*((void **) p - 1));
-}
-
-
 #endif /* PF_FLT_H */
 
