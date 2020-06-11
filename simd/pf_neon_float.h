@@ -73,9 +73,9 @@ typedef union v4sf_union {
 #  define VSWAPHL(a,b) vcombine_f32(vget_low_f32(b), vget_high_f32(a))
 
 /* reverse/flip all floats */
-#  define VREV_S(a)    _mm_shuffle_ps(a, a, _MM_SHUFFLE(0,1,2,3))
+#  define VREV_S(a)    vcombine_f32(vrev64_f32(vget_high_f32(a)), vrev64_f32(vget_low_f32(a)))
 /* reverse/flip complex floats */
-#  define VREV_C(a)    _mm_shuffle_ps(a, a, _MM_SHUFFLE(1,0,3,2))
+#  define VREV_C(a)    vextq_f32(a, a, 2)
 
 #  define VALIGNED(ptr) ((((uintptr_t)(ptr)) & 0x3) == 0)
 
