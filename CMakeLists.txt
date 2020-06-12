@@ -11,9 +11,10 @@ option(USE_SIMD_NEON   "force using NEON on ARM? (requires USE_SIMD)" OFF)
 option(USE_SCALAR_VECT "use 4-element vector scalar operations (if no other SIMD)" ON)
 
 # test options
-option(USE_BENCH_FFTW  "use (system-installed) FFTW3 in fft benchmark?" OFF)
-option(USE_BENCH_GREEN "use Green FFT in fft benchmark? - if exists in subdir" ON)
-option(USE_BENCH_KISS  "use KissFFT in fft benchmark? - if exists in subdir" ON)
+option(USE_BENCH_FFTW   "use (system-installed) FFTW3 in fft benchmark?" OFF)
+option(USE_BENCH_GREEN  "use Green FFT in fft benchmark? - if exists in subdir" ON)
+option(USE_BENCH_KISS   "use KissFFT in fft benchmark? - if exists in subdir" ON)
+option(USE_BENCH_POCKET "use PocketFFT in fft benchmark? - if exists in subdir" ON)
 
 option(USE_DEBUG_ASAN  "use GCC's address sanitizer?" OFF)
 
@@ -58,6 +59,17 @@ if (USE_BENCH_KISS)
     add_subdirectory( "${PATH_KISS}" )
   else()
     message(WARNING "KissFFT not found in subdir kissfft")
+  endif()
+endif()
+
+if (USE_BENCH_POCKET)
+  # git submodule add https://github.com/hayguen/pocketfft.git
+  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/pocketfft/pocketfft.c")
+    message(STATUS "found subdir pocketfft")
+    set(PATH_POCKET "${CMAKE_CURRENT_LIST_DIR}/pocketfft")
+    add_subdirectory( "${PATH_POCKET}" )
+  else()
+    message(WARNING "PocketFFT not found in subdir pocketfft")
   endif()
 endif()
 
@@ -247,6 +259,11 @@ if (USE_TYPE_DOUBLE)
   if (USE_BENCH_FFTW)
     target_compile_definitions(bench_pffft_double PRIVATE HAVE_FFTW=1)
     target_link_libraries(bench_pffft_double  fftw3)
+  endif()
+
+  if (PATH_POCKET AND USE_BENCH_POCKET)
+    target_compile_definitions(bench_pffft_double PRIVATE HAVE_POCKET_FFT=1)
+    target_link_libraries(bench_pffft_double  PocketFFT)
   endif()
 endif()
 
