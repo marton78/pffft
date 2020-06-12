@@ -26,6 +26,7 @@
  */
 
 #define CONCAT_TOKENS(A, B)  A ## B
+#define CONCAT_THREE_TOKENS(A, B, C)  A ## B ## C
 
 #ifdef PFFFT_ENABLE_FLOAT
 #include "pffft.h"
@@ -45,7 +46,6 @@ typedef PFFFTD_Setup PFFFT_SETUP;
 #define PFFFT_FUNC(F)  CONCAT_TOKENS(pffftd_, F)
 #endif
 
-
 #ifdef PFFFT_ENABLE_FLOAT
 
 #include "fftpack.h"
@@ -62,8 +62,22 @@ typedef PFFFTD_Setup PFFFT_SETUP;
 #endif
 
 #ifdef HAVE_POCKET_FFT
-#include <pocketfft.h>
+#include <pocketfft_double.h>
+#include <pocketfft_single.h>
 #endif
+
+#ifdef PFFFT_ENABLE_FLOAT
+  #define POCKFFTR_PRE(R)   CONCAT_TOKENS(rffts, R)
+  #define POCKFFTC_PRE(R)   CONCAT_TOKENS(cffts, R)
+  #define POCKFFTR_MID(L,R) CONCAT_THREE_TOKENS(L, rffts, R)
+  #define POCKFFTC_MID(L,R) CONCAT_THREE_TOKENS(L, cffts, R)
+#else
+  #define POCKFFTR_PRE(R)   CONCAT_TOKENS(rfft, R)
+  #define POCKFFTC_PRE(R)   CONCAT_TOKENS(cfft, R)
+  #define POCKFFTR_MID(L,R) CONCAT_THREE_TOKENS(L, rfft, R)
+  #define POCKFFTC_MID(L,R) CONCAT_THREE_TOKENS(L, cfft, R)
+#endif
+
 
 
 #include <math.h>
@@ -167,7 +181,7 @@ int compiledInAlgo[NUM_FFT_ALGOS] = {
 #else
   0,
 #endif
-#if defined(HAVE_POCKET_FFT) && !defined(PFFFT_ENABLE_FLOAT)
+#if defined(HAVE_POCKET_FFT)
   1, /* "Pocket     " */
 #else
   0,
@@ -833,19 +847,20 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   }
 #endif
 
-#if defined(HAVE_POCKET_FFT) && !defined(PFFFT_ENABLE_FLOAT)
+#if defined(HAVE_POCKET_FFT)
+
   Nmax = (cplx ? nextPow2N*2 : nextPow2N);
   X[Nmax] = checkVal;
   if ( 1 || PFFFT_FUNC(is_power_of_two)(N) )
   {
-    rfft_plan planr;
-    cfft_plan planc;
+    POCKFFTR_PRE(_plan) planr;
+    POCKFFTC_PRE(_plan) planc;
 
     te = uclock_sec();
     if (cplx) {
-      planc = make_cfft_plan(nextPow2N);
+      planc = POCKFFTC_MID(make_,_plan)(nextPow2N);
     } else {
-      planr = make_rfft_plan(nextPow2N);
+      planr = POCKFFTR_MID(make_,_plan)(nextPow2N);
     }
 
     t0 = uclock_sec();
@@ -856,18 +871,18 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
         if (cplx) {
           assert( X[Nmax] == checkVal );
           memcpy(Y, X, 2*nextPow2N * sizeof(pffft_scalar) );
-          cfft_forward(planc, Y, 1.);
+          POCKFFTC_PRE(_forward)(planc, Y, 1.);
           assert( X[Nmax] == checkVal );
           memcpy(X, Y, 2*nextPow2N * sizeof(pffft_scalar) );
-          cfft_backward(planc, X, 1./nextPow2N);
+          POCKFFTC_PRE(_backward)(planc, X, 1./nextPow2N);
           assert( X[Nmax] == checkVal );
         } else {
           assert( X[Nmax] == checkVal );
           memcpy(Y, X, nextPow2N * sizeof(pffft_scalar) );
-          rfft_forward(planr, Y, 1.);
+          POCKFFTR_PRE(_forward)(planr, Y, 1.);
           assert( X[Nmax] == checkVal );
           memcpy(X, Y, nextPow2N * sizeof(pffft_scalar) );
-          rfft_backward(planr, X, 1./nextPow2N);
+          POCKFFTR_PRE(_backward)(planr, X, 1./nextPow2N);
           assert( X[Nmax] == checkVal );
         }
         ++max_iter;
@@ -876,9 +891,9 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
     } while ( t1 < tstop );
 
     if (cplx) {
-      destroy_cfft_plan(planc);
+      POCKFFTC_MID(destroy_,_plan)(planc);
     } else {
-      destroy_rfft_plan(planr);
+      POCKFFTR_MID(destroy_,_plan)(planr);
     }
 
     flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); /* see http://www.fftw.org/speed/method.html */

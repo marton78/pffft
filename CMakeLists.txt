@@ -64,7 +64,7 @@ endif()
 
 if (USE_BENCH_POCKET)
   # git submodule add https://github.com/hayguen/pocketfft.git
-  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/pocketfft/pocketfft.c")
+  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/pocketfft/pocketfft_double.c")
     message(STATUS "found subdir pocketfft")
     set(PATH_POCKET "${CMAKE_CURRENT_LIST_DIR}/pocketfft")
     add_subdirectory( "${PATH_POCKET}" )
@@ -248,6 +248,12 @@ if (USE_TYPE_FLOAT)
     target_compile_definitions(bench_pffft_float PRIVATE HAVE_KISS_FFT=1)
     target_link_libraries(bench_pffft_float  KissFFT)
   endif()
+
+  if (PATH_POCKET AND USE_BENCH_POCKET)
+    target_compile_definitions(bench_pffft_float PRIVATE HAVE_POCKET_FFT=1)
+    target_link_libraries(bench_pffft_float  PocketFFT)
+  endif()
+
 endif()
 
 if (USE_TYPE_DOUBLE)
