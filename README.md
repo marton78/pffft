@@ -124,6 +124,22 @@ It shows how small an FFT can be - including the Bluestein algorithm, but it's e
 The whole C++ implementation file is 161 lines, including the Copyright header, see
 [https://github.com/nayuki/Nayuki-web-published-code/blob/master/free-small-fft-in-multiple-languages/FftComplex.cpp](https://github.com/nayuki/Nayuki-web-published-code/blob/master/free-small-fft-in-multiple-languages/FftComplex.cpp)
 
+## Dependencies / Required Linux packages
+
+On Debian/Ubuntu Linux following packages should be installed:
+
+```
+sudo apt-get install build-essential gcc g++ cmake
+```
+
+for benchmarking, you should have additional packages:
+```
+sudo apt-get install libfftw3-dev gnuplot
+```
+
+run the benchmarks with `./bench_all.sh ON` , to include benchmarks of fftw3 ..
+more details in README of [https://github.com/hayguen/pffft_benchmarks](https://github.com/hayguen/pffft_benchmarks)
+
 
 ## Benchmark results
 
