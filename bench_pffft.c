@@ -26,6 +26,7 @@
  */
 
 #define CONCAT_TOKENS(A, B)  A ## B
+#define CONCAT_THREE_TOKENS(A, B, C)  A ## B ## C
 
 #ifdef PFFFT_ENABLE_FLOAT
 #include "pffft.h"
@@ -45,7 +46,6 @@ typedef PFFFTD_Setup PFFFT_SETUP;
 #define PFFFT_FUNC(F)  CONCAT_TOKENS(pffftd_, F)
 #endif
 
-
 #ifdef PFFFT_ENABLE_FLOAT
 
 #include "fftpack.h"
@@ -60,6 +60,25 @@ typedef PFFFTD_Setup PFFFT_SETUP;
 #endif
 
 #endif
+
+#ifdef HAVE_POCKET_FFT
+#include <pocketfft_double.h>
+#include <pocketfft_single.h>
+#endif
+
+#ifdef PFFFT_ENABLE_FLOAT
+  #define POCKFFTR_PRE(R)   CONCAT_TOKENS(rffts, R)
+  #define POCKFFTC_PRE(R)   CONCAT_TOKENS(cffts, R)
+  #define POCKFFTR_MID(L,R) CONCAT_THREE_TOKENS(L, rffts, R)
+  #define POCKFFTC_MID(L,R) CONCAT_THREE_TOKENS(L, cffts, R)
+#else
+  #define POCKFFTR_PRE(R)   CONCAT_TOKENS(rfft, R)
+  #define POCKFFTC_PRE(R)   CONCAT_TOKENS(cfft, R)
+  #define POCKFFTR_MID(L,R) CONCAT_THREE_TOKENS(L, rfft, R)
+  #define POCKFFTC_MID(L,R) CONCAT_THREE_TOKENS(L, cfft, R)
+#endif
+
+
 
 #include <math.h>
 #include <stdio.h>
@@ -97,7 +116,7 @@ typedef fftw_complex FFTW_COMPLEX;
 #endif
 
 
-#define NUM_FFT_ALGOS  8
+#define NUM_FFT_ALGOS  9
 enum {
   ALGO_FFTPACK = 0,
   ALGO_VECLIB,
@@ -105,8 +124,9 @@ enum {
   ALGO_FFTW_AUTO,
   ALGO_GREEN,
   ALGO_KISS,
-  ALGO_PFFFT_U, /* = 6 */
-  ALGO_PFFFT_O  /* = 7 */
+  ALGO_POCKET,
+  ALGO_PFFFT_U, /* = 7 */
+  ALGO_PFFFT_O  /* = 8 */
 };
 
 #define NUM_TYPES      7
@@ -128,6 +148,7 @@ const char * algoName[NUM_FFT_ALGOS] = {
   "FFTW F(auto) ",
   "Green        ",
   "Kiss         ",
+  "Pocket       ",
   "PFFFT-U(simd)",  /* unordered */
   "PFFFT (simd) "   /* ordered */
 };
@@ -160,6 +181,11 @@ int compiledInAlgo[NUM_FFT_ALGOS] = {
 #else
   0,
 #endif
+#if defined(HAVE_POCKET_FFT)
+  1, /* "Pocket     " */
+#else
+  0,
+#endif
   1, /* "PFFFT_U    " */
   1  /* "PFFFT_O    " */
 };
@@ -171,6 +197,7 @@ const char * algoTableHeader[NUM_FFT_ALGOS][2] = {
 { "|real FFTWauto ", "|cplx FFTWauto " },
 { "|  real  Green ", "|  cplx  Green " },
 { "|  real   Kiss ", "|  cplx   Kiss " },
+{ "|  real Pocket ", "|  cplx Pocket " },
 { "| real PFFFT-U ", "| cplx PFFFT-U " },
 { "|  real  PFFFT ", "|  cplx  PFFFT " } };
 
@@ -820,6 +847,67 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   }
 #endif
 
+#if defined(HAVE_POCKET_FFT)
+
+  Nmax = (cplx ? nextPow2N*2 : nextPow2N);
+  X[Nmax] = checkVal;
+  if ( 1 || PFFFT_FUNC(is_power_of_two)(N) )
+  {
+    POCKFFTR_PRE(_plan) planr;
+    POCKFFTC_PRE(_plan) planc;
+
+    te = uclock_sec();
+    if (cplx) {
+      planc = POCKFFTC_MID(make_,_plan)(nextPow2N);
+    } else {
+      planr = POCKFFTR_MID(make_,_plan)(nextPow2N);
+    }
+
+    t0 = uclock_sec();
+    tstop = t0 + max_test_duration;
+    max_iter = 0;
+    do {
+      for ( k = 0; k < step_iter; ++k ) {
+        if (cplx) {
+          assert( X[Nmax] == checkVal );
+          memcpy(Y, X, 2*nextPow2N * sizeof(pffft_scalar) );
+          POCKFFTC_PRE(_forward)(planc, Y, 1.);
+          assert( X[Nmax] == checkVal );
+          memcpy(X, Y, 2*nextPow2N * sizeof(pffft_scalar) );
+          POCKFFTC_PRE(_backward)(planc, X, 1./nextPow2N);
+          assert( X[Nmax] == checkVal );
+        } else {
+          assert( X[Nmax] == checkVal );
+          memcpy(Y, X, nextPow2N * sizeof(pffft_scalar) );
+          POCKFFTR_PRE(_forward)(planr, Y, 1.);
+          assert( X[Nmax] == checkVal );
+          memcpy(X, Y, nextPow2N * sizeof(pffft_scalar) );
+          POCKFFTR_PRE(_backward)(planr, X, 1./nextPow2N);
+          assert( X[Nmax] == checkVal );
+        }
+        ++max_iter;
+      }
+      t1 = uclock_sec();
+    } while ( t1 < tstop );
+
+    if (cplx) {
+      POCKFFTC_MID(destroy_,_plan)(planc);
+    } else {
+      POCKFFTR_MID(destroy_,_plan)(planr);
+    }
+
+    flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); /* see http://www.fftw.org/speed/method.html */
+    tmeas[TYPE_ITER][ALGO_POCKET] = max_iter;
+    tmeas[TYPE_MFLOPS][ALGO_POCKET] = flops/1e6/(t1 - t0 + 1e-16);
+    tmeas[TYPE_DUR_TOT][ALGO_POCKET] = t1 - t0;
+    tmeas[TYPE_DUR_NS][ALGO_POCKET] = show_output("Pocket", N, cplx, flops, t0, t1, max_iter, tableFile);
+    tmeas[TYPE_PREP][ALGO_POCKET] = (t0 - te) * 1e3;
+    haveAlgo[ALGO_POCKET] = 1;
+  } else {
+    show_output("Pocket", N, cplx, -1, -1, -1, -1, tableFile);
+  }
+#endif
+
 
   /* PFFFT-U (unordered) benchmark */
   Nmax = (cplx ? pffftPow2N*2 : pffftPow2N);
@@ -977,9 +1065,9 @@ int main(int argc, char **argv) {
     -1 };
 #endif
 
-#define NUMPOW2FFTLENS  21
+#define NUMPOW2FFTLENS  22
 #define MAXNUMFFTLENS MAX( NUMPOW2FFTLENS, NUMNONPOW2LENS )
-  int Npow2[NUMPOW2FFTLENS];  /* exp = 1 .. 20, -1 */
+  int Npow2[NUMPOW2FFTLENS];  /* exp = 1 .. 21, -1 */
   const int *Nvalues = NULL;
   double tmeas[2][MAXNUMFFTLENS][NUM_TYPES][NUM_FFT_ALGOS];
   double iterCalReal, iterCalCplx;

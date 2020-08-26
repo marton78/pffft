@@ -98,6 +98,11 @@ and `libPFFASTCONV.a` from the source files, plus the additional
 `libFFTPACK.a` library. Later one's sources are there anyway for the benchmark.
 
 
+## Origin:
+Origin for this code is Julien Pommier's pffft on bitbucket:
+[https://bitbucket.org/jpommier/pffft/](https://bitbucket.org/jpommier/pffft/)
+
+
 ## Comparison with other FFTs:
 
 The idea was not to break speed records, but to get a decently fast
@@ -113,6 +118,11 @@ array in their arguments.
 It is also a bit focused on performing 1D convolutions, that is why it
 provides "unordered" FFTs , and a fourier domain convolution
 operation.
+
+Very interesting is [https://www.nayuki.io/page/free-small-fft-in-multiple-languages](https://www.nayuki.io/page/free-small-fft-in-multiple-languages).
+It shows how small an FFT can be - including the Bluestein algorithm, but it's everything else than fast.
+The whole C++ implementation file is 161 lines, including the Copyright header, see
+[https://github.com/nayuki/Nayuki-web-published-code/blob/master/free-small-fft-in-multiple-languages/FftComplex.cpp](https://github.com/nayuki/Nayuki-web-published-code/blob/master/free-small-fft-in-multiple-languages/FftComplex.cpp)
 
 
 ## Benchmark results
