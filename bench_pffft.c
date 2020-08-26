@@ -1065,9 +1065,9 @@ int main(int argc, char **argv) {
     -1 };
 #endif
 
-#define NUMPOW2FFTLENS  21
+#define NUMPOW2FFTLENS  22
 #define MAXNUMFFTLENS MAX( NUMPOW2FFTLENS, NUMNONPOW2LENS )
-  int Npow2[NUMPOW2FFTLENS];  /* exp = 1 .. 20, -1 */
+  int Npow2[NUMPOW2FFTLENS];  /* exp = 1 .. 21, -1 */
   const int *Nvalues = NULL;
   double tmeas[2][MAXNUMFFTLENS][NUM_TYPES][NUM_FFT_ALGOS];
   double iterCalReal, iterCalCplx;
