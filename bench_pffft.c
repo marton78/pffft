@@ -298,8 +298,8 @@ void pffft_validate_N(int N, int cplx) {
     if (pass == 0) {
       float *wrk = malloc(2*Nbytes+15*sizeof(pffft_scalar));
       for (k=0; k < Nfloat; ++k) {
-        ref[k] = in[k] = frand()*2-1; 
-        out[k] = 1e30;
+        ref[k] = in[k] = (float)( frand()*2-1 );
+        out[k] = 1e30F;
       }
       if (!cplx) {
         rffti(N, wrk);
@@ -317,7 +317,7 @@ void pffft_validate_N(int N, int cplx) {
       free(wrk);
     }
 
-    for (k = 0; k < Nfloat; ++k) ref_max = MAX(ref_max, fabs(ref[k]));
+    for (k = 0; k < Nfloat; ++k) ref_max = MAX(ref_max, (float)( fabs(ref[k]) ));
 
       
     /* pass 0 : non canonical ordering of transform coefficients */
