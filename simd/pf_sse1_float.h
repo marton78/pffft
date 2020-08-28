@@ -37,7 +37,7 @@
   SSE1 support macros
 */
 #if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && (defined(__x86_64__) || defined(_M_X64) || defined(i386) || defined(_M_IX86))
-#pragma message __FILE__ ": SSE1 float macros are defined"
+#pragma message( __FILE__ ": SSE1 float macros are defined" )
 
 #include <xmmintrin.h>
 typedef __m128 v4sf;
@@ -75,7 +75,7 @@ typedef union v4sf_union {
 #  define VALIGNED(ptr) ((((uintptr_t)(ptr)) & 0xF) == 0)
 
 #else
-/* #pragma message __FILE__ ": SSE1 float macros are not defined" */
+/* #pragma message( __FILE__ ": SSE1 float macros are not defined" ) */
 #endif
 
 #endif /* PF_SSE1_FLT_H */

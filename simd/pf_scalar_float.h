@@ -39,7 +39,7 @@
 */
 
 #if !defined(SIMD_SZ) && defined(PFFFT_SCALVEC_ENABLED)
-#pragma message __FILE__ ": float SCALAR4 macros are defined"
+#pragma message( __FILE__ ": float SCALAR4 macros are defined" )
 
 typedef struct {
   vsfscalar a;
@@ -149,12 +149,12 @@ typedef union v4sf_union {
   }
 
 #else
-/* #pragma message __FILE__ ": float SCALAR4 macros are not defined" */
+/* #pragma message( __FILE__ ": float SCALAR4 macros are not defined" ) */
 #endif
 
 
 #if !defined(SIMD_SZ)
-#pragma message __FILE__ ": float SCALAR1 macros are defined"
+#pragma message( __FILE__ ": float SCALAR1 macros are defined" )
 typedef vsfscalar v4sf;
 
 #  define SIMD_SZ 1
@@ -177,7 +177,7 @@ typedef union v4sf_union {
 #  define VALIGNED(ptr) ((((uintptr_t)(ptr)) & (sizeof(vsfscalar)-1) ) == 0)
 
 #else
-/* #pragma message __FILE__ ": float SCALAR1 macros are not defined" */
+/* #pragma message( __FILE__ ": float SCALAR1 macros are not defined" ) */
 #endif
 
 

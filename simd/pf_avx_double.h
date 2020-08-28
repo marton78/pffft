@@ -47,7 +47,7 @@
   AVX support macros
 */
 #if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(__AVX__)
-#pragma message __FILE__ ": AVX macros are defined"
+#pragma message( __FILE__ ": AVX macros are defined" )
 
 #include <immintrin.h>
 typedef __m256d v4sf;
