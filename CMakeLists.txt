@@ -145,6 +145,25 @@ set_property(TARGET PFFFT APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
 
 ######################################################
 
+if (USE_TYPE_FLOAT)
+
+  add_library(PFDSP STATIC pf_mixer.cpp pf_mixer.h pf_carrier.cpp pf_carrier.h pf_cic.cpp pf_cic.h fmv.h )
+  target_compile_definitions(PFDSP PRIVATE _USE_MATH_DEFINES)
+  if (USE_DEBUG_ASAN)
+    target_compile_options(PFDSP PRIVATE "-fsanitize=address")
+  endif()
+  if (USE_SIMD AND USE_SIMD_NEON)
+    target_compile_definitions(PFDSP PRIVATE PFFFT_ENABLE_NEON=1)
+    target_compile_options(PFDSP PRIVATE "-mfpu=neon")
+  endif()
+  target_link_libraries( PFDSP ${MATHLIB} )
+  set_property(TARGET PFDSP APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+  )
+endif()
+
+######################################################
+
 add_library(FFTPACK STATIC fftpack.c fftpack.h)
 target_compile_definitions(FFTPACK PRIVATE _USE_MATH_DEFINES)
 target_link_libraries( FFTPACK ${MATHLIB} )
@@ -278,6 +297,17 @@ if (USE_TYPE_DOUBLE)
     target_compile_definitions(bench_pffft_double PRIVATE HAVE_POCKET_FFT=1)
     target_link_libraries(bench_pffft_double  PocketFFT)
   endif()
+endif()
+
+######################################################
+
+if (USE_TYPE_FLOAT)
+  add_executable(bench_pf_mixer_float   bench_mixers.c)
+  target_compile_definitions(bench_pf_mixer_float PRIVATE _USE_MATH_DEFINES)
+  target_compile_definitions(bench_pf_mixer_float PRIVATE PFFFT_ENABLE_FLOAT)
+
+  target_link_libraries( bench_pf_mixer_float  PFDSP ${ASANLIB} )
+
 endif()
 
 ######################################################
