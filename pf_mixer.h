@@ -53,6 +53,8 @@ typedef struct complexf_s { float i; float q; } complexf;
 
 // =================================================================================
 
+int have_sse_shift_mixer_impl();
+
 float shift_math_cc(complexf *input, complexf* output, int input_size, float rate, float starting_phase);
 
 

@@ -498,18 +498,23 @@ int main(int argc, char **argv)
     rt = bench_shift_limited_unroll_inp(B, N);
     printf("  %f MSamples/sec\n\n", rt * 1E-6);
 
-    printf("starting bench of shift_limited_unroll_sse_inp_c in-place ..\n");
-    rt = bench_shift_limited_unroll_sse_inp(B, N);
-    printf("  %f MSamples/sec\n\n", rt * 1E-6);
+    if ( have_sse_shift_mixer_impl() )
+    {
+        printf("starting bench of shift_limited_unroll_sse_inp_c in-place ..\n");
+        rt = bench_shift_limited_unroll_sse_inp(B, N);
+        printf("  %f MSamples/sec\n\n", rt * 1E-6);
+    }
 
     printf("starting bench of shift_recursive_osc_cc in-place ..\n");
     rt = bench_shift_rec_osc_cc_inp(B, N);
     printf("  %f MSamples/sec\n\n", rt * 1E-6);
 
-    printf("starting bench of shift_recursive_osc_sse_c in-place ..\n");
-    rt = bench_shift_rec_osc_sse_c_inp(B, N);
-    printf("  %f MSamples/sec\n\n", rt * 1E-6);
-
+    if ( have_sse_shift_mixer_impl() )
+    {
+        printf("starting bench of shift_recursive_osc_sse_c in-place ..\n");
+        rt = bench_shift_rec_osc_sse_c_inp(B, N);
+        printf("  %f MSamples/sec\n\n", rt * 1E-6);
+    }
 #endif
 
     return 0;

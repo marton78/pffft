@@ -32,15 +32,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "pf_mixer.h"
 #include "fmv.h"
 
-//#include <stdio.h>
-//#include <time.h>
 #include <math.h>
 #include <stdlib.h>
-//#include <string.h>
-//#include <unistd.h>
-//#include <limits.h>
-//#include <assert.h>
-//#include <stdarg.h>
+#include <assert.h>
 
 //they dropped M_PI in C99, so we define it:
 #define PI ((float)3.14159265358979323846)
@@ -59,6 +53,72 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  |_____/|_____/|_|       |_|  \__,_|_| |_|\___|\__|_|\___/|_| |_|___/
 
 */
+
+
+#if defined(__GNUC__)
+#  define ALWAYS_INLINE(return_type) inline return_type __attribute__ ((always_inline))
+#  define RESTRICT __restrict
+#elif defined(_MSC_VER)
+#  define ALWAYS_INLINE(return_type) __forceinline return_type
+#  define RESTRICT __restrict
+#endif
+
+
+#ifndef PFFFT_SIMD_DISABLE
+#if (defined(__x86_64__) || defined(_M_X64) || defined(i386) || defined(_M_IX86))
+  #pragma message "Manual SSE x86/x64 optimizations are ON"
+  #include <xmmintrin.h>
+  #define HAVE_SSE_INTRINSICS 1
+  
+#elif defined(PFFFT_ENABLE_NEON) && defined(__arm__)
+  #pragma message "Manual NEON (arm32) optimizations are ON"
+  #include "sse2neon.h"
+  #define HAVE_SSE_INTRINSICS 1
+  
+#elif defined(PFFFT_ENABLE_NEON) && defined(__aarch64__)
+  #pragma message "Manual NEON (aarch64) optimizations are ON"
+  #include "sse2neon.h"
+  #define HAVE_SSE_INTRINSICS 1
+
+#endif
+#endif
+
+#ifdef HAVE_SSE_INTRINSICS
+
+typedef __m128 v4sf;
+#  define SIMD_SZ 4
+
+typedef union v4_union {
+  __m128  v;
+  float f[4];
+} v4_union;
+
+#define VMUL(a,b)    _mm_mul_ps(a,b)
+#define VADD(a,b)    _mm_add_ps(a,b)
+#define VSUB(a,b)    _mm_sub_ps(a,b)
+#define LD_PS1(s)    _mm_set1_ps(s)
+#define VLOAD_UNALIGNED(ptr)      _mm_loadu_ps((const float *)(ptr))
+#define VLOAD_ALIGNED(ptr)        _mm_load_ps((const float *)(ptr))
+#define VSTORE_UNALIGNED(ptr, v)  _mm_storeu_ps((float*)(ptr), v)
+#define VSTORE_ALIGNED(ptr, v)    _mm_store_ps((float*)(ptr), v)
+#define INTERLEAVE2(in1, in2, out1, out2) { __m128 tmp__ = _mm_unpacklo_ps(in1, in2); out2 = _mm_unpackhi_ps(in1, in2); out1 = tmp__; }
+#define UNINTERLEAVE2(in1, in2, out1, out2) { __m128 tmp__ = _mm_shuffle_ps(in1, in2, _MM_SHUFFLE(2,0,2,0)); out2 = _mm_shuffle_ps(in1, in2, _MM_SHUFFLE(3,1,3,1)); out1 = tmp__; }
+
+
+int have_sse_shift_mixer_impl()
+{
+    return 1;
+}
+
+#else
+
+int have_sse_shift_mixer_impl()
+{
+    return 0;
+}
+
+#endif
+
 
 PF_TARGET_CLONES
 float shift_math_cc(complexf *input, complexf* output, int input_size, float rate, float starting_phase)
@@ -306,61 +366,7 @@ void shift_limited_unroll_inp_c(complexf* in_out, int size, shift_limited_unroll
 }
 
 
-#if (defined(__x86_64__) || defined(_M_X64) || defined(i386) || defined(_M_IX86))
-
-#include <xmmintrin.h>
-typedef __m128 v4sf;
-
-#if defined(__GNUC__)
-#  define ALWAYS_INLINE(return_type) inline return_type __attribute__ ((always_inline))
-#  define RESTRICT __restrict
-#elif defined(_MSC_VER)
-#  define ALWAYS_INLINE(return_type) __forceinline return_type
-#  define RESTRICT __restrict
-#endif
-
-#  define SIMD_SZ 4
-
-typedef union v4_union {
-  __m128  v;
-  float f[4];
-} v4_union;
-
-#define VMUL(a,b)    _mm_mul_ps(a,b)
-#define VADD(a,b)    _mm_add_ps(a,b)
-#define VSUB(a,b)    _mm_sub_ps(a,b)
-#define LD_PS1(s)    _mm_set1_ps(s)
-#define VLOAD_UNALIGNED(ptr)      _mm_loadu_ps((const float *)(ptr))
-#define VLOAD_ALIGNED(ptr)        _mm_load_ps((const float *)(ptr))
-#define VSTORE_UNALIGNED(ptr, v)  _mm_storeu_ps((float*)(ptr), v)
-#define VSTORE_ALIGNED(ptr, v)    _mm_store_ps((float*)(ptr), v)
-#define INTERLEAVE2(in1, in2, out1, out2) { __m128 tmp__ = _mm_unpacklo_ps(in1, in2); out2 = _mm_unpackhi_ps(in1, in2); out1 = tmp__; }
-#define UNINTERLEAVE2(in1, in2, out1, out2) { __m128 tmp__ = _mm_shuffle_ps(in1, in2, _MM_SHUFFLE(2,0,2,0)); out2 = _mm_shuffle_ps(in1, in2, _MM_SHUFFLE(3,1,3,1)); out1 = tmp__; }
-
-/* num_cplx must be multiple of 4 ! */
-void aligned_vec_complex_mul(int num_cplx, float *dest_a_vec, const float *b_vec)
-{
-    __m128 inp_re, inp_im;
-    __m128 inout_re, inout_im;
-    __m128 product_re, product_im;
-    __m128 interl_prod_a, interl_prod_b;
-    __m128 * RESTRICT u = (__m128*)dest_a_vec;
-    const __m128 * RESTRICT v = (const __m128*)b_vec;
-    const int L = num_cplx / 4;
-    int k;
-    for (k=0; k < L; ++k)
-    {
-        UNINTERLEAVE2(VLOAD_ALIGNED(u), VLOAD_ALIGNED(u+1), inout_re, inout_im);  /* inout_re = all reals; inout_im = all imags */
-        UNINTERLEAVE2(VLOAD_ALIGNED(v), VLOAD_ALIGNED(v+1), inp_re, inp_im);  /* inp_re = all reals; inp_im = all imags */
-        product_re = VSUB( VMUL(inout_re, inp_re), VMUL(inout_im, inp_im) );
-        product_im = VADD( VMUL(inout_im, inp_re), VMUL(inout_re, inp_im) );
-        INTERLEAVE2( product_re, product_im, interl_prod_a, interl_prod_b);
-        VSTORE_ALIGNED(u, interl_prod_a);
-        VSTORE_ALIGNED(u+1, interl_prod_b);
-        u += 2;
-        v += 2;
-    }
-}
+#ifdef HAVE_SSE_INTRINSICS
 
 shift_limited_unroll_sse_data_t shift_limited_unroll_sse_init(float relative_freq, float phase_start_rad)
 {
@@ -395,7 +401,7 @@ shift_limited_unroll_sse_data_t shift_limited_unroll_sse_init(float relative_fre
 }
 
 
-
+PF_TARGET_CLONES
 void shift_limited_unroll_sse_inp_c(complexf* in_out, int N_cplx, shift_limited_unroll_sse_data_t* d)
 {
     const __m128 cos_starts = VLOAD_ALIGNED( &d->phase_state_i[0] );
@@ -450,7 +456,28 @@ void shift_limited_unroll_sse_inp_c(complexf* in_out, int N_cplx, shift_limited_
     VSTORE_ALIGNED( &d->phase_state_q[0], sin_vals );
 }
 
+#else
+
+int have_sse_shift_mixer_impl()
+{
+    return 0;
+}
+
+
+shift_limited_unroll_sse_data_t shift_limited_unroll_sse_init(float relative_freq, float phase_start_rad)
+{
+    assert(0);
+    shift_limited_unroll_sse_data_t r;
+    return r;
+}
+
+void shift_limited_unroll_sse_inp_c(complexf* in_out, int N_cplx, shift_limited_unroll_sse_data_t* d)
+{
+    assert(0);
+}
+
 #endif
+
 
 
 shift_addfast_data_t shift_addfast_init(float rate)
@@ -465,25 +492,14 @@ shift_addfast_data_t shift_addfast_init(float rate)
     return output;
 }
 
-#if defined NEON_OPTS && defined__arm__
-#pragma message "Manual NEON (arm32) optimizations are ON: we have a faster shift_addfast_cc now."
-
-// #define HAVE_ADDFAST_CC_IMPL
-// removed cpu specific implementation
-
-#elif defined NEON_OPTS && defined __aarch64__
-#pragma message "Manual NEON (aarch64) optimizations are ON: we have a faster shift_addfast_cc now."
-
-// #define HAVE_ADDFAST_CC_IMPL
-// removed cpu specific implementation
-
-#endif
 
 #ifndef HAVE_ADDFAST_CC_IMPL
 
-#define SADF_L1(j) cos_vals_ ## j = cos_start * dcos_ ## j - sin_start * dsin_ ## j; \
+#define SADF_L1(j) \
+    cos_vals_ ## j = cos_start * dcos_ ## j - sin_start * dsin_ ## j; \
     sin_vals_ ## j = sin_start * dcos_ ## j + cos_start * dsin_ ## j;
-#define SADF_L2(j) iof(output,4*i+j)=(cos_vals_ ## j)*iof(input,4*i+j)-(sin_vals_ ## j)*qof(input,4*i+j); \
+#define SADF_L2(j) \
+    iof(output,4*i+j)=(cos_vals_ ## j)*iof(input,4*i+j)-(sin_vals_ ## j)*qof(input,4*i+j); \
     qof(output,4*i+j)=(sin_vals_ ## j)*iof(input,4*i+j)+(cos_vals_ ## j)*qof(input,4*i+j);
 
 PF_TARGET_CLONES
@@ -660,7 +676,7 @@ void gen_recursive_osc_c(complexf* output,
 }
 
 
-#if (defined(__x86_64__) || defined(_M_X64) || defined(i386) || defined(_M_IX86))
+#ifdef HAVE_SSE_INTRINSICS
 
 void shift_recursive_osc_sse_update_rate(float rate, shift_recursive_osc_sse_conf_t *conf, shift_recursive_osc_sse_t* state)
 {
@@ -704,6 +720,7 @@ void shift_recursive_osc_sse_init(float rate, float starting_phase, shift_recurs
 }
 
 
+PF_TARGET_CLONES
 void shift_recursive_osc_sse_inp_c(complexf* in_out,
     int N_cplx, const shift_recursive_osc_sse_conf_t *conf, shift_recursive_osc_sse_t* state_ext)
 {
@@ -744,6 +761,25 @@ void shift_recursive_osc_sse_inp_c(complexf* in_out,
     }
     VSTORE_ALIGNED( &state_ext->u_cos[0], u_cos );
     VSTORE_ALIGNED( &state_ext->v_sin[0], v_sin );
+}
+
+#else
+
+void shift_recursive_osc_sse_update_rate(float rate, shift_recursive_osc_sse_conf_t *conf, shift_recursive_osc_sse_t* state)
+{
+    assert(0);
+}
+
+void shift_recursive_osc_sse_init(float rate, float starting_phase, shift_recursive_osc_sse_conf_t *conf, shift_recursive_osc_sse_t *state)
+{
+    assert(0);
+}
+
+
+void shift_recursive_osc_sse_inp_c(complexf* in_out,
+    int N_cplx, const shift_recursive_osc_sse_conf_t *conf, shift_recursive_osc_sse_t* state_ext)
+{
+    assert(0);
 }
 
 #endif

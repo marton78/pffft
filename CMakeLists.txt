@@ -154,7 +154,7 @@ if (USE_TYPE_FLOAT)
   endif()
   if (USE_SIMD AND USE_SIMD_NEON)
     target_compile_definitions(PFDSP PRIVATE PFFFT_ENABLE_NEON=1)
-    target_compile_options(PFDSP PRIVATE "-mfpu=neon")
+    target_compile_options(PFDSP PRIVATE "-march=armv7-a" "-mfpu=neon")
   endif()
   target_link_libraries( PFDSP ${MATHLIB} )
   set_property(TARGET PFDSP APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
