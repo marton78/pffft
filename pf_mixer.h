@@ -55,18 +55,37 @@ typedef struct complexf_s { float i; float q; } complexf;
 
 int have_sse_shift_mixer_impl();
 
+
+/*********************************************************************/
+
+/**************/
+/*** ALGO A ***/
+/**************/
+
 float shift_math_cc(complexf *input, complexf* output, int input_size, float rate, float starting_phase);
 
+
+/*********************************************************************/
+
+/**************/
+/*** ALGO B ***/
+/**************/
 
 typedef struct shift_table_data_s
 {
     float* table;
     int table_size;
 } shift_table_data_t;
+
 void shift_table_deinit(shift_table_data_t table_data);
 shift_table_data_t shift_table_init(int table_size);
 float shift_table_cc(complexf* input, complexf* output, int input_size, float rate, shift_table_data_t table_data, float starting_phase);
 
+/*********************************************************************/
+
+/**************/
+/*** ALGO C ***/
+/**************/
 
 typedef struct shift_addfast_data_s
 {
@@ -74,9 +93,17 @@ typedef struct shift_addfast_data_s
     float dcos[4];
     float phase_increment;
 } shift_addfast_data_t;
+
 shift_addfast_data_t shift_addfast_init(float rate);
 float shift_addfast_cc(complexf *input, complexf* output, int input_size, shift_addfast_data_t* d, float starting_phase);
+float shift_addfast_inp_c(complexf *in_out, int N_cplx, shift_addfast_data_t* d, float starting_phase);
 
+
+/*********************************************************************/
+
+/**************/
+/*** ALGO D ***/
+/**************/
 
 typedef struct shift_unroll_data_s
 {
@@ -85,59 +112,128 @@ typedef struct shift_unroll_data_s
     float phase_increment;
     int size;
 } shift_unroll_data_t;
+
 shift_unroll_data_t shift_unroll_init(float rate, int size);
 void shift_unroll_deinit(shift_unroll_data_t* d);
 float shift_unroll_cc(complexf *input, complexf* output, int size, shift_unroll_data_t* d, float starting_phase);
 float shift_unroll_inp_c(complexf* in_out, int size, shift_unroll_data_t* d, float starting_phase);
 
 
+/*********************************************************************/
+
+/**************/
+/*** ALGO E ***/
+/**************/
+
 /* similar to shift_unroll_cc() - but, have fixed and limited precalc size
  * idea: smaller cache usage by table
  * size must be multiple of CSDR_SHIFT_LIMITED_SIMD (= 4)
  */
-#define CSDR_SHIFT_LIMITED_UNROLL_SIZE  64
-#define CSDR_SHIFT_LIMITED_SIMD_SZ  4
+#define PF_SHIFT_LIMITED_UNROLL_SIZE  128
+#define PF_SHIFT_LIMITED_SIMD_SZ  4
+
 typedef struct shift_limited_unroll_data_s
 {
-    float dcos[CSDR_SHIFT_LIMITED_UNROLL_SIZE];
-    float dsin[CSDR_SHIFT_LIMITED_UNROLL_SIZE];
+    float dcos[PF_SHIFT_LIMITED_UNROLL_SIZE];
+    float dsin[PF_SHIFT_LIMITED_UNROLL_SIZE];
     complexf complex_phase;
     float phase_increment;
 } shift_limited_unroll_data_t;
+
 shift_limited_unroll_data_t shift_limited_unroll_init(float rate);
-/* size must be multiple of CSDR_SHIFT_LIMITED_SIMD_SZ */
+/* size must be multiple of PF_SHIFT_LIMITED_SIMD_SZ */
 /* starting_phase for next call is kept internal in state */
 void shift_limited_unroll_cc(const complexf *input, complexf* output, int size, shift_limited_unroll_data_t* d);
 void shift_limited_unroll_inp_c(complexf* in_out, int size, shift_limited_unroll_data_t* d);
 
 
-typedef struct shift_limited_unroll_sse_data_s
+/*********************************************************************/
+
+/**************/
+/*** ALGO F ***/
+/**************/
+
+typedef struct shift_limited_unroll_A_sse_data_s
 {
     /* small/limited trig table */
-    float dcos[CSDR_SHIFT_LIMITED_UNROLL_SIZE+CSDR_SHIFT_LIMITED_SIMD_SZ];
-    float dsin[CSDR_SHIFT_LIMITED_UNROLL_SIZE+CSDR_SHIFT_LIMITED_SIMD_SZ];
+    float dcos[PF_SHIFT_LIMITED_UNROLL_SIZE+PF_SHIFT_LIMITED_SIMD_SZ];
+    float dsin[PF_SHIFT_LIMITED_UNROLL_SIZE+PF_SHIFT_LIMITED_SIMD_SZ];
     /* 4 times complex phase */
-    float phase_state_i[CSDR_SHIFT_LIMITED_SIMD_SZ];
-    float phase_state_q[CSDR_SHIFT_LIMITED_SIMD_SZ];
+    float phase_state_i[PF_SHIFT_LIMITED_SIMD_SZ];
+    float phase_state_q[PF_SHIFT_LIMITED_SIMD_SZ];
     /* N_cplx_per_block times increment - for future parallel variants */
     float dcos_blk;
     float dsin_blk;
     /* */
     float phase_increment;
-} shift_limited_unroll_sse_data_t;
-shift_limited_unroll_sse_data_t shift_limited_unroll_sse_init(float relative_freq, float phase_start_rad);
-void shift_limited_unroll_sse_inp_c(complexf* in_out, int N_cplx, shift_limited_unroll_sse_data_t* d);
+} shift_limited_unroll_A_sse_data_t;
+
+shift_limited_unroll_A_sse_data_t shift_limited_unroll_A_sse_init(float relative_freq, float phase_start_rad);
+void shift_limited_unroll_A_sse_inp_c(complexf* in_out, int N_cplx, shift_limited_unroll_A_sse_data_t* d);
 
 
+/*********************************************************************/
+
+/**************/
+/*** ALGO G ***/
+/**************/
+
+typedef struct shift_limited_unroll_B_sse_data_s
+{
+    /* small/limited trig table */
+    float dtrig[PF_SHIFT_LIMITED_UNROLL_SIZE+PF_SHIFT_LIMITED_SIMD_SZ];
+    /* 4 times complex phase */
+    float phase_state_i[PF_SHIFT_LIMITED_SIMD_SZ];
+    float phase_state_q[PF_SHIFT_LIMITED_SIMD_SZ];
+    /* N_cplx_per_block times increment - for future parallel variants */
+    float dcos_blk;
+    float dsin_blk;
+    /* */
+    float phase_increment;
+} shift_limited_unroll_B_sse_data_t;
+
+shift_limited_unroll_B_sse_data_t shift_limited_unroll_B_sse_init(float relative_freq, float phase_start_rad);
+void shift_limited_unroll_B_sse_inp_c(complexf* in_out, int N_cplx, shift_limited_unroll_B_sse_data_t* d);
+
+/*********************************************************************/
+
+/**************/
+/*** ALGO H ***/
+/**************/
+
+typedef struct shift_limited_unroll_C_sse_data_s
+{
+    /* small/limited trig table - interleaved: 4 cos, 4 sin, 4 cos, .. */
+    float dinterl_trig[2*(PF_SHIFT_LIMITED_UNROLL_SIZE+PF_SHIFT_LIMITED_SIMD_SZ)];
+    /* 4 times complex phase */
+    float phase_state_i[PF_SHIFT_LIMITED_SIMD_SZ];
+    float phase_state_q[PF_SHIFT_LIMITED_SIMD_SZ];
+    /* N_cplx_per_block times increment - for future parallel variants */
+    float dcos_blk;
+    float dsin_blk;
+    /* */
+    float phase_increment;
+} shift_limited_unroll_C_sse_data_t;
+
+shift_limited_unroll_C_sse_data_t shift_limited_unroll_C_sse_init(float relative_freq, float phase_start_rad);
+void shift_limited_unroll_C_sse_inp_c(complexf* in_out, int N_cplx, shift_limited_unroll_C_sse_data_t* d);
+
+
+
+/*********************************************************************/
+
+/**************/
+/*** ALGO I ***/
+/**************/
 
 /* Recursive Quadrature Oscillator functions "recursive_osc"
  * see https://www.vicanek.de/articles/QuadOsc.pdf
  */
-#define CSDR_SHIFT_RECURSIVE_SIMD_SZ  8
+#define PF_SHIFT_RECURSIVE_SIMD_SZ  8
 typedef struct shift_recursive_osc_s
 {
-    float u_cos[CSDR_SHIFT_RECURSIVE_SIMD_SZ];
-    float v_sin[CSDR_SHIFT_RECURSIVE_SIMD_SZ];
+    float u_cos[PF_SHIFT_RECURSIVE_SIMD_SZ];
+    float v_sin[PF_SHIFT_RECURSIVE_SIMD_SZ];
 } shift_recursive_osc_t;
 
 typedef struct shift_recursive_osc_conf_s
@@ -149,17 +245,23 @@ typedef struct shift_recursive_osc_conf_s
 void shift_recursive_osc_init(float rate, float starting_phase, shift_recursive_osc_conf_t *conf, shift_recursive_osc_t *state);
 void shift_recursive_osc_update_rate(float rate, shift_recursive_osc_conf_t *conf, shift_recursive_osc_t* state);
 
-/* size must be multiple of CSDR_SHIFT_LIMITED_SIMD_SZ */
+/* size must be multiple of PF_SHIFT_LIMITED_SIMD_SZ */
 /* starting_phase for next call is kept internal in state */
 void shift_recursive_osc_cc(const complexf *input, complexf* output, int size, const shift_recursive_osc_conf_t *conf, shift_recursive_osc_t* state);
 void shift_recursive_osc_inp_c(complexf* output, int size, const shift_recursive_osc_conf_t *conf, shift_recursive_osc_t* state);
 void gen_recursive_osc_c(complexf* output, int size, const shift_recursive_osc_conf_t *conf, shift_recursive_osc_t* state);
 
-#define CSDR_SHIFT_RECURSIVE_SIMD_SSE_SZ  4
+/*********************************************************************/
+
+/**************/
+/*** ALGO J ***/
+/**************/
+
+#define PF_SHIFT_RECURSIVE_SIMD_SSE_SZ  4
 typedef struct shift_recursive_osc_sse_s
 {
-    float u_cos[CSDR_SHIFT_RECURSIVE_SIMD_SSE_SZ];
-    float v_sin[CSDR_SHIFT_RECURSIVE_SIMD_SSE_SZ];
+    float u_cos[PF_SHIFT_RECURSIVE_SIMD_SSE_SZ];
+    float v_sin[PF_SHIFT_RECURSIVE_SIMD_SSE_SZ];
 } shift_recursive_osc_sse_t;
 
 typedef struct shift_recursive_osc_sse_conf_s
