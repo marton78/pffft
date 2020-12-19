@@ -25,9 +25,7 @@
 #if defined(__GNUC__) || defined(__clang__)
 
 #pragma push_macro("FORCE_INLINE")
-#pragma push_macro("ALIGN_STRUCT")
 #define FORCE_INLINE static inline __attribute__((always_inline))
-#define ALIGN_STRUCT(x) __attribute__((aligned(x)))
 
 #else
 
@@ -37,99 +35,88 @@
 #endif
 
 #define FORCE_INLINE static inline
-#ifndef ALIGN_STRUCT
-#define ALIGN_STRUCT(x) __declspec(align(x))
-#endif
 
 #endif
 
 typedef struct {
-	float32x4_t vect_f32[2];
+    float32x4_t vect_f32[2];
 } __m256;
 
 typedef struct {
-	float64x2_t vect_f64[2];
+    float64x2_t vect_f64[2];
 } __m256d;
 
 typedef float64x2_t __m128d;
 
 FORCE_INLINE __m256d _mm256_setzero_pd(void)
 {
-	__m256d ret;
-	ret.vect_f64[0] = ret.vect_f64[1] = vdupq_n_f64(0.0);
-	return ret;
+    __m256d ret;
+    ret.vect_f64[0] = ret.vect_f64[1] = vdupq_n_f64(0.0);
+    return ret;
 }
 
 FORCE_INLINE __m256d _mm256_mul_pd(__m256d a, __m256d b)
 {
-	__m256d res_m256d;
-	res_m256d.vect_f64[0] = vmulq_f64(a.vect_f64[0], b.vect_f64[0]);
-	res_m256d.vect_f64[1] = vmulq_f64(a.vect_f64[1], b.vect_f64[1]);
-	return res_m256d;
+    __m256d res_m256d;
+    res_m256d.vect_f64[0] = vmulq_f64(a.vect_f64[0], b.vect_f64[0]);
+    res_m256d.vect_f64[1] = vmulq_f64(a.vect_f64[1], b.vect_f64[1]);
+    return res_m256d;
 }
 
 FORCE_INLINE __m256d _mm256_add_pd(__m256d a, __m256d b)
 {
-	__m256d res_m256d;
-	res_m256d.vect_f64[0] = vaddq_f64(a.vect_f64[0], b.vect_f64[0]);
-	res_m256d.vect_f64[1] = vaddq_f64(a.vect_f64[1], b.vect_f64[1]);
-	return res_m256d;
+    __m256d res_m256d;
+    res_m256d.vect_f64[0] = vaddq_f64(a.vect_f64[0], b.vect_f64[0]);
+    res_m256d.vect_f64[1] = vaddq_f64(a.vect_f64[1], b.vect_f64[1]);
+    return res_m256d;
 }
 
 FORCE_INLINE __m256d _mm256_sub_pd(__m256d a, __m256d b)
 {
-	__m256d res_m256d;
-	res_m256d.vect_f64[0] = vsubq_f64(a.vect_f64[0], b.vect_f64[0]);
-	res_m256d.vect_f64[1] = vsubq_f64(a.vect_f64[1], b.vect_f64[1]);
-	return res_m256d;
+    __m256d res_m256d;
+    res_m256d.vect_f64[0] = vsubq_f64(a.vect_f64[0], b.vect_f64[0]);
+    res_m256d.vect_f64[1] = vsubq_f64(a.vect_f64[1], b.vect_f64[1]);
+    return res_m256d;
 }
 
 FORCE_INLINE __m256d _mm256_set1_pd(double a)
 {
-	__m256d ret;
-	ret.vect_f64[0] = ret.vect_f64[1] = vdupq_n_f64(a);
-	return ret;
+    __m256d ret;
+    ret.vect_f64[0] = ret.vect_f64[1] = vdupq_n_f64(a);
+    return ret;
 }
 
 FORCE_INLINE __m256d _mm256_load_pd (double const * mem_addr)
 {
-	__m256d res;
-	res.vect_f64[0] = vld1q_f64((const double *)mem_addr);
-	res.vect_f64[1] = vld1q_f64((const double *)mem_addr + 2);
-	return res;
+    __m256d res;
+    res.vect_f64[0] = vld1q_f64((const double *)mem_addr);
+    res.vect_f64[1] = vld1q_f64((const double *)mem_addr + 2);
+    return res;
 }
 FORCE_INLINE __m256d _mm256_loadu_pd (double const * mem_addr)
 {
-	__m256d res;
-	res.vect_f64[0] = vld1q_f64((const double *)mem_addr);
-	res.vect_f64[1] = vld1q_f64((const double *)mem_addr + 2);
-	return res;
+    __m256d res;
+    res.vect_f64[0] = vld1q_f64((const double *)mem_addr);
+    res.vect_f64[1] = vld1q_f64((const double *)mem_addr + 2);
+    return res;
 }
 
 FORCE_INLINE __m128d _mm256_castpd256_pd128(__m256d a)
 {
-	return a.vect_f64[0];
+    return a.vect_f64[0];
 }
 
 FORCE_INLINE __m128d _mm256_extractf128_pd (__m256d a, const int imm8)
 {
-	assert(imm8 >= 0 && imm8 <= 1);
-	return a.vect_f64[imm8];
+    assert(imm8 >= 0 && imm8 <= 1);
+    return a.vect_f64[imm8];
 }
-FORCE_INLINE __m256d _mm256_insertf128_pd(__m256d a, __m128d b, int imm8)
-{
-	assert(imm8 == 0 || imm8 == 1);
-	__m256d res;
-	uint64x2_t vmask = vceqq_s64(vdupq_n_s64(imm8), vdupq_n_s64(0));
-	res.vect_f64[0] = vbslq_f64(vmask, b, a.vect_f64[0]);
-	res.vect_f64[1] = vbslq_f64(vmask, a.vect_f64[1], b);
-	return res;
-}
+
 FORCE_INLINE __m256d _mm256_castpd128_pd256(__m128d a)
 {
-	__m256d res;
-	res.vect_f64[0] = a;
-	return res;
+    __m256d res;
+    res.vect_f64[0] = a;
+    return res;
 }
 
 #endif /* PF_AVX_DBL_H */
