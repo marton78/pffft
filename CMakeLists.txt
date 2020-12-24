@@ -19,6 +19,7 @@ option(USE_BENCH_POCKET "use PocketFFT in fft benchmark? - if exists in subdir" 
 
 option(USE_DEBUG_ASAN  "use GCC's address sanitizer?" OFF)
 
+option(DISABLE_LINK_WITH_M "Disables linking with m library to build with clangCL from MSVC" OFF)
 
 # C90 requires the gcc extensions for function attributes like always_inline
 # C99 provides the function attributes: no gcc extensions required
@@ -95,8 +96,11 @@ if ( CMAKE_C_COMPILER_ID MATCHES "MSVC" )
   )
 
 else()
-  message(STATUS "INFO: detected NO MSVC: ${CMAKE_C_COMPILER_ID}: will link math lib m")
-  set(MATHLIB "m")
+  if(DISABLE_LINK_WITH_M)
+  else()
+    message(STATUS "INFO: detected NO MSVC: ${CMAKE_C_COMPILER_ID}: will link math lib m")
+    set(MATHLIB "m")
+  endif()
 endif()
 
 set( SIMD_FLOAT_HDRS simd/pf_float.h simd/pf_sse1_float.h simd/pf_altivec_float.h simd/pf_neon_float.h simd/pf_scalar_float.h )
