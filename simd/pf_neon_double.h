@@ -41,7 +41,7 @@
 */
 #if !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_ENABLE_NEON) && (defined(__aarch64__) || defined(__arm64__))
 
-#pragma message __FILE__ ": NEON (from AVX) macros are defined"
+#pragma message (__FILE__ ": NEON (from AVX) macros are defined" )
 
 #include "pf_neon_double_from_avx.h"
 typedef __m256d v4sf;

@@ -36,19 +36,28 @@
 #ifndef PF_NEON_DBL_H
 #define PF_NEON_DBL_H
 
+//detect sse2 support under MSVC
+#if defined ( _M_IX86_FP )
+#  if _M_IX86_FP == 2
+#    if !defined(__SSE2__)
+#      define __SSE2__
+#    endif
+#  endif
+#endif
+
 /*
   SSE2 64bit support macros
 */
-#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && (( __SSE2__ ) || defined ( __x86_64__ ))
-#pragma message __FILE__ ": SSE2 double macros are defined"
+#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && (defined( __SSE4_2__ ) |  defined( __SSE4_1__ ) || defined( __SSE3__ ) || defined( __SSE2__ ) || defined ( __x86_64__ ))
+#pragma message (__FILE__ ": SSE2 double macros are defined" )
 
 #include <emmintrin.h>
 
 typedef struct {
     __m128d d128[2];
-} __m256d;
+} m256d;
 
-typedef __m256d v4sf;
+typedef m256d v4sf;
 
 #  define SIMD_SZ 4
 
@@ -74,54 +83,54 @@ typedef union v4sf_union {
 #define FORCE_INLINE static inline
 #endif
 
-FORCE_INLINE __m256d _mm256_setzero_pd(void)
+FORCE_INLINE m256d mm256_setzero_pd(void)
 {
-    __m256d ret;
+    m256d ret;
     ret.d128[0] = ret.d128[1] = _mm_setzero_pd();
     return ret;
 }
 
-FORCE_INLINE __m256d _mm256_mul_pd(__m256d a, __m256d b)
+FORCE_INLINE m256d mm256_mul_pd(m256d a, m256d b)
 {
-    __m256d ret;
+    m256d ret;
     ret.d128[0] = _mm_mul_pd(a.d128[0], b.d128[0]);
     ret.d128[1] = _mm_mul_pd(a.d128[1], b.d128[1]);
     return ret;
 }
 
-FORCE_INLINE __m256d _mm256_add_pd(__m256d a, __m256d b)
+FORCE_INLINE m256d mm256_add_pd(m256d a, m256d b)
 {
-    __m256d ret;
+    m256d ret;
     ret.d128[0] = _mm_add_pd(a.d128[0], b.d128[0]);
     ret.d128[1] = _mm_add_pd(a.d128[1], b.d128[1]);
     return ret;
 }
 
-FORCE_INLINE __m256d _mm256_sub_pd(__m256d a, __m256d b)
+FORCE_INLINE m256d mm256_sub_pd(m256d a, m256d b)
 {
-    __m256d ret;
+    m256d ret;
     ret.d128[0] = _mm_sub_pd(a.d128[0], b.d128[0]);
     ret.d128[1] = _mm_sub_pd(a.d128[1], b.d128[1]);
     return ret;
 }
 
-FORCE_INLINE __m256d _mm256_set1_pd(double a)
+FORCE_INLINE m256d mm256_set1_pd(double a)
 {
-    __m256d ret;
+    m256d ret;
     ret.d128[0] = ret.d128[1] = _mm_set1_pd(a);
     return ret;
 }
 
-FORCE_INLINE __m256d _mm256_load_pd (double const * mem_addr)
+FORCE_INLINE m256d mm256_load_pd (double const * mem_addr)
 {
-    __m256d res;
+    m256d res;
     res.d128[0] = _mm_load_pd((const double *)mem_addr);
     res.d128[1] = _mm_load_pd((const double *)mem_addr + 2);
     return res;
 }
-FORCE_INLINE __m256d _mm256_loadu_pd (double const * mem_addr)
+FORCE_INLINE m256d mm256_loadu_pd (double const * mem_addr)
 {
-    __m256d res;
+    m256d res;
     res.d128[0] = _mm_loadu_pd((const double *)mem_addr);
     res.d128[1] = _mm_loadu_pd((const double *)mem_addr + 2);
     return res;
@@ -130,75 +139,75 @@ FORCE_INLINE __m256d _mm256_loadu_pd (double const * mem_addr)
 
 #  define VARCH "SSE2"
 #  define VREQUIRES_ALIGN 1
-#  define VZERO() _mm256_setzero_pd()
-#  define VMUL(a,b) _mm256_mul_pd(a,b)
-#  define VADD(a,b) _mm256_add_pd(a,b)
-#  define VMADD(a,b,c) _mm256_add_pd(_mm256_mul_pd(a,b), c)
-#  define VSUB(a,b) _mm256_sub_pd(a,b)
-#  define LD_PS1(p) _mm256_set1_pd(p)
-#  define VLOAD_UNALIGNED(ptr)  _mm256_loadu_pd(ptr)
-#  define VLOAD_ALIGNED(ptr)    _mm256_load_pd(ptr)
+#  define VZERO() mm256_setzero_pd()
+#  define VMUL(a,b) mm256_mul_pd(a,b)
+#  define VADD(a,b) mm256_add_pd(a,b)
+#  define VMADD(a,b,c) mm256_add_pd(mm256_mul_pd(a,b), c)
+#  define VSUB(a,b) mm256_sub_pd(a,b)
+#  define LD_PS1(p) mm256_set1_pd(p)
+#  define VLOAD_UNALIGNED(ptr)  mm256_loadu_pd(ptr)
+#  define VLOAD_ALIGNED(ptr)    mm256_load_pd(ptr)
 
 
-FORCE_INLINE __m128d _mm256_castpd256_pd128(__m256d a)
+FORCE_INLINE __m128d mm256_castpd256_pd128(m256d a)
 {
     return a.d128[0];
 }
 
-FORCE_INLINE __m128d _mm256_extractf128_pd (__m256d a, const int imm8)
+FORCE_INLINE __m128d mm256_extractf128_pd (m256d a, const int imm8)
 {
     assert(imm8 >= 0 && imm8 <= 1);
     return a.d128[imm8];
 }
-FORCE_INLINE __m256d _mm256_insertf128_pd_1(__m256d a, __m128d b)
+FORCE_INLINE m256d mm256_insertf128_pd_1(m256d a, __m128d b)
 {
-    __m256d res;
+    m256d res;
     res.d128[0] = a.d128[0];
     res.d128[1] = b;
     return res;
 }
-FORCE_INLINE __m256d _mm256_castpd128_pd256(__m128d a)
+FORCE_INLINE m256d mm256_castpd128_pd256(__m128d a)
 {
-    __m256d res;
+    m256d res;
     res.d128[0] = a;
     return res;
 }
 
-FORCE_INLINE __m256d _mm256_shuffle_pd_00(__m256d a, __m256d b)
+FORCE_INLINE m256d mm256_shuffle_pd_00(m256d a, m256d b)
 {
-    __m256d res;
+    m256d res;
     res.d128[0] = _mm_shuffle_pd(a.d128[0],b.d128[0],0);
     res.d128[1] = _mm_shuffle_pd(a.d128[1],b.d128[1],0);
     return res;
 }
 
-FORCE_INLINE __m256d _mm256_shuffle_pd_11(__m256d a, __m256d b)
+FORCE_INLINE m256d mm256_shuffle_pd_11(m256d a, m256d b)
 {
-    __m256d res;
+    m256d res;
     res.d128[0] = _mm_shuffle_pd(a.d128[0],b.d128[0], 3);
     res.d128[1] = _mm_shuffle_pd(a.d128[1],b.d128[1], 3);
     return res;
 }
 
-FORCE_INLINE __m256d _mm256_permute2f128_pd_0x20(__m256d a, __m256d b) {
-    __m256d res;
+FORCE_INLINE m256d mm256_permute2f128_pd_0x20(m256d a, m256d b) {
+    m256d res;
     res.d128[0] = a.d128[0];
     res.d128[1] = b.d128[0];
     return res;
 }
 
 
-FORCE_INLINE __m256d _mm256_permute2f128_pd_0x31(__m256d a, __m256d b)
+FORCE_INLINE m256d mm256_permute2f128_pd_0x31(m256d a, m256d b)
 {
-    __m256d res;
+    m256d res;
     res.d128[0] = a.d128[1];
     res.d128[1] = b.d128[1];
     return res;
 }
 
-FORCE_INLINE __m256d _mm256_reverse(__m256d x)
+FORCE_INLINE m256d mm256_reverse(m256d x)
 {
-    __m256d res;
+    m256d res;
     res.d128[0] = _mm_shuffle_pd(x.d128[1],x.d128[1],1);
     res.d128[1] = _mm_shuffle_pd(x.d128[0],x.d128[0],1);
     return res;
@@ -209,15 +218,15 @@ out1 = [ in1[0], in2[0], in1[1], in2[1] ]
 out2 = [ in1[2], in2[2], in1[3], in2[3] ]
 */
 #  define INTERLEAVE2(in1, in2, out1, out2) {							\
-	__m128d low1__ = _mm256_castpd256_pd128(in1);						\
-	__m128d low2__ = _mm256_castpd256_pd128(in2);						\
-	__m128d high1__ = _mm256_extractf128_pd(in1, 1);					\
-	__m128d high2__ = _mm256_extractf128_pd(in2, 1);					\
-	__m256d tmp__ = _mm256_insertf128_pd_1(								\
-		_mm256_castpd128_pd256(_mm_shuffle_pd(low1__, low2__, 0)),		\
+	__m128d low1__ = mm256_castpd256_pd128(in1);						\
+	__m128d low2__ = mm256_castpd256_pd128(in2);						\
+	__m128d high1__ = mm256_extractf128_pd(in1, 1);					\
+	__m128d high2__ = mm256_extractf128_pd(in2, 1);					\
+	m256d tmp__ = mm256_insertf128_pd_1(								\
+		mm256_castpd128_pd256(_mm_shuffle_pd(low1__, low2__, 0)),		\
 		_mm_shuffle_pd(low1__, low2__, 3));								\
-	out2 = _mm256_insertf128_pd_1(										\
-		_mm256_castpd128_pd256(_mm_shuffle_pd(high1__, high2__, 0)),	\
+	out2 = mm256_insertf128_pd_1(										\
+		mm256_castpd128_pd256(_mm_shuffle_pd(high1__, high2__, 0)),	\
 		_mm_shuffle_pd(high1__, high2__, 3));							\
 	out1 = tmp__;														\
 }
@@ -227,44 +236,44 @@ out1 = [ in1[0], in1[2], in2[0], in2[2] ]
 out2 = [ in1[1], in1[3], in2[1], in2[3] ]
 */
 #  define UNINTERLEAVE2(in1, in2, out1, out2) {							\
-	__m128d low1__ = _mm256_castpd256_pd128(in1);						\
-	__m128d low2__ = _mm256_castpd256_pd128(in2);						\
-	__m128d high1__ = _mm256_extractf128_pd(in1, 1);					\
-	__m128d high2__ = _mm256_extractf128_pd(in2, 1); 					\
-	__m256d tmp__ = _mm256_insertf128_pd_1(								\
-		_mm256_castpd128_pd256(_mm_shuffle_pd(low1__, high1__, 0)),		\
+	__m128d low1__ = mm256_castpd256_pd128(in1);						\
+	__m128d low2__ = mm256_castpd256_pd128(in2);						\
+	__m128d high1__ = mm256_extractf128_pd(in1, 1);					\
+	__m128d high2__ = mm256_extractf128_pd(in2, 1); 					\
+	m256d tmp__ = mm256_insertf128_pd_1(								\
+		mm256_castpd128_pd256(_mm_shuffle_pd(low1__, high1__, 0)),		\
 		_mm_shuffle_pd(low2__, high2__, 0));							\
-	out2 = _mm256_insertf128_pd_1(										\
-		_mm256_castpd128_pd256(_mm_shuffle_pd(low1__, high1__, 3)),		\
+	out2 = mm256_insertf128_pd_1(										\
+		mm256_castpd128_pd256(_mm_shuffle_pd(low1__, high1__, 3)),		\
 		_mm_shuffle_pd(low2__, high2__, 3));							\
 	out1 = tmp__;														\
 }
 
 #  define VTRANSPOSE4(row0, row1, row2, row3) {							\
-        __m256d tmp3, tmp2, tmp1, tmp0;                     			\
+        m256d tmp3, tmp2, tmp1, tmp0;                     			\
                                                             			\
-        tmp0 = _mm256_shuffle_pd_00((row0),(row1));       				\
-        tmp2 = _mm256_shuffle_pd_11((row0),(row1));       				\
-        tmp1 = _mm256_shuffle_pd_00((row2),(row3));       				\
-        tmp3 = _mm256_shuffle_pd_11((row2),(row3));       				\
+        tmp0 = mm256_shuffle_pd_00((row0),(row1));       				\
+        tmp2 = mm256_shuffle_pd_11((row0),(row1));       				\
+        tmp1 = mm256_shuffle_pd_00((row2),(row3));       				\
+        tmp3 = mm256_shuffle_pd_11((row2),(row3));       				\
                                                             			\
-        (row0) = _mm256_permute2f128_pd_0x20(tmp0, tmp1);			    \
-        (row1) = _mm256_permute2f128_pd_0x20(tmp2, tmp3); 		        \
-        (row2) = _mm256_permute2f128_pd_0x31(tmp0, tmp1); 		        \
-        (row3) = _mm256_permute2f128_pd_0x31(tmp2, tmp3); 		        \
+        (row0) = mm256_permute2f128_pd_0x20(tmp0, tmp1);			    \
+        (row1) = mm256_permute2f128_pd_0x20(tmp2, tmp3); 		        \
+        (row2) = mm256_permute2f128_pd_0x31(tmp0, tmp1); 		        \
+        (row3) = mm256_permute2f128_pd_0x31(tmp2, tmp3); 		        \
     }
 
 /*VSWAPHL(a, b) pseudo code:
 return [ b[0], b[1], a[2], a[3] ]
 */
 #  define VSWAPHL(a,b)	\
-   _mm256_insertf128_pd_1(_mm256_castpd128_pd256(_mm256_castpd256_pd128(b)), _mm256_extractf128_pd(a, 1))
+   mm256_insertf128_pd_1(mm256_castpd128_pd256(mm256_castpd256_pd128(b)), mm256_extractf128_pd(a, 1))
 
 /* reverse/flip all floats */
-#  define VREV_S(a)   _mm256_reverse(a)
+#  define VREV_S(a)   mm256_reverse(a)
 
 /* reverse/flip complex floats */
-#  define VREV_C(a)    _mm256_insertf128_pd_1(_mm256_castpd128_pd256(_mm256_extractf128_pd(a, 1)), _mm256_castpd256_pd128(a))
+#  define VREV_C(a)    mm256_insertf128_pd_1(mm256_castpd128_pd256(mm256_extractf128_pd(a, 1)), mm256_castpd256_pd128(a))
 
 #  define VALIGNED(ptr) ((((uintptr_t)(ptr)) & 0x1F) == 0)
 
