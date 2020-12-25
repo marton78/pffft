@@ -120,10 +120,10 @@ Ttest(int N, bool useOrdered)
         (m % 4) * 0.125 * M_PI; /* have phi0 < 90 deg to be normalized */
       for (j = 0; j < N; ++j) {
         if (cplx) {
-          Xs[2 * j] = amp * cos(phi);     /* real part */
-          Xs[2 * j + 1] = amp * sin(phi); /* imag part */
+          Xs[2 * j] = (FftScalar)( amp * cos(phi) );     /* real part */
+          Xs[2 * j + 1] = (FftScalar)( amp * sin(phi) ); /* imag part */
         } else
-          Xs[j] = amp * cos(phi); /* only real part */
+          Xs[j] = (FftScalar)( amp * cos(phi) ); /* only real part */
 
         /* phase increment .. stay normalized - cos()/sin() might degrade! */
         phi += dPhi;

@@ -37,7 +37,7 @@
   ARM NEON support macros
 */
 #if !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_ENABLE_NEON) && (defined(__arm__) || defined(__aarch64__) || defined(__arm64__))
-#pragma message __FILE__ ": ARM NEON macros are defined"
+#pragma message( __FILE__ ": ARM NEON macros are defined" )
 
 #  include <arm_neon.h>
 typedef float32x4_t v4sf;
@@ -80,7 +80,7 @@ typedef union v4sf_union {
 #  define VALIGNED(ptr) ((((uintptr_t)(ptr)) & 0x3) == 0)
 
 #else
-/* #pragma message __FILE__ ": ARM NEON macros are not defined" */
+/* #pragma message( __FILE__ ": ARM NEON macros are not defined" ) */
 #endif
 
 #endif /* PF_NEON_FLT_H */

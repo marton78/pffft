@@ -12,6 +12,11 @@ license is BSD-like.
 PFFASTCONV does fast convolution (FIR filtering), of single precision 
 real vectors, utilizing the PFFFT library. The license is BSD-like.
 
+PFDSP contains a few other signal processing functions.
+Currently, mixing and carrier generation functions are contained.
+It is work in progress - also the API!
+The fast convolution from PFFASTCONV might get merged into PFDSP.
+
 
 ## Why does it exist:
 

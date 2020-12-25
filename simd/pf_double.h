@@ -63,7 +63,7 @@ typedef double vsfscalar;
 
 #ifndef SIMD_SZ
 #  if !defined(PFFFT_SIMD_DISABLE)
-#    warning "building double with simd disabled !\n";
+#    pragma message( "building double with simd disabled !" )
 #    define PFFFT_SIMD_DISABLE /* fallback to scalar code */
 #  endif
 #endif

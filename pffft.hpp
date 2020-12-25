@@ -127,7 +127,7 @@ public:
 
   // simple helper to determine next power of 2 - without inexact/rounding floating point operations
   static int nextPowerOfTwo(int N) { return pffft_next_power_of_two(N); }
-  static bool isPowerOfTwo(int N) { return pffft_is_power_of_two(N); }
+  static bool isPowerOfTwo(int N) { return pffft_is_power_of_two(N) ? true : false; }
 
   static int simd_size() { return Types<T>::simd_size(); }
   static const char * simd_arch() { return Types<T>::simd_arch(); }
@@ -383,7 +383,7 @@ inline int nextPowerOfTwo(int N) {
 }
 
 inline bool isPowerOfTwo(int N) {
-  return pffft_is_power_of_two(N);
+  return pffft_is_power_of_two(N) ? true : false;
 }
 
 

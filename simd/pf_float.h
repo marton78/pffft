@@ -65,7 +65,7 @@ typedef float vsfscalar;
 
 #ifndef SIMD_SZ
 #  if !defined(PFFFT_SIMD_DISABLE)
-#    warning "building float with simd disabled !\n";
+#    pragma message( "building float with simd disabled !" )
 #    define PFFFT_SIMD_DISABLE /* fallback to scalar code */
 #  endif
 #endif

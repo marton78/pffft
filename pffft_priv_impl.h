@@ -1825,15 +1825,16 @@ static void pffft_assert1( float result, float ref, const char * vartxt, const c
   }
 }
 
-static void pffft_assert4( const v4sf_union V, float a, float b, float c, float d, const char * functxt, int * numErrs, const char * f, int lineNo )
+static void pffft_assert4(  vsfscalar v0, vsfscalar v1, vsfscalar v2, vsfscalar v3,
+  float a, float b, float c, float d, const char * functxt, int * numErrs, const char * f, int lineNo )
 {
-  pffft_assert1( V.f[0], a, "[0]", functxt, numErrs, f, lineNo );
-  pffft_assert1( V.f[1], b, "[1]", functxt, numErrs, f, lineNo );
-  pffft_assert1( V.f[2], c, "[2]", functxt, numErrs, f, lineNo );
-  pffft_assert1( V.f[3], d, "[3]", functxt, numErrs, f, lineNo );
+  pffft_assert1( v0, a, "[0]", functxt, numErrs, f, lineNo );
+  pffft_assert1( v1, b, "[1]", functxt, numErrs, f, lineNo );
+  pffft_assert1( v2, c, "[2]", functxt, numErrs, f, lineNo );
+  pffft_assert1( v3, d, "[3]", functxt, numErrs, f, lineNo );
 }
 
-#define PFFFT_ASSERT4( V, a, b, c, d, FUNCTXT )  pffft_assert4( V, a, b, c, d, FUNCTXT, &numErrs, __FILE__, __LINE__ )
+#define PFFFT_ASSERT4( V, a, b, c, d, FUNCTXT )  pffft_assert4( (V).f[0], (V).f[1], (V).f[2], (V).f[3], a, b, c, d, FUNCTXT, &numErrs, __FILE__, __LINE__ )
 
 
 int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
