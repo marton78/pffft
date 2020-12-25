@@ -7,6 +7,7 @@ option(USE_TYPE_DOUBLE "activate 'double' precision float?" ON)
 
 # architecture/optimization options
 option(USE_SIMD        "use SIMD (SSE/AVX/NEON/ALTIVEC) CPU features? - " ON)
+option(DISABLE_SIMD_AVX "disable AVX CPU features? - " OFF)
 option(USE_SIMD_NEON   "force using NEON on ARM? (requires USE_SIMD)" OFF)
 option(USE_SCALAR_VECT "use 4-element vector scalar operations (if no other SIMD)" ON)
 
@@ -18,6 +19,7 @@ option(USE_BENCH_POCKET "use PocketFFT in fft benchmark? - if exists in subdir" 
 
 option(USE_DEBUG_ASAN  "use GCC's address sanitizer?" OFF)
 
+option(DISABLE_LINK_WITH_M "Disables linking with m library to build with clangCL from MSVC" OFF)
 
 # C90 requires the gcc extensions for function attributes like always_inline
 # C99 provides the function attributes: no gcc extensions required
@@ -94,8 +96,11 @@ if ( CMAKE_C_COMPILER_ID MATCHES "MSVC" )
   )
 
 else()
-  message(STATUS "INFO: detected NO MSVC: ${CMAKE_C_COMPILER_ID}: will link math lib m")
-  set(MATHLIB "m")
+  if(DISABLE_LINK_WITH_M)
+  else()
+    message(STATUS "INFO: detected NO MSVC: ${CMAKE_C_COMPILER_ID}: will link math lib m")
+    set(MATHLIB "m")
+  endif()
 endif()
 
 set( SIMD_FLOAT_HDRS simd/pf_float.h simd/pf_sse1_float.h simd/pf_altivec_float.h simd/pf_neon_float.h simd/pf_scalar_float.h )
@@ -133,9 +138,16 @@ if (USE_SIMD AND USE_SIMD_NEON)
 endif()
 if (USE_SIMD AND USE_TYPE_DOUBLE)
   if(WIN32)
-    set_property(SOURCE pffft_double.c PROPERTY COMPILE_FLAGS "/arch:AVX")
+    if(DISABLE_SIMD_AVX)
+      set_property(SOURCE pffft_double.c PROPERTY COMPILE_FLAGS "/arch:SSE2")
+    else()
+      set_property(SOURCE pffft_double.c PROPERTY COMPILE_FLAGS "/arch:AVX")
+    endif()
   else()
     set_property(SOURCE pffft_double.c PROPERTY COMPILE_FLAGS "-march=native")
+  endif()
+  if(DISABLE_SIMD_AVX)
+    target_compile_definitions(PFFFT PRIVATE PFFFT_AVX_DISABLE=1)
   endif()
 endif()
 target_link_libraries( PFFFT ${MATHLIB} )
