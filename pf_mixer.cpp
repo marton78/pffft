@@ -69,7 +69,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef PFFFT_SIMD_DISABLE
 #if (defined(__x86_64__) || defined(_M_X64) || defined(i386) || defined(_M_IX86))
-  #pragma message "Manual SSE x86/x64 optimizations are ON"
+  #pragma message("Manual SSE x86/x64 optimizations are ON")
   #include <xmmintrin.h>
   #define HAVE_SSE_INTRINSICS 1
   
@@ -148,8 +148,8 @@ float shift_math_cc(complexf *input, complexf* output, int input_size, float rat
     float cosval, sinval;
     for(int i=0;i<input_size; i++)
     {
-        cosval=cos(phase);
-        sinval=sin(phase);
+        cosval=cosf(phase);
+        sinval=sinf(phase);
         //we multiply two complex numbers.
         //how? enter this to maxima (software) for explanation:
         //   (a+b*%i)*(c+d*%i), rectform;
@@ -175,7 +175,7 @@ shift_table_data_t shift_table_init(int table_size)
     output.table_size=table_size;
     for(int i=0;i<table_size;i++)
     {
-        output.table[i]=sin(((float)i/table_size)*(PI/2));
+        output.table[i]=sinf(((float)i/table_size)*(PI/2));
     }
     return output;
 }
@@ -197,9 +197,9 @@ float shift_table_cc(complexf* input, complexf* output, int input_size, float ra
     for(int i=0;i<input_size; i++) //@shift_math_cc
     {
         int sin_index, cos_index, temp_index, sin_sign, cos_sign;
-        int quadrant=phase/(PI/2); //between 0 and 3
-        float vphase=phase-quadrant*(PI/2);
-        sin_index=(vphase/(PI/2))*table_data.table_size;
+        int quadrant=(int)(phase/(PI/2.0f)); //between 0 and 3
+        float vphase=phase-quadrant*(PI/2.0f);
+        sin_index=(int)(vphase/(PI/2.0f))*table_data.table_size;
         cos_index=table_data.table_size-1-sin_index;
         if(quadrant&1) //in quadrant 1 and 3
         {
@@ -235,8 +235,8 @@ shift_addfast_data_t shift_addfast_init(float rate)
     output.phase_increment=2*rate*PI;
     for(int i=0;i<4;i++)
     {
-        output.dsin[i]=sin(output.phase_increment*(i+1));
-        output.dcos[i]=cos(output.phase_increment*(i+1));
+        output.dsin[i]=sinf(output.phase_increment*(i+1));
+        output.dcos[i]=cosf(output.phase_increment*(i+1));
     }
     return output;
 }
@@ -253,9 +253,9 @@ float shift_addfast_cc(complexf *input, complexf* output, int input_size, shift_
 {
     //input_size should be multiple of 4
     //fprintf(stderr, "shift_addfast_cc: input_size = %d\n", input_size);
-    float cos_start=cos(starting_phase);
-    float sin_start=sin(starting_phase);
-    float register cos_vals_0, cos_vals_1, cos_vals_2, cos_vals_3,
+    float cos_start=cosf(starting_phase);
+    float sin_start=sinf(starting_phase);
+    float cos_vals_0, cos_vals_1, cos_vals_2, cos_vals_3,
         sin_vals_0, sin_vals_1, sin_vals_2, sin_vals_3,
         dsin_0 = d->dsin[0], dsin_1 = d->dsin[1], dsin_2 = d->dsin[2], dsin_3 = d->dsin[3],
         dcos_0 = d->dcos[0], dcos_1 = d->dcos[1], dcos_2 = d->dcos[2], dcos_3 = d->dcos[3];
@@ -293,9 +293,9 @@ float shift_addfast_inp_c(complexf *in_out, int N_cplx, shift_addfast_data_t* d,
 {
     //input_size should be multiple of 4
     //fprintf(stderr, "shift_addfast_cc: input_size = %d\n", input_size);
-    float cos_start=cos(starting_phase);
-    float sin_start=sin(starting_phase);
-    float register tmp_inp_cos, tmp_inp_sin,
+    float cos_start=cosf(starting_phase);
+    float sin_start=sinf(starting_phase);
+    float tmp_inp_cos, tmp_inp_sin,
         cos_vals_0, cos_vals_1, cos_vals_2, cos_vals_3,
         sin_vals_0, sin_vals_1, sin_vals_2, sin_vals_3,
         dsin_0 = d->dsin[0], dsin_1 = d->dsin[1], dsin_2 = d->dsin[2], dsin_3 = d->dsin[3],
@@ -343,8 +343,8 @@ shift_unroll_data_t shift_unroll_init(float rate, int size)
         myphase += output.phase_increment;
         while(myphase>PI) myphase-=2*PI;
         while(myphase<-PI) myphase+=2*PI;
-        output.dsin[i]=sin(myphase);
-        output.dcos[i]=cos(myphase);
+        output.dsin[i]=sinf(myphase);
+        output.dcos[i]=cosf(myphase);
     }
     return output;
 }
@@ -364,9 +364,9 @@ float shift_unroll_cc(complexf *input, complexf* output, int input_size, shift_u
 {
     //input_size should be multiple of 4
     //fprintf(stderr, "shift_addfast_cc: input_size = %d\n", input_size);
-    float cos_start = cos(starting_phase);
-    float sin_start = sin(starting_phase);
-    register float cos_val = cos_start, sin_val = sin_start;
+    float cos_start = cosf(starting_phase);
+    float sin_start = sinf(starting_phase);
+    float cos_val = cos_start, sin_val = sin_start;
     for(int i=0;i<input_size; i++)
     {
         iof(output,i) = cos_val*iof(input,i) - sin_val*qof(input,i);
@@ -384,13 +384,13 @@ float shift_unroll_cc(complexf *input, complexf* output, int input_size, shift_u
 PF_TARGET_CLONES
 float shift_unroll_inp_c(complexf* in_out, int size, shift_unroll_data_t* d, float starting_phase)
 {
-    float cos_start = cos(starting_phase);
-    float sin_start = sin(starting_phase);
-    register float cos_val = cos_start, sin_val = sin_start;
+    float cos_start = cosf(starting_phase);
+    float sin_start = sinf(starting_phase);
+    float cos_val = cos_start, sin_val = sin_start;
     for(int i=0;i<size; i++)
     {
-        register float inp_i = iof(in_out,i);
-        register float inp_q = qof(in_out,i);
+        float inp_i = iof(in_out,i);
+        float inp_q = qof(in_out,i);
         iof(in_out,i) = cos_val*inp_i - sin_val*inp_q;
         qof(in_out,i) = sin_val*inp_i + cos_val*inp_q;
         // calculate complex phasor for next iteration
@@ -420,8 +420,8 @@ shift_limited_unroll_data_t shift_limited_unroll_init(float rate)
         myphase += output.phase_increment;
         while(myphase>PI) myphase-=2*PI;
         while(myphase<-PI) myphase+=2*PI;
-        output.dcos[i] = cos(myphase);
-        output.dsin[i] = sin(myphase);
+        output.dcos[i] = cosf(myphase);
+        output.dsin[i] = sinf(myphase);
     }
     output.complex_phase.i = 1.0F;
     output.complex_phase.q = 0.0F;
@@ -433,7 +433,7 @@ void shift_limited_unroll_cc(const complexf *input, complexf* output, int size, 
 {
     float cos_start = d->complex_phase.i;
     float sin_start = d->complex_phase.q;
-    register float cos_val = cos_start, sin_val = sin_start, mag;
+    float cos_val = cos_start, sin_val = sin_start, mag;
     while (size > 0)
     {
         int N = (size >= PF_SHIFT_LIMITED_UNROLL_SIZE) ? PF_SHIFT_LIMITED_UNROLL_SIZE : size;
@@ -471,7 +471,7 @@ void shift_limited_unroll_inp_c(complexf* in_out, int N_cplx, shift_limited_unro
     // "vals := starts := phase_state"
     float cos_start = d->complex_phase.i;
     float sin_start = d->complex_phase.q;
-    register float cos_val = cos_start, sin_val = sin_start, mag;
+    float cos_val = cos_start, sin_val = sin_start, mag;
     while (N_cplx)
     {
         int N = (N_cplx >= PF_SHIFT_LIMITED_UNROLL_SIZE) ? PF_SHIFT_LIMITED_UNROLL_SIZE : N_cplx;
@@ -532,8 +532,8 @@ shift_limited_unroll_A_sse_data_t shift_limited_unroll_A_sse_init(float relative
             while(myphase>PI) myphase-=2*PI;
             while(myphase<-PI) myphase+=2*PI;
         }
-        output.dcos[i] = cos(myphase);
-        output.dsin[i] = sin(myphase);
+        output.dcos[i] = cosf(myphase);
+        output.dsin[i] = sinf(myphase);
         for (int k = 1; k < PF_SHIFT_LIMITED_SIMD_SZ; k++)
         {
             output.dcos[i+k] = output.dcos[i];
@@ -547,8 +547,8 @@ shift_limited_unroll_A_sse_data_t shift_limited_unroll_A_sse_init(float relative
     myphase = phase_start_rad;
     for (int i = 0; i < PF_SHIFT_LIMITED_SIMD_SZ; i++)
     {
-        output.phase_state_i[i] = cos(myphase);
-        output.phase_state_q[i] = sin(myphase);
+        output.phase_state_i[i] = cosf(myphase);
+        output.phase_state_q[i] = sinf(myphase);
         myphase += output.phase_increment;
         while(myphase>PI) myphase-=2*PI;
         while(myphase<-PI) myphase+=2*PI;
@@ -650,8 +650,8 @@ shift_limited_unroll_B_sse_data_t shift_limited_unroll_B_sse_init(float relative
             while(myphase>PI) myphase-=2*PI;
             while(myphase<-PI) myphase+=2*PI;
         }
-        output.dtrig[i+0] = cos(myphase);
-        output.dtrig[i+1] = sin(myphase);
+        output.dtrig[i+0] = cosf(myphase);
+        output.dtrig[i+1] = sinf(myphase);
         output.dtrig[i+2] = output.dtrig[i+0];
         output.dtrig[i+3] = output.dtrig[i+1];
     }
@@ -662,8 +662,8 @@ shift_limited_unroll_B_sse_data_t shift_limited_unroll_B_sse_init(float relative
     myphase = phase_start_rad;
     for (int i = 0; i < PF_SHIFT_LIMITED_SIMD_SZ; i++)
     {
-        output.phase_state_i[i] = cos(myphase);
-        output.phase_state_q[i] = sin(myphase);
+        output.phase_state_i[i] = cosf(myphase);
+        output.phase_state_q[i] = sinf(myphase);
         myphase += output.phase_increment;
         while(myphase>PI) myphase-=2*PI;
         while(myphase<-PI) myphase+=2*PI;
@@ -763,8 +763,8 @@ shift_limited_unroll_C_sse_data_t shift_limited_unroll_C_sse_init(float relative
             while(myphase>PI) myphase-=2*PI;
             while(myphase<-PI) myphase+=2*PI;
         }
-        output.dinterl_trig[2*i] = cos(myphase);
-        output.dinterl_trig[2*i+4] = sin(myphase);
+        output.dinterl_trig[2*i] = cosf(myphase);
+        output.dinterl_trig[2*i+4] = sinf(myphase);
         for (int k = 1; k < PF_SHIFT_LIMITED_SIMD_SZ; k++)
         {
             output.dinterl_trig[2*i+k] = output.dinterl_trig[2*i];
@@ -778,8 +778,8 @@ shift_limited_unroll_C_sse_data_t shift_limited_unroll_C_sse_init(float relative
     myphase = phase_start_rad;
     for (int i = 0; i < PF_SHIFT_LIMITED_SIMD_SZ; i++)
     {
-        output.phase_state_i[i] = cos(myphase);
-        output.phase_state_q[i] = sin(myphase);
+        output.phase_state_i[i] = cosf(myphase);
+        output.phase_state_q[i] = sinf(myphase);
         myphase += output.phase_increment;
         while(myphase>PI) myphase-=2*PI;
         while(myphase<-PI) myphase+=2*PI;
@@ -899,7 +899,7 @@ void shift_recursive_osc_update_rate(float rate, shift_recursive_osc_conf_t *con
 {
     // constants for single phase step
     float phase_increment_s = rate*PI;
-    float k1 = tan(0.5*phase_increment_s);
+    float k1 = tanf(0.5f*phase_increment_s);
     float k2 = 2*k1 /(1 + k1 * k1);
     for (int j=1; j<PF_SHIFT_RECURSIVE_SIMD_SZ; j++)
     {
@@ -916,7 +916,7 @@ void shift_recursive_osc_update_rate(float rate, shift_recursive_osc_conf_t *con
     float phase_increment_b = phase_increment_s * PF_SHIFT_RECURSIVE_SIMD_SZ;
     while(phase_increment_b > PI) phase_increment_b-=2*PI;
     while(phase_increment_b < -PI) phase_increment_b+=2*PI;
-    conf->k1 = tan(0.5*phase_increment_b);
+    conf->k1 = tanf(0.5f*phase_increment_b);
     conf->k2 = 2*conf->k1 / (1 + conf->k1 * conf->k1);
 }
 
@@ -924,8 +924,8 @@ void shift_recursive_osc_init(float rate, float starting_phase, shift_recursive_
 {
     if (starting_phase != 0.0F)
     {
-        state->u_cos[0] = cos(starting_phase);
-        state->v_sin[0] = sin(starting_phase);
+        state->u_cos[0] = cosf(starting_phase);
+        state->v_sin[0] = sinf(starting_phase);
     }
     else
     {
@@ -1044,7 +1044,7 @@ void shift_recursive_osc_sse_update_rate(float rate, shift_recursive_osc_sse_con
 {
     // constants for single phase step
     float phase_increment_s = rate*PI;
-    float k1 = tan(0.5*phase_increment_s);
+    float k1 = tanf(0.5f*phase_increment_s);
     float k2 = 2*k1 /(1 + k1 * k1);
     for (int j=1; j<PF_SHIFT_RECURSIVE_SIMD_SSE_SZ; j++)
     {
@@ -1061,7 +1061,7 @@ void shift_recursive_osc_sse_update_rate(float rate, shift_recursive_osc_sse_con
     float phase_increment_b = phase_increment_s * PF_SHIFT_RECURSIVE_SIMD_SSE_SZ;
     while(phase_increment_b > PI) phase_increment_b-=2*PI;
     while(phase_increment_b < -PI) phase_increment_b+=2*PI;
-    conf->k1 = tan(0.5*phase_increment_b);
+    conf->k1 = tanf(0.5f*phase_increment_b);
     conf->k2 = 2*conf->k1 / (1 + conf->k1 * conf->k1);
 }
 
@@ -1070,8 +1070,8 @@ void shift_recursive_osc_sse_init(float rate, float starting_phase, shift_recurs
 {
     if (starting_phase != 0.0F)
     {
-        state->u_cos[0] = cos(starting_phase);
-        state->v_sin[0] = sin(starting_phase);
+        state->u_cos[0] = cosf(starting_phase);
+        state->v_sin[0] = sinf(starting_phase);
     }
     else
     {
