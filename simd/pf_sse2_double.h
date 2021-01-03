@@ -33,8 +33,8 @@
    SOFTWARE.
 */
 
-#ifndef PF_NEON_DBL_H
-#define PF_NEON_DBL_H
+#ifndef PF_SSE2_DBL_H
+#define PF_SSE2_DBL_H
 
 //detect sse2 support under MSVC
 #if defined ( _M_IX86_FP )
