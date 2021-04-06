@@ -5,6 +5,9 @@ project(PRETTY_FAST_FFT)
 option(USE_TYPE_FLOAT  "activate single precision 'float'?" ON)
 option(USE_TYPE_DOUBLE "activate 'double' precision float?" ON)
 
+# misc option
+option(USE_UNALIGNED   "enable FFT with unaligned data pointers?" OFF)
+
 # architecture/optimization options
 option(USE_SIMD        "use SIMD (SSE/AVX/NEON/ALTIVEC) CPU features? - " ON)
 option(DISABLE_SIMD_AVX "disable AVX CPU features? - " OFF)
@@ -125,6 +128,9 @@ add_library(PFFFT STATIC ${FLOAT_SOURCES} ${DOUBLE_SOURCES} pffft_common.c pffft
 target_compile_definitions(PFFFT PRIVATE _USE_MATH_DEFINES)
 if (USE_SCALAR_VECT)
   target_compile_definitions(PFFFT PRIVATE PFFFT_SCALVEC_ENABLED=1)
+endif()
+if (USE_UNALIGNED)
+  target_compile_definitions(PFFFT PRIVATE PFFFT_UNALIGNED_ACCESS=1)
 endif()
 if (USE_DEBUG_ASAN)
   target_compile_options(PFFFT PRIVATE "-fsanitize=address")

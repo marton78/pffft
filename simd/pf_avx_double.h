@@ -69,7 +69,11 @@ typedef union v4sf_union {
 #  define VSUB(a,b) _mm256_sub_pd(a,b)
 #  define LD_PS1(p) _mm256_set1_pd(p)
 #  define VLOAD_UNALIGNED(ptr)  _mm256_loadu_pd(ptr)
+#ifdef PFFFT_UNALIGNED_ACCESS
+#  define VLOAD_ALIGNED(ptr)    _mm256_loadu_pd(ptr)
+#else
 #  define VLOAD_ALIGNED(ptr)    _mm256_load_pd(ptr)
+#endif
 
 /* INTERLEAVE2 (in1, in2, out1, out2) pseudo code:
 out1 = [ in1[0], in2[0], in1[1], in2[1] ]

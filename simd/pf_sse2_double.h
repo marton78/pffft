@@ -146,7 +146,11 @@ FORCE_INLINE m256d mm256_loadu_pd (double const * mem_addr)
 #  define VSUB(a,b) mm256_sub_pd(a,b)
 #  define LD_PS1(p) mm256_set1_pd(p)
 #  define VLOAD_UNALIGNED(ptr)  mm256_loadu_pd(ptr)
+#ifdef PFFFT_UNALIGNED_ACCESS
+#  define VLOAD_ALIGNED(ptr)    mm256_loadu_pd(ptr)
+#else
 #  define VLOAD_ALIGNED(ptr)    mm256_load_pd(ptr)
+#endif
 
 
 FORCE_INLINE __m128d mm256_castpd256_pd128(m256d a)

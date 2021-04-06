@@ -60,7 +60,12 @@ typedef union v4sf_union {
 #  define VSUB(a,b) _mm_sub_ps(a,b)
 #  define LD_PS1(p) _mm_set1_ps(p)
 #  define VLOAD_UNALIGNED(ptr)  _mm_loadu_ps(ptr)
+#ifdef PFFFT_UNALIGNED_ACCESS
+#  define VLOAD_ALIGNED(ptr)    _mm_loadu_ps(ptr)
+#else
 #  define VLOAD_ALIGNED(ptr)    _mm_load_ps(ptr)
+#endif
+
 
 #  define INTERLEAVE2(in1, in2, out1, out2) { v4sf tmp__ = _mm_unpacklo_ps(in1, in2); out2 = _mm_unpackhi_ps(in1, in2); out1 = tmp__; }
 #  define UNINTERLEAVE2(in1, in2, out1, out2) { v4sf tmp__ = _mm_shuffle_ps(in1, in2, _MM_SHUFFLE(2,0,2,0)); out2 = _mm_shuffle_ps(in1, in2, _MM_SHUFFLE(3,1,3,1)); out1 = tmp__; }
