@@ -102,6 +102,27 @@ There's now CMake support to build the static libraries `libPFFFT.a`
 and `libPFFASTCONV.a` from the source files, plus the additional 
 `libFFTPACK.a` library. Later one's sources are there anyway for the benchmark.
 
+There are several CMake options to modify library size and optimization.
+You can explore all available options with `cmake-gui` or `ccmake`,
+the console version - after having installed (on Debian/Ubuntu Linux) one of
+```
+sudo apt-get install cmake-qt-gui
+sudo apt-get install cmake-curses-gui
+```
+
+Some of the options:
+* `USE_TYPE_FLOAT` to activate single precision 'float' (default: ON)
+* `USE_TYPE_DOUBLE` to activate 'double' precision float (default: ON)
+* `USE_SIMD` to use SIMD (SSE/AVX/NEON/ALTIVEC) CPU features? (default: ON)
+* `DISABLE_SIMD_AVX` to disable AVX CPU features (default: OFF)
+* `USE_SIMD_NEON` to force using NEON on ARM (requires USE_SIMD) (default: OFF)
+* `USE_SCALAR_VECT` to use 4-element vector scalar operations (if no other SIMD) (default: ON)
+
+Options can be passed to `cmake` at command line, e.g.
+```
+cmake -DUSE_TYPE_FLOAT=OFF -DUSE_TYPE_DOUBLE=ON
+```
+
 
 ## Origin:
 Origin for this code is Julien Pommier's pffft on bitbucket:
