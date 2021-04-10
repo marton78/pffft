@@ -33,6 +33,7 @@
 #include <complex>
 #include <vector>
 #include <limits>
+#include <cassert>
 
 namespace {
 #if defined(PFFFT_ENABLE_FLOAT) || ( !defined(PFFFT_ENABLE_FLOAT) && !defined(PFFFT_ENABLE_DOUBLE) )
@@ -153,8 +154,9 @@ public:
    * length is identical to forward()'s input vector's size,
    * and also equals inverse()'s output vector size.
    * this function is no simple setter. it pre-calculates twiddle factors.
+   * returns true if newLength is >= minFFtsize, false otherwise
    */
-  void prepareLength(int newLength);
+  bool prepareLength(int newLength);
 
   /*
    * retrieve the transformation length.
@@ -660,7 +662,8 @@ inline Fft<T>::Fft(int length, int stackThresholdLen)
 #elif defined(__GNUC__)
   char static_assert_like[(sizeof(Complex) == 2 * sizeof(Scalar)) ? 1 : -1]; // pffft requires sizeof(std::complex<>) == 2 * sizeof(Scalar)
 #endif
-  prepareLength(length);
+  const bool isLengthSupported = prepareLength(length);
+  assert(isLengthSupported);
 }
 
 template<typename T>
@@ -670,15 +673,18 @@ inline Fft<T>::~Fft()
 }
 
 template<typename T>
-inline void
+inline bool
 Fft<T>::prepareLength(int newLength)
 {
+  if(newLength < minFFtsize())
+    return false;
+
   const bool wasOnHeap = ( work != NULL );
 
   const bool useHeap = newLength > stackThresholdLen;
 
   if (useHeap == wasOnHeap && newLength == length) {
-    return;
+    return true;
   }
 
   length = newLength;
@@ -693,6 +699,8 @@ Fft<T>::prepareLength(int newLength)
   if (useHeap) {
     work = reinterpret_cast<Scalar*>( alignedAllocType(length) );
   }
+
+  return true;
 }
 
 
