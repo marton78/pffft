@@ -9,22 +9,24 @@ void cxx11_forward_complex_double(const int transformLen)
 {
   std::cout << "running " << __FUNCTION__ << "()" << std::endl;
 
-  // some checks
+  // first check - might be skipped
   using FFT_T = pffft::Fft< std::complex<double> >;
   if (transformLen < FFT_T::minFFtsize())
   {
     std::cerr << "Error: minimum FFT transformation length is " << FFT_T::minFFtsize() << std::endl;
     return;
   }
-  if (!FFT_T::isPowerOfTwo(transformLen))
-  {
-    std::cerr << "Error: transformation length " << transformLen << " is no power of 2. "
-              << "Next power of 2 is: " << FFT_T::nextPowerOfTwo(transformLen) << std::endl;
-    return;
-  }
 
   // instantiate FFT and prepare transformation for length N
   pffft::Fft< std::complex<double> > fft(transformLen);
+
+  // one more check
+  if (!fft.isValid())
+  {
+    std::cerr << "Error: transformation length " << transformLen << " is not decomposable into small prime factors. "
+              << "Next power of 2 is: " << FFT_T::nextPowerOfTwo(transformLen) << std::endl;
+    return;
+  }
 
   // allocate aligned vectors for input X and output Y
   auto X = fft.valueVector();

@@ -9,22 +9,24 @@ void cxx98_forward_complex_float(const int transformLen)
 {
   std::cout << "running " << __FUNCTION__ << "()" << std::endl;
 
-  // some checks
+  // first check - might be skipped
   typedef pffft::Fft< std::complex<float> > FFT_T;
   if (transformLen < FFT_T::minFFtsize())
   {
     std::cerr << "Error: minimum FFT transformation length is " << FFT_T::minFFtsize() << std::endl;
     return;
   }
-  if (!FFT_T::isPowerOfTwo(transformLen))
-  {
-    std::cerr << "Error: transformation length " << transformLen << " is no power of 2. "
-              << "Next power of 2 is: " << FFT_T::nextPowerOfTwo(transformLen) << std::endl;
-    return;
-  }
 
   // instantiate FFT and prepare transformation for length N
   pffft::Fft< std::complex<float> > fft(transformLen);
+
+  // one more check
+  if (!fft.isValid())
+  {
+    std::cerr << "Error: transformation length " << transformLen << " is not decomposable into small prime factors. "
+              << "Next power of 2 is: " << FFT_T::nextPowerOfTwo(transformLen) << std::endl;
+    return;
+  }
 
   // allocate aligned vectors for input X and output Y
   pffft::AlignedVector< std::complex<float> > X = fft.valueVector();
