@@ -1015,13 +1015,14 @@ struct SETUP_STRUCT {
 };
 
 SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
-  SETUP_STRUCT *s = (SETUP_STRUCT*)malloc(sizeof(SETUP_STRUCT));
+  SETUP_STRUCT *s = 0;
   int k, m;
   /* unfortunately, the fft size must be a multiple of 16 for complex FFTs 
      and 32 for real FFTs -- a lot of stuff would need to be rewritten to
      handle other cases (or maybe just switch to a scalar fft, I don't know..) */
-  if (transform == PFFFT_REAL) { assert((N%(2*SIMD_SZ*SIMD_SZ))==0 && N>0); }
-  if (transform == PFFFT_COMPLEX) { assert((N%(SIMD_SZ*SIMD_SZ))==0 && N>0); }
+  if (transform == PFFFT_REAL)    { if ((N%(2*SIMD_SZ*SIMD_SZ)) || N<=0) return s; }
+  if (transform == PFFFT_COMPLEX) { if ((N%(  SIMD_SZ*SIMD_SZ)) || N<=0) return s; }
+  s = (SETUP_STRUCT*)malloc(sizeof(SETUP_STRUCT));
   /* assert((N % 32) == 0); */
   s->N = N;
   s->transform = transform;  

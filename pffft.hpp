@@ -147,6 +147,14 @@ public:
    */
   Fft( int length, int stackThresholdLen = 4096 );
 
+
+  /*
+   * constructor or prepareLength() produced a valid FFT instance?
+   * delivers false for invalid FFT sizes
+   */
+  bool isValid() const;
+
+
   ~Fft();
 
   /*
@@ -415,6 +423,8 @@ public:
     : self(NULL)
   {}
 
+  ~Setup() { pffft_destroy_setup(self); }
+
   void prepareLength(int length)
   {
     if (self) {
@@ -423,7 +433,7 @@ public:
     self = pffft_new_setup(length, PFFFT_REAL);
   }
 
-  ~Setup() { pffft_destroy_setup(self); }
+  bool isValid() const { return (self); }
 
   void transform_ordered(const Scalar* input,
                          Scalar* output,
@@ -486,6 +496,8 @@ public:
     self = pffft_new_setup(length, PFFFT_COMPLEX);
   }
 
+  bool isValid() const { return (self); }
+
   void transform_ordered(const Scalar* input,
                          Scalar* output,
                          Scalar* work,
@@ -546,6 +558,8 @@ public:
       self = pffftd_new_setup(length, PFFFT_REAL);
     }
   }
+
+  bool isValid() const { return (self); }
 
   void transform_ordered(const Scalar* input,
                          Scalar* output,
@@ -608,6 +622,8 @@ public:
     self = pffftd_new_setup(length, PFFFT_COMPLEX);
   }
 
+  bool isValid() const { return (self); }
+
   void transform_ordered(const Scalar* input,
                          Scalar* output,
                          Scalar* work,
@@ -662,14 +678,20 @@ inline Fft<T>::Fft(int length, int stackThresholdLen)
 #elif defined(__GNUC__)
   char static_assert_like[(sizeof(Complex) == 2 * sizeof(Scalar)) ? 1 : -1]; // pffft requires sizeof(std::complex<>) == 2 * sizeof(Scalar)
 #endif
-  const bool isLengthSupported = prepareLength(length);
-  assert(isLengthSupported);
+  prepareLength(length);
 }
 
 template<typename T>
 inline Fft<T>::~Fft()
 {
   alignedFree(work);
+}
+
+template<typename T>
+inline bool
+Fft<T>::isValid() const
+{
+  return setup.isValid();
 }
 
 template<typename T>
@@ -687,9 +709,13 @@ Fft<T>::prepareLength(int newLength)
     return true;
   }
 
-  length = newLength;
+  length = 0;
 
-  setup.prepareLength(length);
+  setup.prepareLength(newLength);
+  if (!setup.isValid())
+    return false;
+
+  length = newLength;
 
   if (work) {
     alignedFree(work);
