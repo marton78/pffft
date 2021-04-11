@@ -829,6 +829,7 @@ template<typename T>
 inline typename Fft<T>::Complex *
 Fft<T>::forward(const T* input, Complex * spectrum)
 {
+  assert(isValid());
   setup.transform_ordered(reinterpret_cast<const Scalar*>(input),
                           reinterpret_cast<Scalar*>(spectrum),
                           work,
@@ -840,6 +841,7 @@ template<typename T>
 inline T*
 Fft<T>::inverse(Complex const* spectrum, T* output)
 {
+  assert(isValid());
   setup.transform_ordered(reinterpret_cast<const Scalar*>(spectrum),
                           reinterpret_cast<Scalar*>(output),
                           work,
@@ -851,6 +853,7 @@ template<typename T>
 inline typename pffft::Fft<T>::Scalar*
 Fft<T>::forwardToInternalLayout(const T* input, Scalar* spectrum_internal_layout)
 {
+  assert(isValid());
   setup.transform(reinterpret_cast<const Scalar*>(input),
                   spectrum_internal_layout,
                   work,
@@ -862,6 +865,7 @@ template<typename T>
 inline T*
 Fft<T>::inverseFromInternalLayout(const Scalar* spectrum_internal_layout, T* output)
 {
+  assert(isValid());
   setup.transform(spectrum_internal_layout,
                   reinterpret_cast<Scalar*>(output),
                   work,
@@ -873,6 +877,7 @@ template<typename T>
 inline void
 Fft<T>::reorderSpectrum( const Scalar* input, Complex* output )
 {
+  assert(isValid());
   setup.reorder(input, reinterpret_cast<Scalar*>(output), PFFFT_FORWARD);
 }
 
@@ -883,6 +888,7 @@ Fft<T>::convolveAccumulate(const Scalar* dft_a,
                            Scalar* dft_ab,
                            const Scalar scaling)
 {
+  assert(isValid());
   setup.convolveAccumulate(dft_a, dft_b, dft_ab, scaling);
   return dft_ab;
 }
@@ -894,6 +900,7 @@ Fft<T>::convolve(const Scalar* dft_a,
                  Scalar* dft_ab,
                  const Scalar scaling)
 {
+  assert(isValid());
   setup.convolve(dft_a, dft_b, dft_ab, scaling);
   return dft_ab;
 }
