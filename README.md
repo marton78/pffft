@@ -123,6 +123,15 @@ Options can be passed to `cmake` at command line, e.g.
 cmake -DUSE_TYPE_FLOAT=OFF -DUSE_TYPE_DOUBLE=ON
 ```
 
+My Linux distribution defaults to GCC. With installed CLANG and the bash shell, you can use it with
+```
+mkdir build
+cd build
+CC=/usr/bin/clang CXX=/usr/bin/clang++ cmake ..
+ccmake .         # or: cmake-gui .
+cmake --build .  # or simply: make
+```
+
 
 ## Origin:
 Origin for this code is Julien Pommier's pffft on bitbucket:
