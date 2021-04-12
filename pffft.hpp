@@ -33,6 +33,7 @@
 #include <complex>
 #include <vector>
 #include <limits>
+#include <cassert>
 
 namespace {
 #if defined(PFFFT_ENABLE_FLOAT) || ( !defined(PFFFT_ENABLE_FLOAT) && !defined(PFFFT_ENABLE_DOUBLE) )
@@ -146,6 +147,14 @@ public:
    */
   Fft( int length, int stackThresholdLen = 4096 );
 
+
+  /*
+   * constructor or prepareLength() produced a valid FFT instance?
+   * delivers false for invalid FFT sizes
+   */
+  bool isValid() const;
+
+
   ~Fft();
 
   /*
@@ -153,8 +162,9 @@ public:
    * length is identical to forward()'s input vector's size,
    * and also equals inverse()'s output vector size.
    * this function is no simple setter. it pre-calculates twiddle factors.
+   * returns true if newLength is >= minFFtsize, false otherwise
    */
-  void prepareLength(int newLength);
+  bool prepareLength(int newLength);
 
   /*
    * retrieve the transformation length.
@@ -413,6 +423,8 @@ public:
     : self(NULL)
   {}
 
+  ~Setup() { pffft_destroy_setup(self); }
+
   void prepareLength(int length)
   {
     if (self) {
@@ -421,7 +433,7 @@ public:
     self = pffft_new_setup(length, PFFFT_REAL);
   }
 
-  ~Setup() { pffft_destroy_setup(self); }
+  bool isValid() const { return (self); }
 
   void transform_ordered(const Scalar* input,
                          Scalar* output,
@@ -484,6 +496,8 @@ public:
     self = pffft_new_setup(length, PFFFT_COMPLEX);
   }
 
+  bool isValid() const { return (self); }
+
   void transform_ordered(const Scalar* input,
                          Scalar* output,
                          Scalar* work,
@@ -545,6 +559,8 @@ public:
     }
   }
 
+  bool isValid() const { return (self); }
+
   void transform_ordered(const Scalar* input,
                          Scalar* output,
                          Scalar* work,
@@ -605,6 +621,8 @@ public:
     }
     self = pffftd_new_setup(length, PFFFT_COMPLEX);
   }
+
+  bool isValid() const { return (self); }
 
   void transform_ordered(const Scalar* input,
                          Scalar* output,
@@ -670,20 +688,34 @@ inline Fft<T>::~Fft()
 }
 
 template<typename T>
-inline void
+inline bool
+Fft<T>::isValid() const
+{
+  return setup.isValid();
+}
+
+template<typename T>
+inline bool
 Fft<T>::prepareLength(int newLength)
 {
+  if(newLength < minFFtsize())
+    return false;
+
   const bool wasOnHeap = ( work != NULL );
 
   const bool useHeap = newLength > stackThresholdLen;
 
   if (useHeap == wasOnHeap && newLength == length) {
-    return;
+    return true;
   }
 
-  length = newLength;
+  length = 0;
 
-  setup.prepareLength(length);
+  setup.prepareLength(newLength);
+  if (!setup.isValid())
+    return false;
+
+  length = newLength;
 
   if (work) {
     alignedFree(work);
@@ -693,6 +725,8 @@ Fft<T>::prepareLength(int newLength)
   if (useHeap) {
     work = reinterpret_cast<Scalar*>( alignedAllocType(length) );
   }
+
+  return true;
 }
 
 
@@ -795,6 +829,7 @@ template<typename T>
 inline typename Fft<T>::Complex *
 Fft<T>::forward(const T* input, Complex * spectrum)
 {
+  assert(isValid());
   setup.transform_ordered(reinterpret_cast<const Scalar*>(input),
                           reinterpret_cast<Scalar*>(spectrum),
                           work,
@@ -806,6 +841,7 @@ template<typename T>
 inline T*
 Fft<T>::inverse(Complex const* spectrum, T* output)
 {
+  assert(isValid());
   setup.transform_ordered(reinterpret_cast<const Scalar*>(spectrum),
                           reinterpret_cast<Scalar*>(output),
                           work,
@@ -817,6 +853,7 @@ template<typename T>
 inline typename pffft::Fft<T>::Scalar*
 Fft<T>::forwardToInternalLayout(const T* input, Scalar* spectrum_internal_layout)
 {
+  assert(isValid());
   setup.transform(reinterpret_cast<const Scalar*>(input),
                   spectrum_internal_layout,
                   work,
@@ -828,6 +865,7 @@ template<typename T>
 inline T*
 Fft<T>::inverseFromInternalLayout(const Scalar* spectrum_internal_layout, T* output)
 {
+  assert(isValid());
   setup.transform(spectrum_internal_layout,
                   reinterpret_cast<Scalar*>(output),
                   work,
@@ -839,6 +877,7 @@ template<typename T>
 inline void
 Fft<T>::reorderSpectrum( const Scalar* input, Complex* output )
 {
+  assert(isValid());
   setup.reorder(input, reinterpret_cast<Scalar*>(output), PFFFT_FORWARD);
 }
 
@@ -849,6 +888,7 @@ Fft<T>::convolveAccumulate(const Scalar* dft_a,
                            Scalar* dft_ab,
                            const Scalar scaling)
 {
+  assert(isValid());
   setup.convolveAccumulate(dft_a, dft_b, dft_ab, scaling);
   return dft_ab;
 }
@@ -860,6 +900,7 @@ Fft<T>::convolve(const Scalar* dft_a,
                  Scalar* dft_ab,
                  const Scalar scaling)
 {
+  assert(isValid());
   setup.convolve(dft_a, dft_b, dft_ab, scaling);
   return dft_ab;
 }
