@@ -71,6 +71,44 @@
 
 int FUNC_SIMD_SIZE() { return SIMD_SZ; }
 
+int FUNC_MIN_FFT_SIZE(pffft_transform_t transform) {
+  /* unfortunately, the fft size must be a multiple of 16 for complex FFTs
+     and 32 for real FFTs -- a lot of stuff would need to be rewritten to
+     handle other cases (or maybe just switch to a scalar fft, I don't know..) */
+  int simdSz = FUNC_SIMD_SIZE();
+  if (transform == PFFFT_REAL)
+    return ( 2 * simdSz * simdSz );
+  else if (transform == PFFFT_COMPLEX)
+    return ( simdSz * simdSz );
+  else
+    return 1;
+}
+
+int FUNC_IS_VALID_SIZE(int N, pffft_transform_t cplx) {
+  const int N_min = FUNC_MIN_FFT_SIZE(cplx);
+  int R = N;
+  while (R >= 5*N_min && (R % 5) == 0)  R /= 5;
+  while (R >= 3*N_min && (R % 3) == 0)  R /= 3;
+  while (R >= 2*N_min && (R % 2) == 0)  R /= 2;
+  return (R == N_min) ? 1 : 0;
+}
+
+int FUNC_NEAREST_SIZE(int N, pffft_transform_t cplx, int higher) {
+  int d;
+  const int N_min = FUNC_MIN_FFT_SIZE(cplx);
+  if (N < N_min)
+    N = N_min;
+  d = (higher) ? N_min : -N_min;
+  if (d > 0)
+    N = N_min * ((N+N_min-1) / N_min);  /* round up */
+  else
+    N = N_min * (N / N_min);  /* round down */
+
+  for (; ; N += d)
+    if (FUNC_IS_VALID_SIZE(N, cplx))
+      return N;
+}
+
 const char * FUNC_SIMD_ARCH() { return VARCH; }
 
 
@@ -1067,6 +1105,8 @@ SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
 
 
 void FUNC_DESTROY(SETUP_STRUCT *s) {
+  if (!s)
+    return;
   FUNC_ALIGNED_FREE(s->data);
   free(s);
 }
