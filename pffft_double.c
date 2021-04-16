@@ -121,6 +121,9 @@
 #define FUNC_ALIGNED_MALLOC        pffftd_aligned_malloc
 #define FUNC_ALIGNED_FREE          pffftd_aligned_free
 #define FUNC_SIMD_SIZE             pffftd_simd_size
+#define FUNC_MIN_FFT_SIZE          pffftd_min_fft_size
+#define FUNC_IS_VALID_SIZE         pffftd_is_valid_size
+#define FUNC_NEAREST_SIZE          pffftd_nearest_transform_size
 #define FUNC_SIMD_ARCH             pffftd_simd_arch
 #define FUNC_VALIDATE_SIMD_A       validate_pffftd_simd
 #define FUNC_VALIDATE_SIMD_EX      validate_pffftd_simd_ex

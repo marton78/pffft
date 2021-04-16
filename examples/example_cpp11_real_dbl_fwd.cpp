@@ -24,7 +24,8 @@ void cxx11_forward_real_double(const int transformLen)
   if (!fft.isValid())
   {
     std::cerr << "Error: transformation length " << transformLen << " is not decomposable into small prime factors. "
-              << "Next power of 2 is: " << FFT_T::nextPowerOfTwo(transformLen) << std::endl;
+              << "Next valid transform size is: " << FFT_T::nearestTransformSize(transformLen)
+              << "; next power of 2 is: " << FFT_T::nextPowerOfTwo(transformLen) << std::endl;
     return;
   }
 

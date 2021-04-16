@@ -200,6 +200,18 @@ extern "C" {
   /* simple helper to determine if power of 2 - returns bool */
   int pffft_is_power_of_two(int N);
 
+  /* simple helper to determine size N is valid
+     - factorizable to pffft_min_fft_size() with factors 2, 3, 5
+     returns bool
+  */
+  int pffft_is_valid_size(int N, pffft_transform_t cplx);
+
+  /* determine nearest valid transform size  (by brute-force testing)
+     - factorizable to pffft_min_fft_size() with factors 2, 3, 5.
+     higher: bool-flag to find nearest higher value; else lower.
+  */
+  int pffft_nearest_transform_size(int N, pffft_transform_t cplx, int higher);
+
   /*
     the float buffers must have the correct alignment (16-byte boundary
     on intel and powerpc). This function may be used to obtain such
