@@ -32,10 +32,10 @@ ptr_to_conv_f_ptrs * get_all_conv_arch_ptrs(int * p_num_arch)
         conv_arch_ptrs[n_arch++] = CONV_FN_ARCH(conv_ptrs, avx2)();
 #elif defined(CONV_ARCH_MSVC_AMD64)
         static const conv_f_ptrs *conv_arch_ptrs[N_DEFAULT_ARCHES+3] = {0};
-        DPRINT("CONV_ARCH_MSVC_AMD64: SSE2, AVX, AVX2\n");
-        conv_arch_ptrs[n_arch++] = CONV_FN_ARCH(conv_ptrs, SSE2)();
-        conv_arch_ptrs[n_arch++] = CONV_FN_ARCH(conv_ptrs, AVX) ();
-        conv_arch_ptrs[n_arch++] = CONV_FN_ARCH(conv_ptrs, AVX2)();
+        DPRINT("CONV_ARCH_MSVC_AMD64: sse2, avx, avx2\n");
+        conv_arch_ptrs[n_arch++] = CONV_FN_ARCH(conv_ptrs, sse2)();
+        conv_arch_ptrs[n_arch++] = CONV_FN_ARCH(conv_ptrs, avx) ();
+        conv_arch_ptrs[n_arch++] = CONV_FN_ARCH(conv_ptrs, avx2)();
 #elif defined(CONV_ARCH_GCC_ARM32NEON)
         static const conv_f_ptrs *conv_arch_ptrs[N_DEFAULT_ARCHES+3] = {0};
         DPRINT("CONV_ARCH_GCC_ARM32NEON: neon_vfpv4, neon_rpi3_a53\n");

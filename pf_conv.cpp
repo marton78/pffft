@@ -17,7 +17,7 @@
 
 
 #ifdef HAVE_MIPP
-#include <mipp/mipp.h>
+#include <mipp.h>
 #endif
 
 
@@ -315,6 +315,8 @@ const conv_f_ptrs* ARCHFUNCNAME(conv_ptrs)()
     return nullptr;
 }
 
-
-[[maybe_unused]] static f_conv_ptrs test_f_ptrs = ARCHFUNCNAME(conv_ptrs);
+#if defined(__cplusplus) && (__cplusplus >= 201703L)
+[[maybe_unused]]
+#endif
+static f_conv_ptrs test_f_ptrs = ARCHFUNCNAME(conv_ptrs);
 

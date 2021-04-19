@@ -13,7 +13,7 @@
 
 //#if defined(HAVE_MIPP) && !defined(NO_MIPP)
 #if defined(HAVE_MIPP)
-#include <mipp/mipp.h>
+#include <mipp.h>
 
 #define MIPP_VECTOR  mipp::vector
 #else

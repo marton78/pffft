@@ -63,6 +63,22 @@ else()
   set(ASANLIB "")
 endif()
 
+message(STATUS "INFO: CMAKE_C_COMPILER_ID is ${CMAKE_C_COMPILER_ID}")
+message(STATUS "INFO: CMAKE_CXX_COMPILER_ID is ${CMAKE_CXX_COMPILER_ID}")
+if (WIN32)
+  message(STATUS "INFO: detected WIN32")
+else()
+  message(STATUS "INFO: NOT WIN32")
+endif()
+if (MINGW)
+  message(STATUS "INFO: detected MINGW with compiler ${CMAKE_C_COMPILER_ID}")
+else()
+  message(STATUS "INFO: NOT MINGW")
+endif()
+if ( CMAKE_C_COMPILER_ID MATCHES "MSVC" )
+  message(STATUS "INFO: detected MSVC with compiler ${CMAKE_C_COMPILER_ID}")
+endif()
+
 
 if (USE_BENCH_GREEN)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/greenffts/CMakeLists.txt")
@@ -180,7 +196,6 @@ endif()
 ######################################################
 
 if (USE_TYPE_FLOAT)
-
   add_library(PFDSP STATIC pf_mixer.cpp pf_mixer.h pf_cplx.h pf_carrier.cpp pf_carrier.h pf_cic.cpp pf_cic.h fmv.h )
   set_property(TARGET PFDSP PROPERTY CXX_STANDARD 11)
   set_property(TARGET PFDSP PROPERTY CXX_STANDARD_REQUIRED ON)
@@ -188,18 +203,20 @@ if (USE_TYPE_FLOAT)
   target_compile_definitions(PFDSP PRIVATE _USE_MATH_DEFINES)
   target_activate_cxx_compiler_warnings(PFDSP)
   if (USE_DEBUG_ASAN)
-    target_compile_options(PFDSP PRIVATE "-fsanitize=address")
+      target_compile_options(PFDSP PRIVATE "-fsanitize=address")
   endif()
   if (USE_SIMD)
-    target_set_cxx_arch_flags(PFDSP)
+      target_set_cxx_arch_flags(PFDSP)
+  else()
+      target_compile_definitions(PFDSP PRIVATE PFFFT_SIMD_DISABLE=1)
   endif()
   target_link_libraries( PFDSP ${MATHLIB} )
   set_property(TARGET PFDSP APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   )
   if (INSTALL_PFDSP)
-    set(INSTALL_TARGETS ${INSTALL_TARGETS} PFDSP)
-    set(INSTALL_HEADERS ${INSTALL_HEADERS} pf_mixer.h pf_cplx.h pf_carrier.h pf_cic.h)
+      set(INSTALL_TARGETS ${INSTALL_TARGETS} PFDSP)
+      set(INSTALL_HEADERS ${INSTALL_HEADERS} pf_mixer.h pf_cplx.h pf_carrier.h pf_cic.h)
   endif()
 endif()
 
@@ -433,18 +450,18 @@ endif()
 
 if (USE_TYPE_FLOAT)
 
-  add_executable(bench_pf_mixer_float   bench_mixers.cpp papi_perf_counter.h)
-  target_compile_definitions(bench_pf_mixer_float PRIVATE _USE_MATH_DEFINES)
-  target_compile_definitions(bench_pf_mixer_float PRIVATE PFFFT_ENABLE_FLOAT)
-  target_link_libraries( bench_pf_mixer_float  ${ASANLIB} )
-  if (USE_DEBUG_ASAN)
-    target_compile_options(bench_pf_mixer_float PRIVATE "-fsanitize=address")
-  endif()
-  if (PAPI_FOUND)
-      target_compile_definitions(bench_pf_mixer_float PRIVATE HAVE_PAPI=1)
-      target_link_libraries(bench_pf_mixer_float ${PAPI_LIBRARIES})
-  endif()
-  target_link_libraries( bench_pf_mixer_float  PFDSP )
+    add_executable(bench_pf_mixer_float   bench_mixers.cpp papi_perf_counter.h)
+    target_compile_definitions(bench_pf_mixer_float PRIVATE _USE_MATH_DEFINES)
+    target_compile_definitions(bench_pf_mixer_float PRIVATE PFFFT_ENABLE_FLOAT)
+    target_link_libraries( bench_pf_mixer_float  ${ASANLIB} )
+    if (USE_DEBUG_ASAN)
+      target_compile_options(bench_pf_mixer_float PRIVATE "-fsanitize=address")
+    endif()
+    if (PAPI_FOUND)
+        target_compile_definitions(bench_pf_mixer_float PRIVATE HAVE_PAPI=1)
+        target_link_libraries(bench_pf_mixer_float ${PAPI_LIBRARIES})
+    endif()
+    target_link_libraries( bench_pf_mixer_float  PFDSP $<$<CXX_COMPILER_ID:GNU>:stdc++> )
 
 
   ############################################################################
@@ -470,25 +487,23 @@ if (USE_TYPE_FLOAT)
 
   if ((CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64") OR (CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64"))
 
-      if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-          set(PF_CONV_ARCHES "sse3;sse4;avx;avx2")
-          set(PF_CONV_OPT_sse3 "core2")  # emulate a map
-          set(PF_CONV_OPT_sse4 "nehalem")
-          set(PF_CONV_OPT_avx  "sandybridge")
-          set(PF_CONV_OPT_avx2 "haswell")
-          target_compile_definitions(pf_conv_dispatcher PRIVATE CONV_ARCH_GCC_AMD64)
-
-      elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-          set(PF_CONV_ARCHES "sse2;avx;avx2")
-          set(PF_CONV_OPT_sse2 "SSE2")  # emulate a map
-          set(PF_CONV_OPT_avx  "AVX")
-          set(PF_CONV_OPT_avx2 "AVX2")
-          target_compile_definitions(pf_conv_dispatcher PRIVATE CONV_ARCH_MSVC_AMD64)
-
-      else()
-          set(PF_CONV_ARCHES "")
-          message(WARNING "unknown compiler ${CMAKE_CXX_COMPILER_ID} on CMAKE_SYSTEM_PROCESSOR ${CMAKE_SYSTEM_PROCESSOR}: can't do architecture specific compilation")
-      endif()
+    if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        set(PF_CONV_ARCHES "sse3;sse4;avx;avx2")
+        set(PF_CONV_OPT_sse3 "core2")  # emulate a map
+        set(PF_CONV_OPT_sse4 "nehalem")
+        set(PF_CONV_OPT_avx  "sandybridge")
+        set(PF_CONV_OPT_avx2 "haswell")
+        target_compile_definitions(pf_conv_dispatcher PRIVATE CONV_ARCH_GCC_AMD64)
+    elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+        set(PF_CONV_ARCHES "sse2;avx;avx2")
+        set(PF_CONV_OPT_sse2 "SSE2")  # emulate a map
+        set(PF_CONV_OPT_avx  "AVX")
+        set(PF_CONV_OPT_avx2 "AVX2")
+        target_compile_definitions(pf_conv_dispatcher PRIVATE CONV_ARCH_MSVC_AMD64)
+    else()
+        set(PF_CONV_ARCHES "")
+        message(WARNING "unknown compiler ${CMAKE_CXX_COMPILER_ID} on CMAKE_SYSTEM_PROCESSOR ${CMAKE_SYSTEM_PROCESSOR}: can't do architecture specific compilation")
+    endif()
 
   elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
 
@@ -504,20 +519,20 @@ if (USE_TYPE_FLOAT)
 
   elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "armv7l")
 
-      if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-          set(PF_CONV_ARCHES "neon_vfpv4;neon_rpi3_a53;neon_rpi4_a72")
-          set(PF_CONV_OPT_neon_vfpv4        "armv7-a")    # emulate a map for arch
-          set(PF_CONV_EXTRA_neon_vfpv4      "neon_vfpv4") # emulate a map for additional options (EXTRA)
-          set(PF_CONV_OPT_neon_rpi3_a53     "armv7-a")
-          set(PF_CONV_EXTRA_neon_rpi3_a53   "neon_rpi3_a53")
-          set(PF_CONV_OPT_neon_rpi4_a72     "armv7-a")
-          set(PF_CONV_EXTRA_neon_rpi4_a72   "neon_rpi4_a72")
+    if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        set(PF_CONV_ARCHES "neon_vfpv4;neon_rpi3_a53;neon_rpi4_a72")
+        set(PF_CONV_OPT_neon_vfpv4        "armv7-a")    # emulate a map for arch
+        set(PF_CONV_EXTRA_neon_vfpv4      "neon_vfpv4") # emulate a map for additional options (EXTRA)
+        set(PF_CONV_OPT_neon_rpi3_a53     "armv7-a")
+        set(PF_CONV_EXTRA_neon_rpi3_a53   "neon_rpi3_a53")
+        set(PF_CONV_OPT_neon_rpi4_a72     "armv7-a")
+        set(PF_CONV_EXTRA_neon_rpi4_a72   "neon_rpi4_a72")
 
-          target_compile_definitions(pf_conv_dispatcher PRIVATE CONV_ARCH_GCC_ARM32NEON)
-      else()
-          set(PF_CONV_ARCHES "")
-          message(WARNING "unknown compiler ${CMAKE_CXX_COMPILER_ID} on CMAKE_SYSTEM_PROCESSOR ${CMAKE_SYSTEM_PROCESSOR}: can't do architecture specific compilation")
-      endif()
+        target_compile_definitions(pf_conv_dispatcher PRIVATE CONV_ARCH_GCC_ARM32NEON)
+    else()
+        set(PF_CONV_ARCHES "")
+        message(WARNING "unknown compiler ${CMAKE_CXX_COMPILER_ID} on CMAKE_SYSTEM_PROCESSOR ${CMAKE_SYSTEM_PROCESSOR}: can't do architecture specific compilation")
+    endif()
 
   else()
       message(WARNING "this is unforseen CMAKE_SYSTEM_PROCESSOR ${CMAKE_SYSTEM_PROCESSOR}: can't do architecture specific compilation")
@@ -560,7 +575,6 @@ if (USE_TYPE_FLOAT)
 
   ############################################################################
 
-
   add_executable(bench_pf_conv_float   bench_conv.cpp papi_perf_counter.h)
   set_property(TARGET bench_pf_conv_float PROPERTY CXX_STANDARD 11)
   set_property(TARGET bench_pf_conv_float PROPERTY CXX_STANDARD_REQUIRED ON)
@@ -577,8 +591,7 @@ if (USE_TYPE_FLOAT)
   if(MIPP_FOUND)
       target_link_libraries(bench_pf_conv_float MIPP)
   endif()
-
-  target_link_libraries( bench_pf_conv_float  pf_conv_dispatcher PFDSP )
+  target_link_libraries( bench_pf_conv_float  pf_conv_dispatcher PFDSP $<$<CXX_COMPILER_ID:GNU>:stdc++> )
 
 endif()
 
