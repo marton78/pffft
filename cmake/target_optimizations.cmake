@@ -54,6 +54,7 @@ elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "armv7l")
     set(GCC_MARCH_VALUES "none;native;armv7-a" CACHE INTERNAL "List of possible architectures")
     set(GCC_EXTRA_VALUES "none;neon_vfpv4;neon_rpi3_a53;neon_rpi4_a72" CACHE INTERNAL "List of possible additional options")
 else()
+    message(WARNING "unsupported CMAKE_SYSTEM_PROCESSOR '${CMAKE_SYSTEM_PROCESSOR}'")
     # other PROCESSORs could be "ppc", "ppc64",  "arm" - or something else?!
     set(GCC_MARCH_DESC "native")
     set(GCC_MARCH_VALUES "none;native" CACHE INTERNAL "List of possible architectures")

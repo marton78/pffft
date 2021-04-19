@@ -1018,7 +1018,7 @@ class PFAlloc {
 
     // allocate but don't initialize num elements of type T
     pointer allocate (size_type num, const void* = 0) {
-        pointer ret = (pointer)( alignedAlloc<T>(num) );
+        pointer ret = (pointer)( alignedAlloc<T>(int(num)) );
         return ret;
     }
 
