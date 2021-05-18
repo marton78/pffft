@@ -40,29 +40,14 @@ static int is_power_of_two(int N) {
   return f;
 }
 
-static int min_fft_size(pffft_transform_t transform) {
-  /* unfortunately, the fft size must be a multiple of 16 for complex FFTs
-     and 32 for real FFTs -- a lot of stuff would need to be rewritten to
-     handle other cases (or maybe just switch to a scalar fft, I don't know..) */
-  int simdSz = pffft_simd_size();
-  if (transform == PFFFT_REAL)
-    return ( 2 * simdSz * simdSz );
-  else if (transform == PFFFT_COMPLEX)
-    return ( simdSz * simdSz );
-  else
-    return 1;
-}
 
 
 void *pffft_aligned_malloc(size_t nb_bytes) { return Valigned_malloc(nb_bytes); }
 void pffft_aligned_free(void *p) { Valigned_free(p); }
 int pffft_next_power_of_two(int N) { return next_power_of_two(N); }
 int pffft_is_power_of_two(int N) { return is_power_of_two(N); }
-int pffft_min_fft_size(pffft_transform_t transform) { return min_fft_size(transform); }
 
 void *pffftd_aligned_malloc(size_t nb_bytes) { return Valigned_malloc(nb_bytes); }
 void pffftd_aligned_free(void *p) { Valigned_free(p); }
 int pffftd_next_power_of_two(int N) { return next_power_of_two(N); }
 int pffftd_is_power_of_two(int N) { return is_power_of_two(N); }
-int pffftd_min_fft_size(pffft_transform_t transform) { return min_fft_size(transform); }
-

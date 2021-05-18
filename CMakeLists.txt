@@ -218,6 +218,17 @@ endif()
 
 ######################################################
 
+add_executable( test_fft_factors  test_fft_factors.c )
+if (USE_TYPE_FLOAT)
+  target_compile_definitions(test_fft_factors PRIVATE PFFFT_ENABLE_FLOAT)
+endif()
+if (USE_TYPE_DOUBLE)
+  target_compile_definitions(test_fft_factors PRIVATE PFFFT_ENABLE_DOUBLE)
+endif()
+target_link_libraries(test_fft_factors PFFFT ${ASANLIB} ${MATHLIB})
+
+######################################################
+
 add_executable( test_pffft_cpp test_pffft.cpp )
 target_compile_definitions(test_pffft_cpp PRIVATE _USE_MATH_DEFINES)
 if (USE_TYPE_FLOAT)
@@ -324,7 +335,18 @@ endif()
 
 ######################################################
 
+add_subdirectory(examples)
+
+######################################################
+
 enable_testing()
+
+
+add_test(NAME test_fft_factors
+  COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_fft_factors"
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
 
 if (USE_TYPE_FLOAT)
 
