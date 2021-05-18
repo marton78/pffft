@@ -96,7 +96,7 @@ template<> struct Types< std::complex<double> > {
 // Allocator
 template<typename T> class PFAlloc;
 
-namespace {
+namespace detail {
   template<typename T> class Setup;
 }
 
@@ -383,7 +383,7 @@ public:
                              const Scalar scaling);
 
 private:
-  Setup<T> setup;
+  detail::Setup<T> setup;
   Scalar* work;
   int length;
   int stackThresholdLen;
@@ -415,7 +415,7 @@ inline bool isPowerOfTwo(int N) {
 
 // implementation
 
-namespace {
+namespace detail {
 
 template<typename T>
 class Setup
