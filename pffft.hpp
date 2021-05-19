@@ -683,9 +683,9 @@ public:
 
 template<typename T>
 inline Fft<T>::Fft(int length, int stackThresholdLen)
-  : length(0)
+  : work(NULL)
+  , length(0)
   , stackThresholdLen(stackThresholdLen)
-  , work(NULL)
 {
 #if (__cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1900))
   static_assert( sizeof(Complex) == 2 * sizeof(Scalar), "pffft requires sizeof(std::complex<>) == 2 * sizeof(Scalar)" );
