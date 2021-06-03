@@ -16,6 +16,7 @@ option(USE_BENCH_FFTW   "use (system-installed) FFTW3 in fft benchmark?" OFF)
 option(USE_BENCH_GREEN  "use Green FFT in fft benchmark? - if exists in subdir" ON)
 option(USE_BENCH_KISS   "use KissFFT in fft benchmark? - if exists in subdir" ON)
 option(USE_BENCH_POCKET "use PocketFFT in fft benchmark? - if exists in subdir" ON)
+option(USE_FFTPACK      "compile and use FFTPACK in fft benchmark & validation?" ON)
 
 option(USE_DEBUG_ASAN  "use GCC's address sanitizer?" OFF)
 
@@ -176,12 +177,37 @@ endif()
 
 ######################################################
 
-add_library(FFTPACK STATIC fftpack.c fftpack.h)
-target_compile_definitions(FFTPACK PRIVATE _USE_MATH_DEFINES)
-target_link_libraries( FFTPACK ${MATHLIB} )
-set_property(TARGET FFTPACK APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-)
+if (USE_FFTPACK)
+
+  # float / single precision
+  add_library(FFTPACK_FLOAT STATIC fftpack.c fftpack.h)
+  target_compile_definitions(FFTPACK_FLOAT PRIVATE _USE_MATH_DEFINES)
+  target_compile_options(FFTPACK_FLOAT PRIVATE $<$<C_COMPILER_ID:GNU>:-Wall -Wextra -pedantic>)
+  target_link_libraries( FFTPACK_FLOAT ${MATHLIB} )
+  set_property(TARGET FFTPACK_FLOAT APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+  )
+
+  # double precision
+  add_library(FFTPACK_DOUBLE STATIC fftpack.c fftpack.h)
+  target_compile_definitions(FFTPACK_DOUBLE PRIVATE _USE_MATH_DEFINES)
+  target_compile_definitions(FFTPACK_DOUBLE PUBLIC FFTPACK_DOUBLE_PRECISION)
+  target_compile_options(FFTPACK_DOUBLE PRIVATE $<$<C_COMPILER_ID:GNU>:-Wall -Wextra -pedantic>)
+  target_link_libraries( FFTPACK_DOUBLE ${MATHLIB} )
+  set_property(TARGET FFTPACK_DOUBLE APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+  )
+
+  # builtin test program of fftpack
+  add_executable(test_fftpack_float fftpack.c fftpack.h)
+  target_compile_definitions(test_fftpack_float PRIVATE _USE_MATH_DEFINES TESTING_FFTPACK)
+  target_link_libraries(test_fftpack_float ${MATHLIB})
+
+  add_executable(test_fftpack_double fftpack.c fftpack.h)
+  target_compile_definitions(test_fftpack_double PRIVATE _USE_MATH_DEFINES FFTPACK_DOUBLE_PRECISION TESTING_FFTPACK)
+  target_link_libraries(test_fftpack_double ${MATHLIB})
+
+endif()
 
 ######################################################
 
@@ -277,11 +303,16 @@ endif()
 ######################################################
 
 if (USE_TYPE_FLOAT)
-  add_executable(bench_pffft_float   bench_pffft.c pffft.h fftpack.h)
+  add_executable(bench_pffft_float   bench_pffft.c pffft.h)
   target_compile_definitions(bench_pffft_float PRIVATE _USE_MATH_DEFINES)
   target_compile_definitions(bench_pffft_float PRIVATE PFFFT_ENABLE_FLOAT)
 
-  target_link_libraries( bench_pffft_float  PFFFT FFTPACK ${ASANLIB} )
+  target_link_libraries( bench_pffft_float  PFFFT ${ASANLIB} )
+
+  if (USE_FFTPACK)
+    target_compile_definitions(bench_pffft_float PRIVATE HAVE_FFTPACK=1)
+    target_link_libraries(bench_pffft_float  FFTPACK_FLOAT)
+  endif()
 
   if (USE_BENCH_FFTW)
     target_compile_definitions(bench_pffft_float PRIVATE HAVE_FFTW=1)
@@ -306,10 +337,15 @@ if (USE_TYPE_FLOAT)
 endif()
 
 if (USE_TYPE_DOUBLE)
-  add_executable(bench_pffft_double   bench_pffft.c pffft.h fftpack.h)
+  add_executable(bench_pffft_double   bench_pffft.c pffft.h)
   target_compile_definitions(bench_pffft_double PRIVATE _USE_MATH_DEFINES)
   target_compile_definitions(bench_pffft_double PRIVATE PFFFT_ENABLE_DOUBLE)
   target_link_libraries( bench_pffft_double  PFFFT ${ASANLIB} )
+
+  if (USE_FFTPACK)
+    target_compile_definitions(bench_pffft_double PRIVATE HAVE_FFTPACK=1)
+    target_link_libraries(bench_pffft_double  FFTPACK_DOUBLE)
+  endif()
 
   if (USE_BENCH_FFTW)
     target_compile_definitions(bench_pffft_double PRIVATE HAVE_FFTW=1)
@@ -346,6 +382,18 @@ add_test(NAME test_fft_factors
   COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_fft_factors"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
+
+if (USE_FFTPACK)
+  add_test(NAME test_fftpack_float
+    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_fftpack_float"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )
+
+  add_test(NAME test_fftpack_double
+    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_fftpack_double"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )
+endif()
 
 
 if (USE_TYPE_FLOAT)
