@@ -1,6 +1,6 @@
 /*
   Copyright (c) 2013 Julien Pommier.
-  Copyright (c) 2019  Hayati Ayguen ( h_ayguen@web.de )
+  Copyright (c) 2019 Hayati Ayguen ( h_ayguen@web.de )
 
   Small test & bench for PFFFT, comparing its performance with the scalar FFTPACK, FFTW, and Apple vDSP
 
@@ -46,9 +46,11 @@ typedef PFFFTD_Setup PFFFT_SETUP;
 #define PFFFT_FUNC(F)  CONCAT_TOKENS(pffftd_, F)
 #endif
 
-#ifdef PFFFT_ENABLE_FLOAT
-
+#ifdef HAVE_FFTPACK
 #include "fftpack.h"
+#endif
+
+#ifdef PFFFT_ENABLE_FLOAT
 
 #ifdef HAVE_GREEN_FFTS
 #include "fftext.h"
@@ -155,7 +157,7 @@ const char * algoName[NUM_FFT_ALGOS] = {
 
 
 int compiledInAlgo[NUM_FFT_ALGOS] = {
-#ifdef PFFFT_ENABLE_FLOAT
+#ifdef HAVE_FFTPACK
   1, /* "FFTPack    " */
 #else
   0, /* "FFTPack    " */
@@ -272,18 +274,18 @@ double frand() {
 
 
 /* compare results with the regular fftpack */
-void pffft_validate_N(int N, int cplx) {
+int pffft_validate_N(int N, int cplx) {
 
-#ifdef PFFFT_ENABLE_FLOAT
+#ifdef HAVE_FFTPACK
 
   int Nfloat = N*(cplx?2:1);
   int Nbytes = Nfloat * sizeof(pffft_scalar);
-  float *ref, *in, *out, *tmp, *tmp2;
+  pffft_scalar *ref, *in, *out, *tmp, *tmp2;
   PFFFT_SETUP *s = PFFFT_FUNC(new_setup)(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
   int pass;
 
 
-  if (!s) { printf("Skipping N=%d, not supported\n", N); return; }
+  if (!s) { printf("Skipping N=%d, not supported\n", N); return 0; }
   ref = PFFFT_FUNC(aligned_malloc)(Nbytes);
   in = PFFFT_FUNC(aligned_malloc)(Nbytes);
   out = PFFFT_FUNC(aligned_malloc)(Nbytes);
@@ -296,7 +298,7 @@ void pffft_validate_N(int N, int cplx) {
     /* printf("N=%d pass=%d cplx=%d\n", N, pass, cplx); */
     /* compute reference solution with FFTPACK */
     if (pass == 0) {
-      float *wrk = malloc(2*Nbytes+15*sizeof(pffft_scalar));
+      fftpack_real *wrk = malloc(2*Nbytes+15*sizeof(pffft_scalar));
       for (k=0; k < Nfloat; ++k) {
         ref[k] = in[k] = (float)( frand()*2-1 );
         out[k] = 1e30F;
@@ -319,7 +321,7 @@ void pffft_validate_N(int N, int cplx) {
 
     for (k = 0; k < Nfloat; ++k) ref_max = MAX(ref_max, (float)( fabs(ref[k]) ));
 
-      
+
     /* pass 0 : non canonical ordering of transform coefficients */
     if (pass == 0) {
       /* test forward transform, with different input / output */
@@ -354,7 +356,7 @@ void pffft_validate_N(int N, int cplx) {
       for (k=0; k < Nfloat; ++k) {
         if (!(fabs(ref[k] - out[k]) < 1e-3*ref_max)) {
           printf("%s forward PFFFT mismatch found for N=%d\n", (cplx?"CPLX":"REAL"), N);
-          exit(1);
+          return 1;
         }
       }
 
@@ -371,7 +373,7 @@ void pffft_validate_N(int N, int cplx) {
       for (k = 0; k < Nfloat; ++k) {
         if (fabs(in[k] - out[k]) > 1e-3 * ref_max) {
           printf("pass=%d, %s IFFFT does not match for N=%d\n", pass, (cplx?"CPLX":"REAL"), N); break;
-          exit(1);
+          return 1;
         }
       }
     }
@@ -402,7 +404,8 @@ void pffft_validate_N(int N, int cplx) {
         if (e > conv_max) conv_max = e;
       }
       if (conv_err > 1e-5*conv_max) {
-        printf("zconvolve error ? %g %g\n", conv_err, conv_max); exit(1);
+        printf("zconvolve error ? %g %g\n", conv_err, conv_max);
+        return 1;
       }
     }
 
@@ -416,18 +419,24 @@ void pffft_validate_N(int N, int cplx) {
   PFFFT_FUNC(aligned_free)(out);
   PFFFT_FUNC(aligned_free)(tmp);
   PFFFT_FUNC(aligned_free)(tmp2);
+  return 0;
 
-#endif /* PFFFT_ENABLE_FLOAT */
+#else
+  return 2;
+#endif /* HAVE_FFTPACK */
 }
 
-void pffft_validate(int cplx) {
+int pffft_validate(int cplx) {
   static int Ntest[] = { 16, 32, 64, 96, 128, 160, 192, 256, 288, 384, 5*96, 512, 576, 5*128, 800, 864, 1024, 2048, 2592, 4000, 4096, 12000, 36864, 0};
-  int k;
+  int k, r;
   for (k = 0; Ntest[k]; ++k) {
     int N = Ntest[k];
     if (N == 16 && !cplx) continue;
-    pffft_validate_N(N, cplx);
+    r = pffft_validate_N(N, cplx);
+    if (r)
+      return r;
   }
+  return 0;
 }
 
 int array_output_format = 1;
@@ -548,10 +557,10 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   /* FFTPack benchmark */
   Nmax = (cplx ? N*2 : N);
   X[Nmax] = checkVal;
-#ifdef PFFFT_ENABLE_FLOAT
+#ifdef HAVE_FFTPACK
   {
-    float *wrk = malloc(2*Nbytes + 15*sizeof(pffft_scalar));
-    te = uclock_sec();  
+    fftpack_real *wrk = malloc(2*Nbytes + 15*sizeof(pffft_scalar));
+    te = uclock_sec();
     if (cplx) cffti(N, wrk);
     else      rffti(N, wrk);
     t0 = uclock_sec();
@@ -1113,8 +1122,20 @@ int main(int argc, char **argv) {
       Nvalues = NnonPow2;
       usePow2 = 0;
     }
+    else if (!strcmp(argv[i], "--validate")) {
+#ifdef HAVE_FFTPACK
+      int r;
+      fprintf(stdout, "validating PFFFT against %s FFTPACK ..\n", (benchCplx ? "complex" : "real"));
+      r = pffft_validate(benchCplx);
+      fprintf((r ? stderr : stderr), "pffft %s\n", (r ? "validation failed!" : "successful"));
+      return r;
+#else
+      fprintf(stderr, "validation not available without FFTPACK!\n");
+#endif
+      return 0;
+    }
     else /* if (!strcmp(argv[i], "--help")) */ {
-      printf("usage: %s [--array-format|--table] [--no-tab] [--real|--cplx] [--fftw-full-measure] [--non-pow2]\n", argv[0]);
+      printf("usage: %s [--array-format|--table] [--no-tab] [--real|--cplx] [--validate] [--fftw-full-measure] [--non-pow2]\n", argv[0]);
       exit(0);
     }
   }
