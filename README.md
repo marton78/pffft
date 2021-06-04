@@ -1,12 +1,34 @@
+
+---
+
 # PFFFT: a pretty fast FFT and fast convolution with PFFASTCONV
 
-## TL;DR
+---
+
+<!-- toc -->
+
+- [Brief Description](#brief-description)
+- [Why does it exist?](#why-does-it-exist)
+- [CMake](#cmake)
+- [History / Origin / Changes](#history--origin--changes)
+- [Comparison with other FFTs](#comparison-with-other-ffts)
+- [Dependencies / Required Linux packages](#dependencies--required-linux-packages)
+- [Benchmark results](#benchmark-results)
+
+<!-- tocstop -->
+
+---
+
+## Brief description:
 
 PFFFT does 1D Fast Fourier Transforms, of single precision real and
 complex vectors. It tries do it fast, it tries to be correct, and it
 tries to be small. Computations do take advantage of SSE1 instructions
 on x86 cpus, Altivec on powerpc cpus, and NEON on ARM cpus. The
 license is BSD-like.
+
+PFFFT is a fork of [Julien Pommier's library on bitbucket](https://bitbucket.org/jpommier/pffft/)
+with some changes and additions.
 
 
 PFFASTCONV does fast convolution (FIR filtering), of single precision 
@@ -20,8 +42,8 @@ The fast convolution from PFFASTCONV might get merged into PFDSP.
 
 ## Why does it exist:
 
-I was in search of a good performing FFT library , preferably very
-small and with a very liberal license.
+I (Julien Pommier) was in search of a good performing FFT library ,
+preferably very small and with a very liberal license.
 
 When one says "fft library", FFTW ("Fastest Fourier Transform in the
 West") is probably the first name that comes to mind -- I guess that
@@ -81,11 +103,10 @@ in `pffastconv.h`.
 ### C++:
 A simple C++ wrapper is available in `pffft.hpp`.
 
-
 ### Git:
 This archive's source can be downloaded with git including the submodules:
 ```
-git clone --recursive https://github.com/hayguen/pffft.git
+git clone --recursive https://github.com/marton78/pffft.git
 ```
 
 With `--recursive` the submodules for Green and Kiss-FFT are also fetched,
@@ -95,6 +116,14 @@ For retrieving the submodules later:
 ```
 git submodule update --init
 ```
+
+### Only two files?:
+_"Only two files, in good old C, pffft.c and pffft.h"_
+
+This statement does **NO LONGER** hold!
+
+With new functionality and support for AVX, there was need to restructure the sources.
+But you can compile and link **pffft** as a static library.
 
 
 ## CMake:
@@ -130,12 +159,32 @@ cd build
 CC=/usr/bin/clang CXX=/usr/bin/clang++ cmake ..
 ccmake .         # or: cmake-gui .
 cmake --build .  # or simply: make
+cmake --build . --target test  # or simply: ctest
 ```
 
 
-## Origin:
-Origin for this code is Julien Pommier's pffft on bitbucket:
+## History / Origin / Changes:
+
+Origin for this code/fork is Julien Pommier's pffft on bitbucket:
 [https://bitbucket.org/jpommier/pffft/](https://bitbucket.org/jpommier/pffft/)
+
+Git history shows following first commits of the major contributors:
+* Julien Pommier: November 19, 2011
+* Marton Danoczy: September 30, 2015
+* Hayati Ayguen: December 22, 2019
+* Dario Mambro: March 24, 2020
+
+There are a few other contributors not listed here.
+
+The main changes include:
+* improved benchmarking, see [https://github.com/hayguen/pffft_benchmarks](https://github.com/hayguen/pffft_benchmarks)
+* double support
+* avx(2) support
+* c++ headers (wrapper)
+* additional API helper functions
+* additional library for fast convolution
+* cmake support
+* ctest
 
 
 ## Comparison with other FFTs:
