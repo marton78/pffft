@@ -16,6 +16,7 @@ option(USE_BENCH_FFTW   "use (system-installed) FFTW3 in fft benchmark?" OFF)
 option(USE_BENCH_GREEN  "use Green FFT in fft benchmark? - if exists in subdir" ON)
 option(USE_BENCH_KISS   "use KissFFT in fft benchmark? - if exists in subdir" ON)
 option(USE_BENCH_POCKET "use PocketFFT in fft benchmark? - if exists in subdir" ON)
+option(USE_BENCH_MKL    "use Intel MKL in fft benchmark? needs to be installed" OFF)
 option(USE_FFTPACK      "compile and use FFTPACK in fft benchmark & validation?" ON)
 
 option(USE_DEBUG_ASAN  "use GCC's address sanitizer?" OFF)
@@ -334,6 +335,17 @@ if (USE_TYPE_FLOAT)
     target_link_libraries(bench_pffft_float  PocketFFT)
   endif()
 
+  if (USE_BENCH_MKL)
+    if ( (CMAKE_SYSTEM_PROCESSOR STREQUAL "i686") OR (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64") )
+      # has chances to work
+    else()
+      # other PROCESSORs could be "ppc", "ppc64",  "arm", "aarch64" - or something else?!
+      message(WARNING "using Intel MKL on '${CMAKE_SYSTEM_PROCESSOR}' might fail.")
+    endif()
+    message(STATUS "In case compiling/linking with Intel MKL fails, check CMakeLists.txt or deactivate USE_BENCH_MKL")
+    target_compile_definitions(bench_pffft_float PRIVATE HAVE_MKL=1)
+    target_link_libraries(bench_pffft_float  mkl_intel_lp64 mkl_sequential -lmkl_core)
+  endif()
 endif()
 
 if (USE_TYPE_DOUBLE)
@@ -355,6 +367,18 @@ if (USE_TYPE_DOUBLE)
   if (PATH_POCKET AND USE_BENCH_POCKET)
     target_compile_definitions(bench_pffft_double PRIVATE HAVE_POCKET_FFT=1)
     target_link_libraries(bench_pffft_double  PocketFFT)
+  endif()
+
+  if (USE_BENCH_MKL)
+    if ( (CMAKE_SYSTEM_PROCESSOR STREQUAL "i686") OR (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64") )
+      # has chances to work
+    else()
+      # other PROCESSORs could be "ppc", "ppc64",  "arm", "aarch64" - or something else?!
+      message(WARNING "using Intel MKL on '${CMAKE_SYSTEM_PROCESSOR}' might fail.")
+    endif()
+    message(STATUS "In case compiling/linking with Intel MKL fails, check CMakeLists.txt or deactivate USE_BENCH_MKL")
+    target_compile_definitions(bench_pffft_double PRIVATE HAVE_MKL=1)
+    target_link_libraries(bench_pffft_double  mkl_intel_lp64 mkl_sequential -lmkl_core)
   endif()
 endif()
 
