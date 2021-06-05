@@ -1153,8 +1153,8 @@ int main(int argc, char **argv) {
 #else
     algoName[ALGO_FFTW_AUTO] = "FFTWD(meas)"; /* "FFTW (auto)" */
 #endif
-    algoTableHeader[NUM_FFT_ALGOS][0] = "|real FFTWmeas "; /* "|real FFTWauto " */
-    algoTableHeader[NUM_FFT_ALGOS][0] = "|cplx FFTWmeas "; /* "|cplx FFTWauto " */
+    algoTableHeader[ALGO_FFTW_AUTO][0] = "|real FFTWmeas "; /* "|real FFTWauto " */
+    algoTableHeader[ALGO_FFTW_AUTO][1] = "|cplx FFTWmeas "; /* "|cplx FFTWauto " */
   }
 #endif
 
