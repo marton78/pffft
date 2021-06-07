@@ -2,7 +2,7 @@
   Copyright (c) 2013 Julien Pommier.
   Copyright (c) 2019 Hayati Ayguen ( h_ayguen@web.de )
 
-  Small test & bench for PFFFT, comparing its performance with the scalar FFTPACK, FFTW, and Apple vDSP
+  Small test & bench for PFFFT, comparing its performance with the scalar FFTPACK, FFTW, Intel MKL, and Apple vDSP
 
   How to build: 
 
@@ -16,6 +16,9 @@
   clang -o test_pffft -DHAVE_FFTW -DHAVE_VECLIB -O3 -Wall -W pffft.c test_pffft.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -lfftw3f -framework Accelerate
 
   as alternative: replace clang by gcc.
+
+  on macos, with fftw3 and Intel MKL:
+  clang -o test_pffft -I /opt/intel/mkl/include -DHAVE_FFTW -DHAVE_VECLIB -DHAVE_MKL  -O3 -Wall -W pffft.c test_pffft.c fftpack.c -L/usr/local/lib -I/usr/local/include/ -lfftw3f -framework Accelerate /opt/intel/mkl/lib/libmkl_{intel_lp64,sequential,core}.a
 
   on windows, with visual c++:
   cl /Ox -D_USE_MATH_DEFINES /arch:SSE test_pffft.c pffft.c fftpack.c
@@ -113,12 +116,16 @@ typedef fftw_complex FFTW_COMPLEX;
 
 #endif /* HAVE_FFTW */
 
+#ifdef HAVE_MKL
+#  include <mkl/mkl_dfti.h>
+#endif
+
 #ifndef M_LN2
   #define M_LN2   0.69314718055994530942  /* log_e 2 */
 #endif
 
 
-#define NUM_FFT_ALGOS  9
+#define NUM_FFT_ALGOS  10
 enum {
   ALGO_FFTPACK = 0,
   ALGO_VECLIB,
@@ -127,8 +134,9 @@ enum {
   ALGO_GREEN,
   ALGO_KISS,
   ALGO_POCKET,
-  ALGO_PFFFT_U, /* = 7 */
-  ALGO_PFFFT_O  /* = 8 */
+  ALGO_MKL,
+  ALGO_PFFFT_U, /* = 8 */
+  ALGO_PFFFT_O  /* = 9 */
 };
 
 #define NUM_TYPES      7
@@ -151,6 +159,7 @@ const char * algoName[NUM_FFT_ALGOS] = {
   "Green        ",
   "Kiss         ",
   "Pocket       ",
+  "Intel MKL    ",
   "PFFFT-U(simd)",  /* unordered */
   "PFFFT (simd) "   /* ordered */
 };
@@ -188,6 +197,11 @@ int compiledInAlgo[NUM_FFT_ALGOS] = {
 #else
   0,
 #endif
+#if defined(HAVE_MKL)
+  1, /* "Intel MKL  " */
+#else
+  0,
+#endif
   1, /* "PFFFT_U    " */
   1  /* "PFFFT_O    " */
 };
@@ -200,6 +214,7 @@ const char * algoTableHeader[NUM_FFT_ALGOS][2] = {
 { "|  real  Green ", "|  cplx  Green " },
 { "|  real   Kiss ", "|  cplx   Kiss " },
 { "|  real Pocket ", "|  cplx Pocket " },
+{ "|  real   MKL  ", "|  cplx   MKL  " },
 { "| real PFFFT-U ", "| cplx PFFFT-U " },
 { "|  real  PFFFT ", "|  cplx  PFFFT " } };
 
@@ -917,6 +932,66 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   }
 #endif
 
+
+#if defined(HAVE_MKL)
+  {
+    DFTI_DESCRIPTOR_HANDLE fft_handle;
+    MKL_LONG mkl_status, mkl_ret;
+    te = uclock_sec();
+    if (sizeof(float) == sizeof(pffft_scalar))
+      mkl_status = DftiCreateDescriptor(&fft_handle, DFTI_SINGLE, (cplx ? DFTI_COMPLEX : DFTI_REAL), 1, N);
+    else if (sizeof(double) == sizeof(pffft_scalar))
+      mkl_status = DftiCreateDescriptor(&fft_handle, DFTI_DOUBLE, (cplx ? DFTI_COMPLEX : DFTI_REAL), 1, N);
+    else
+      mkl_status = 1;
+
+    while (mkl_status == 0) {
+      mkl_ret = DftiSetValue(fft_handle, DFTI_PLACEMENT, DFTI_NOT_INPLACE);
+      if (mkl_ret) {
+        DftiFreeDescriptor(&fft_handle);
+        mkl_status = 1;
+        break;
+      }
+      mkl_ret = DftiCommitDescriptor(fft_handle);
+      if (mkl_ret) {
+        DftiFreeDescriptor(&fft_handle);
+        mkl_status = 1;
+        break;
+      }
+      break;
+    }
+
+    if (mkl_status == 0) {
+      t0 = uclock_sec();
+      tstop = t0 + max_test_duration;
+      max_iter = 0;
+
+      do {
+        for ( k = 0; k < step_iter; ++k ) {
+          assert( X[Nmax] == checkVal );
+          DftiComputeForward(fft_handle, &X[0], &Y[0]);
+          assert( X[Nmax] == checkVal );
+          DftiComputeBackward(fft_handle, &X[0], &Y[0]);
+          assert( X[Nmax] == checkVal );
+          ++max_iter;
+        }
+        t1 = uclock_sec();
+      } while ( t1 < tstop );
+
+      DftiFreeDescriptor(&fft_handle);
+
+      flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); /* see http://www.fftw.org/speed/method.html */
+      tmeas[TYPE_ITER][ALGO_MKL] = max_iter;
+      tmeas[TYPE_MFLOPS][ALGO_MKL] = flops/1e6/(t1 - t0 + 1e-16);
+      tmeas[TYPE_DUR_TOT][ALGO_MKL] = t1 - t0;
+      tmeas[TYPE_DUR_NS][ALGO_MKL] = show_output("MKL", N, cplx, flops, t0, t1, max_iter, tableFile);
+      tmeas[TYPE_PREP][ALGO_MKL] = (t0 - te) * 1e3;
+      haveAlgo[ALGO_MKL] = 1;
+    } else {
+      show_output("MKL", N, cplx, -1, -1, -1, -1, tableFile);
+    }
+  }
+#endif
 
   /* PFFFT-U (unordered) benchmark */
   Nmax = (cplx ? pffftPow2N*2 : pffftPow2N);

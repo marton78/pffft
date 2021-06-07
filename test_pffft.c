@@ -1,7 +1,7 @@
 /*
   Copyright (c) 2013 Julien Pommier.
 
-  Small test & bench for PFFFT, comparing its performance with the scalar FFTPACK, FFTW, and Apple vDSP
+  Small test for PFFFT
 
   How to build: 
 
