@@ -156,10 +156,11 @@ My Linux distribution defaults to GCC. With installed CLANG and the bash shell, 
 ```
 mkdir build
 cd build
-CC=/usr/bin/clang CXX=/usr/bin/clang++ cmake ..
-ccmake .         # or: cmake-gui .
-cmake --build .  # or simply: make
-cmake --build . --target test  # or simply: ctest
+CC=/usr/bin/clang CXX=/usr/bin/clang++ cmake -DCMAKE_BUILD_TYPE=Debug ../
+cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=~ ../
+ccmake .                          # or: cmake-gui .
+cmake --build .                   # or simply: make
+cmake --build . --target install  # or simply: [sudo] make install
 ```
 
 
