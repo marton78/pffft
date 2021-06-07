@@ -11,6 +11,11 @@ option(DISABLE_SIMD_AVX "disable AVX CPU features? - " OFF)
 option(USE_SIMD_NEON   "force using NEON on ARM? (requires USE_SIMD)" OFF)
 option(USE_SCALAR_VECT "use 4-element vector scalar operations (if no other SIMD)" ON)
 
+# what to install?
+option(INSTALL_PFFFT      "install pffft to CMAKE_INSTALL_PREFIX?" ON)
+option(INSTALL_PFDSP      "install pfdsp to CMAKE_INSTALL_PREFIX?" OFF)
+option(INSTALL_PFFASTCONV "install pffastconv to CMAKE_INSTALL_PREFIX?" OFF)
+
 # test options
 option(USE_BENCH_FFTW   "use (system-installed) FFTW3 in fft benchmark?" OFF)
 option(USE_BENCH_GREEN  "use Green FFT in fft benchmark? - if exists in subdir" ON)
@@ -31,6 +36,10 @@ set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 98)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# populate what to install
+set(INSTALL_TARGETS "")
+set(INSTALL_HEADERS "")
 
 
 if ( (NOT USE_TYPE_FLOAT) AND (NOT USE_TYPE_DOUBLE) )
@@ -110,6 +119,9 @@ set( SIMD_DOUBLE_HDRS simd/pf_double.h simd/pf_avx_double.h simd/pf_scalar_doubl
 
 if (USE_TYPE_FLOAT)
   set( FLOAT_SOURCES pffft.c pffft.h ${SIMD_FLOAT_HDRS} )
+  if (INSTALL_PFFFT)
+    set(INSTALL_HEADERS ${INSTALL_HEADERS} pffft.h)
+  endif()
 else()
   set( FLOAT_SOURCES  )
 endif()
@@ -117,6 +129,9 @@ endif()
 
 if (USE_TYPE_DOUBLE)
   set( DOUBLE_SOURCES pffft_double.c pffft_double.h ${SIMD_DOUBLE_HDRS} )
+  if (INSTALL_PFFFT)
+    set(INSTALL_HEADERS ${INSTALL_HEADERS} pffft_double.h)
+  endif()
 else()
   set( DOUBLE_SOURCES )
 endif()
@@ -124,6 +139,7 @@ endif()
 ######################################################
 
 add_library(PFFFT STATIC ${FLOAT_SOURCES} ${DOUBLE_SOURCES} pffft_common.c pffft_priv_impl.h pffft.hpp )
+set_target_properties(PFFFT PROPERTIES OUTPUT_NAME "pffft")
 target_compile_definitions(PFFFT PRIVATE _USE_MATH_DEFINES)
 if (USE_SCALAR_VECT)
   target_compile_definitions(PFFFT PRIVATE PFFFT_SCALVEC_ENABLED=1)
@@ -156,12 +172,17 @@ target_link_libraries( PFFFT ${MATHLIB} )
 set_property(TARGET PFFFT APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
+if (INSTALL_PFFFT)
+  set(INSTALL_TARGETS ${INSTALL_TARGETS} PFFFT)
+  set(INSTALL_HEADERS ${INSTALL_HEADERS} pffft.hpp)
+endif()
 
 ######################################################
 
 if (USE_TYPE_FLOAT)
 
   add_library(PFDSP STATIC pf_mixer.cpp pf_mixer.h pf_carrier.cpp pf_carrier.h pf_cic.cpp pf_cic.h fmv.h )
+  set_target_properties(PFDSP PROPERTIES OUTPUT_NAME "pfdsp")
   target_compile_definitions(PFDSP PRIVATE _USE_MATH_DEFINES)
   if (USE_DEBUG_ASAN)
     target_compile_options(PFDSP PRIVATE "-fsanitize=address")
@@ -174,6 +195,10 @@ if (USE_TYPE_FLOAT)
   set_property(TARGET PFDSP APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   )
+  if (INSTALL_PFDSP)
+    set(INSTALL_TARGETS ${INSTALL_TARGETS} PFDSP)
+    set(INSTALL_HEADERS ${INSTALL_HEADERS} pf_mixer.h pf_carrier.h pf_cic.h)
+  endif()
 endif()
 
 ######################################################
@@ -215,6 +240,7 @@ endif()
 if (USE_TYPE_FLOAT)
   # only 'float' supported in PFFASTCONV
   add_library(PFFASTCONV STATIC pffastconv.c pffastconv.h pffft.h )
+  set_target_properties(PFFASTCONV PROPERTIES OUTPUT_NAME "pffastconv")
   target_compile_definitions(PFFASTCONV PRIVATE _USE_MATH_DEFINES)
   if (USE_DEBUG_ASAN)
     target_compile_options(PFFASTCONV PRIVATE "-fsanitize=address")
@@ -223,7 +249,21 @@ if (USE_TYPE_FLOAT)
   set_property(TARGET PFFASTCONV APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   )
+  if (INSTALL_PFFASTCONV)
+    set(INSTALL_TARGETS ${INSTALL_TARGETS} PFFASTCONV)
+    set(INSTALL_HEADERS ${INSTALL_HEADERS} pffastconv.h)
+  endif()
 endif()
+
+
+######################################################
+
+install( TARGETS ${INSTALL_TARGETS}  DESTINATION lib)
+install( FILES  ${INSTALL_HEADERS}  DESTINATION include)
+
+add_custom_target(uninstall
+    "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/uninstall.cmake"
+)
 
 #######################################################
 
