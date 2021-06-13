@@ -1,0 +1,179 @@
+cmake_minimum_required(VERSION 2.8)
+project(BENCH_PFFFT)
+
+set(BENCH_ID  "default" CACHE STRING "ID: use single word without spaces. gets part of result filename")
+
+option(BENCH_FAST_MATH  "Build with fast math - non IEEE compliant" ON)
+
+if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
+  set(BENCH_ARCH "native" CACHE STRING "target architecture (-march): native/SSE:core2/AVX:sandybridge/ARM-NEON:armv7-a")
+elseif (CMAKE_C_COMPILER_ID STREQUAL "Clang")
+  set(BENCH_ARCH "native" CACHE STRING "target architecture (-march): native/SSE:core2/AVX:sandybridge")
+elseif (CMAKE_C_COMPILER_ID STREQUAL "MSVC")  # others: "Intel"
+  set(BENCH_ARCH "AVX" CACHE STRING "target architecture (/arch): SSE2/AVX")
+else()
+  set(BENCH_ARCH "" CACHE STRING "target architecture - use full compiler option!")
+endif()
+
+
+option(USE_BENCH_FFTW   "use (system-installed) FFTW3 in fft benchmark?" OFF)
+option(USE_BENCH_GREEN  "use Green FFT in fft benchmark? - if exists in subdir" ON)
+option(USE_BENCH_KISS   "use KissFFT in fft benchmark? - if exists in subdir" ON)
+option(USE_BENCH_POCKET "use PocketFFT in fft benchmark? - if exists in subdir" ON)
+option(USE_BENCH_MKL    "use Intel MKL in fft benchmark? needs to be installed" OFF)
+
+
+set(OSSTR "")
+if (WIN32)
+  set(OSSTR "Win32")
+endif (WIN32)
+if (UNIX)
+  set(OSSTR "Unix")
+endif (UNIX)
+
+
+set(benchdir "${CMAKE_BINARY_DIR}/bench_${BENCH_ID}")
+set(benchdir_flt "${CMAKE_BINARY_DIR}/bench_${BENCH_ID}/float")
+set(benchdir_dbl "${CMAKE_BINARY_DIR}/bench_${BENCH_ID}/double")
+set(builddir_flt "${CMAKE_BINARY_DIR}/build_${BENCH_ID}_float")
+set(builddir_dbl "${CMAKE_BINARY_DIR}/build_${BENCH_ID}_double")
+
+add_custom_command(OUTPUT "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${benchdir}"
+  COMMAND ${CMAKE_COMMAND} -E echo "benchmark ${BENCH_ID}"   > "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "CMake major:    ${CMAKE_MAJOR_VERSION}"        >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "CMake minor:    ${CMAKE_MINOR_VERSION}"        >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "OS:             ${OSSTR}"                      >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "System:         ${CMAKE_SYSTEM_NAME}"          >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "System CPU:     ${CMAKE_SYSTEM_PROCESSOR}"     >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "System Version: ${CMAKE_HOST_SYSTEM_VERSION}"  >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "C   Compiler:   ${CMAKE_C_COMPILER_ID}"        >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "C   Version:    ${CMAKE_C_COMPILER_VERSION}"   >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "C++ Compiler:   ${CMAKE_CXX_COMPILER_ID}"      >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "C++ Version:    ${CMAKE_CXX_COMPILER_VERSION}" >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "MSVC Version:   ${MSVC_VERSION}"               >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "MSVC Toolset:   ${MSVC_TOOLSET_VERSION}"       >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "Exe Suffix:     ${CMAKE_EXECUTABLE_SUFFIX}"    >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "C   Byte Order: ${CMAKE_C_BYTE_ORDER}"         >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "C++ Byte Order: ${CMAKE_CXX_BYTE_ORDER}"       >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo ""                                              >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "Architecture:   ${BENCH_ARCH}"                 >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "Fast math:      ${BENCH_FAST_MATH}"            >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "config USE_BENCH_FFTW=${USE_BENCH_FFTW}"       >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "config USE_BENCH_GREEN=${USE_BENCH_GREEN}"     >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "config USE_BENCH_KISS=${USE_BENCH_KISS}"       >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "config USE_BENCH_POCKET=${USE_BENCH_POCKET}"   >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "config USE_BENCH_MKL=${USE_BENCH_MKL}"         >> "${benchdir}/info.txt"
+)
+
+if (UNIX)
+  add_custom_command(OUTPUT "${benchdir}/unix_info.txt"
+    COMMAND ${CMAKE_COMMAND} -E touch "${benchdir}/unix_info.txt"
+    COMMAND bash "-c" "${CMAKE_CURRENT_SOURCE_DIR}/unix_info.sh"
+    DEPENDS "${benchdir}/info.txt"
+    WORKING_DIRECTORY ${benchdir}
+  )
+else()
+  add_custom_command(OUTPUT "${benchdir}/unix_info.txt"
+    COMMAND ${CMAKE_COMMAND} -E touch "${benchdir}/unix_info.txt"
+    DEPENDS "${benchdir}/info.txt"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )
+endif()
+
+
+add_custom_command(OUTPUT "${builddir_flt}/directory.txt"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${builddir_flt}"
+  COMMAND ${CMAKE_COMMAND} -E touch "${builddir_flt}/directory.txt"
+)
+
+add_custom_command(OUTPUT "${builddir_dbl}/directory.txt"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${builddir_dbl}"
+  COMMAND ${CMAKE_COMMAND} -E touch "${builddir_dbl}/directory.txt"
+)
+
+add_custom_command(OUTPUT "${benchdir_flt}/directory.txt"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${benchdir_flt}"
+  COMMAND ${CMAKE_COMMAND} -E touch "${benchdir_flt}/directory.txt"
+)
+
+add_custom_command(OUTPUT "${benchdir_dbl}/directory.txt"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${benchdir_dbl}"
+  COMMAND ${CMAKE_COMMAND} -E touch "${benchdir_dbl}/directory.txt"
+)
+
+
+
+add_custom_target(build_float
+  COMMAND ${CMAKE_COMMAND} -E echo "start cmake"
+  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}"
+                        -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+                        -DCMAKE_BUILD_TYPE=Release
+                        -DARCH=${BENCH_ARCH}
+                        -DUSE_FAST_MATH=${BENCH_FAST_MATH}
+                        -DUSE_TYPE_FLOAT=ON
+                        -DUSE_TYPE_DOUBLE=OFF
+                        -DUSE_FLOAT_PREC=ON
+                        -DUSE_BENCH_FFTW=${USE_BENCH_FFTW}
+                        -DUSE_BENCH_GREEN=${USE_BENCH_GREEN}
+                        -DUSE_BENCH_KISS=${USE_BENCH_KISS}
+                        -DUSE_BENCH_POCKET=${USE_BENCH_POCKET}
+                        -DUSE_BENCH_MKL=${USE_BENCH_MKL}
+                        "${CMAKE_SOURCE_DIR}/.."
+  COMMAND ${CMAKE_COMMAND} -E echo "start cmake --build . for float"
+  COMMAND ${CMAKE_COMMAND} --build .
+  DEPENDS "${builddir_flt}/directory.txt"
+  WORKING_DIRECTORY "${builddir_flt}"
+)
+
+add_custom_target(build_double
+  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}"
+                        -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+                        -DCMAKE_BUILD_TYPE=Release
+                        -DARCH=${BENCH_ARCH}
+                        -DUSE_FAST_MATH=${BENCH_FAST_MATH}
+                        -DUSE_TYPE_FLOAT=OFF
+                        -DUSE_TYPE_DOUBLE=ON
+                        -DUSE_FLOAT_PREC=OFF
+                        -DUSE_BENCH_FFTW=${USE_BENCH_FFTW}
+                        -DUSE_BENCH_GREEN=${USE_BENCH_GREEN}
+                        -DUSE_BENCH_KISS=${USE_BENCH_KISS}
+                        -DUSE_BENCH_POCKET=${USE_BENCH_POCKET}
+                        -DUSE_BENCH_MKL=${USE_BENCH_MKL}
+                        "${CMAKE_SOURCE_DIR}/.."
+  COMMAND ${CMAKE_COMMAND} -E echo "start cmake --build . for double"
+  COMMAND ${CMAKE_COMMAND} --build .
+  DEPENDS "${builddir_dbl}/directory.txt"
+  WORKING_DIRECTORY "${builddir_dbl}"
+)
+
+add_custom_target(bench_float
+  COMMAND ${CMAKE_COMMAND} -E echo "start benchmark for float"
+  COMMAND "${builddir_flt}/bench_pffft_float${CMAKE_EXECUTABLE_SUFFIX}"
+  DEPENDS "${benchdir_flt}/directory.txt" build_float
+  WORKING_DIRECTORY "${benchdir_flt}"
+)
+
+add_custom_target(bench_double
+  COMMAND ${CMAKE_COMMAND} -E echo "start benchmark for double"
+  COMMAND "${builddir_dbl}/bench_pffft_double${CMAKE_EXECUTABLE_SUFFIX}"
+  DEPENDS "${benchdir_dbl}/directory.txt" build_double
+  WORKING_DIRECTORY "${benchdir_dbl}"
+)
+
+add_custom_target(bench ALL
+  COMMAND ${CMAKE_COMMAND} -E echo ""
+  COMMAND ${CMAKE_COMMAND} -E tar cvz "bench_${BENCH_ID}.tgz" ${benchdir}
+  COMMAND ${CMAKE_COMMAND} -E echo ""
+  COMMAND ${CMAKE_COMMAND} -E echo "now mail result file bench_${BENCH_ID}.tgz"
+  # DEPENDS "${benchdir}/info.txt" "${benchdir}/unix_info.txt"
+  DEPENDS "${benchdir}/info.txt" bench_float bench_double "${benchdir}/unix_info.txt"
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+
+add_custom_target(clean_results
+  COMMAND ${CMAKE_COMMAND} -E remove_directory "${builddir_flt}"
+  COMMAND ${CMAKE_COMMAND} -E remove_directory "${builddir_dbl}"
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+

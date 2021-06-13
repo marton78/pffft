@@ -472,10 +472,10 @@ if (USE_TYPE_FLOAT)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
 
-  add_test(NAME bench_plots
-    COMMAND bash "-c" "${CMAKE_CURRENT_SOURCE_DIR}/plots.sh"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  )
+  # add_test(NAME bench_plots
+  #   COMMAND bash "-c" "${CMAKE_CURRENT_SOURCE_DIR}/plots.sh"
+  #   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  # )
 
   add_test(NAME test_pfconv_lens_symetric
     COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-bench" "--quick" "--sym"
