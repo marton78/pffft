@@ -31,6 +31,11 @@ if (UNIX)
   set(OSSTR "Unix")
 endif (UNIX)
 
+set(BUILD_DIR_TO_EXE "")
+if (MSVC)
+  set(BUILD_DIR_TO_EXE "Release/")
+endif()
+
 
 set(benchdir "${CMAKE_BINARY_DIR}/bench_${BENCH_ID}")
 set(benchdir_flt "${CMAKE_BINARY_DIR}/bench_${BENCH_ID}/float")
@@ -105,12 +110,12 @@ add_custom_command(OUTPUT "${benchdir_dbl}/directory.txt"
 
 
 add_custom_target(build_float
-  COMMAND ${CMAKE_COMMAND} -E echo "start cmake"
-  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}"
-                        -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+  COMMAND ${CMAKE_COMMAND} -E echo "start cmake for float in ${builddir_flt}"
+  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" -A "${CMAKE_GENERATOR_PLATFORM}"
+                        "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
                         -DCMAKE_BUILD_TYPE=Release
-                        -DARCH=${BENCH_ARCH}
-                        -DUSE_FAST_MATH=${BENCH_FAST_MATH}
+                        "-DARCH=${BENCH_ARCH}"
+                        "-DUSE_FAST_MATH=${BENCH_FAST_MATH}"
                         -DUSE_TYPE_FLOAT=ON
                         -DUSE_TYPE_DOUBLE=OFF
                         -DUSE_FLOAT_PREC=ON
@@ -120,14 +125,15 @@ add_custom_target(build_float
                         -DUSE_BENCH_POCKET=${USE_BENCH_POCKET}
                         -DUSE_BENCH_MKL=${USE_BENCH_MKL}
                         "${CMAKE_SOURCE_DIR}/.."
-  COMMAND ${CMAKE_COMMAND} -E echo "start cmake --build . for float"
-  COMMAND ${CMAKE_COMMAND} --build .
+  # COMMAND ${CMAKE_COMMAND} -E echo "start cmake --build . for float in ${builddir_flt}"
+  COMMAND ${CMAKE_COMMAND} --build . --config Release
   DEPENDS "${builddir_flt}/directory.txt"
   WORKING_DIRECTORY "${builddir_flt}"
 )
 
 add_custom_target(build_double
-  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}"
+  COMMAND ${CMAKE_COMMAND} -E echo "start cmake for double in ${builddir_dbl}"
+  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" -A "${CMAKE_GENERATOR_PLATFORM}"
                         -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
                         -DCMAKE_BUILD_TYPE=Release
                         -DARCH=${BENCH_ARCH}
@@ -141,22 +147,22 @@ add_custom_target(build_double
                         -DUSE_BENCH_POCKET=${USE_BENCH_POCKET}
                         -DUSE_BENCH_MKL=${USE_BENCH_MKL}
                         "${CMAKE_SOURCE_DIR}/.."
-  COMMAND ${CMAKE_COMMAND} -E echo "start cmake --build . for double"
-  COMMAND ${CMAKE_COMMAND} --build .
+  COMMAND ${CMAKE_COMMAND} -E echo "start cmake --build . for double in ${builddir_dbl}"
+  COMMAND ${CMAKE_COMMAND} --build . --config Release
   DEPENDS "${builddir_dbl}/directory.txt"
   WORKING_DIRECTORY "${builddir_dbl}"
 )
 
 add_custom_target(bench_float
   COMMAND ${CMAKE_COMMAND} -E echo "start benchmark for float"
-  COMMAND "${builddir_flt}/bench_pffft_float${CMAKE_EXECUTABLE_SUFFIX}"
+  COMMAND "${builddir_flt}/${BUILD_DIR_TO_EXE}bench_pffft_float${CMAKE_EXECUTABLE_SUFFIX}"
   DEPENDS "${benchdir_flt}/directory.txt" build_float
   WORKING_DIRECTORY "${benchdir_flt}"
 )
 
 add_custom_target(bench_double
   COMMAND ${CMAKE_COMMAND} -E echo "start benchmark for double"
-  COMMAND "${builddir_dbl}/bench_pffft_double${CMAKE_EXECUTABLE_SUFFIX}"
+  COMMAND "${builddir_dbl}/${BUILD_DIR_TO_EXE}bench_pffft_double${CMAKE_EXECUTABLE_SUFFIX}"
   DEPENDS "${benchdir_dbl}/directory.txt" build_double
   WORKING_DIRECTORY "${benchdir_dbl}"
 )

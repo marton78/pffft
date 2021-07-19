@@ -315,6 +315,15 @@ CC=/usr/bin/gcc-9 CXX=/usr/bin/g++-9 cmake -DBENCH_ID=gcc9 -DBENCH_ARCH=native -
 CC=/usr/bin/clang-11 CXX=/usr/bin/clang++-11 cmake -DBENCH_ID=clang11 -DBENCH_ARCH=native -DUSE_BENCH_FFTW=ON -DUSE_BENCH_MKL=ON ../bench
 ```
 
+For using MSVC/Windows, the cmake command requires/needs the generator and architecture options and to be called from the VS Developer prompt:
+```
+cmake -G "Visual Studio 16 2019" -A x64 ../bench/
+```
+
+see [https://cmake.org/cmake/help/v3.15/manual/cmake-generators.7.html#visual-studio-generators](https://cmake.org/cmake/help/v3.15/manual/cmake-generators.7.html#visual-studio-generators)
+
+
+
 For running with different compiler version(s):
 * copy the result file (.tgz), e.g. `cp *.tgz ../`
 * delete the build directory: `rm -rf *`
