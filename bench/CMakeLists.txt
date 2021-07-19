@@ -32,8 +32,12 @@ if (UNIX)
 endif (UNIX)
 
 set(BUILD_DIR_TO_EXE "")
+set(CMAKE_PLATFORM_OPT "")
+set(CMAKE_MAKE_OPT "")
 if (MSVC)
   set(BUILD_DIR_TO_EXE "Release/")
+  set(CMAKE_PLATFORM_OPT "-A \"${CMAKE_GENERATOR_PLATFORM}\"")
+  set(CMAKE_MAKE_OPT "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}")
 endif()
 
 
@@ -111,11 +115,11 @@ add_custom_command(OUTPUT "${benchdir_dbl}/directory.txt"
 
 add_custom_target(build_float
   COMMAND ${CMAKE_COMMAND} -E echo "start cmake for float in ${builddir_flt}"
-  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" -A "${CMAKE_GENERATOR_PLATFORM}"
-                        "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" ${CMAKE_PLATFORM_OPT}
+                        "${CMAKE_MAKE_OPT}"
                         -DCMAKE_BUILD_TYPE=Release
                         "-DARCH=${BENCH_ARCH}"
-                        "-DUSE_FAST_MATH=${BENCH_FAST_MATH}"
+                        -DUSE_FAST_MATH=${BENCH_FAST_MATH}
                         -DUSE_TYPE_FLOAT=ON
                         -DUSE_TYPE_DOUBLE=OFF
                         -DUSE_FLOAT_PREC=ON
@@ -133,10 +137,10 @@ add_custom_target(build_float
 
 add_custom_target(build_double
   COMMAND ${CMAKE_COMMAND} -E echo "start cmake for double in ${builddir_dbl}"
-  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" -A "${CMAKE_GENERATOR_PLATFORM}"
-                        -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" ${CMAKE_PLATFORM_OPT}
+                        "${CMAKE_MAKE_OPT}"
                         -DCMAKE_BUILD_TYPE=Release
-                        -DARCH=${BENCH_ARCH}
+                        "-DARCH=${BENCH_ARCH}"
                         -DUSE_FAST_MATH=${BENCH_FAST_MATH}
                         -DUSE_TYPE_FLOAT=OFF
                         -DUSE_TYPE_DOUBLE=ON
