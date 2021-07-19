@@ -152,8 +152,20 @@ CC=/usr/bin/clang CXX=/usr/bin/clang++ cmake -DCMAKE_BUILD_TYPE=Debug ../
 cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=~ ../
 ccmake .                          # or: cmake-gui .
 cmake --build .                   # or simply: make
+ctest                             # to execute some tests - including benchmarks
 cmake --build . --target install  # or simply: [sudo] make install
 ```
+
+With MSVC on Windows, you need some different options. Following ones to build a 64-bit Release with Visual Studio 2019:
+```
+mkdir build
+cd build
+cmake -G "Visual Studio 16 2019" -A x64 ..
+cmake --build . --config Release
+ctest -C Release
+```
+
+see [https://cmake.org/cmake/help/v3.15/manual/cmake-generators.7.html#visual-studio-generators](https://cmake.org/cmake/help/v3.15/manual/cmake-generators.7.html#visual-studio-generators)
 
 
 ## History / Origin / Changes:
