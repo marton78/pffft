@@ -15,6 +15,11 @@ else()
   endif()
 endif()
 
+set(STDCXXLIB "")
+if (MINGW)
+  set(STDCXXLIB "stdc++")
+endif()
+
 
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -22,13 +27,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if (USE_TYPE_DOUBLE)
   add_executable(example_cpp11_real_dbl_fwd example_cpp11_real_dbl_fwd.cpp)
   target_compile_definitions(example_cpp11_real_dbl_fwd PRIVATE PFFFT_ENABLE_DOUBLE)
-  target_link_libraries(example_cpp11_real_dbl_fwd PFFFT ${MATHLIB})
+  target_link_libraries(example_cpp11_real_dbl_fwd PFFFT ${STDCXXLIB} ${MATHLIB})
   set_property(TARGET example_cpp11_real_dbl_fwd PROPERTY CXX_STANDARD 11)
   set_property(TARGET example_cpp11_real_dbl_fwd PROPERTY CXX_STANDARD_REQUIRED ON)
 
   add_executable(example_cpp11_cplx_dbl_fwd example_cpp11_cplx_dbl_fwd.cpp)
   target_compile_definitions(example_cpp11_cplx_dbl_fwd PRIVATE PFFFT_ENABLE_DOUBLE)
-  target_link_libraries(example_cpp11_cplx_dbl_fwd PFFFT ${MATHLIB})
+  target_link_libraries(example_cpp11_cplx_dbl_fwd PFFFT ${STDCXXLIB} ${MATHLIB})
   set_property(TARGET example_cpp11_cplx_dbl_fwd PROPERTY CXX_STANDARD 11)
   set_property(TARGET example_cpp11_cplx_dbl_fwd PROPERTY CXX_STANDARD_REQUIRED ON)
 
@@ -41,13 +46,13 @@ endif()
 if (USE_TYPE_FLOAT)
   add_executable(example_cpp98_real_flt_fwd example_cpp98_real_flt_fwd.cpp)
   target_compile_definitions(example_cpp98_real_flt_fwd PRIVATE PFFFT_ENABLE_FLOAT)
-  target_link_libraries(example_cpp98_real_flt_fwd PFFFT ${MATHLIB})
+  target_link_libraries(example_cpp98_real_flt_fwd PFFFT ${STDCXXLIB} ${MATHLIB})
   set_property(TARGET example_cpp98_real_flt_fwd PROPERTY CXX_STANDARD 98)
   set_property(TARGET example_cpp98_real_flt_fwd PROPERTY CXX_STANDARD_REQUIRED ON)
 
   add_executable(example_cpp98_cplx_flt_fwd example_cpp98_cplx_flt_fwd.cpp)
   target_compile_definitions(example_cpp98_cplx_flt_fwd PRIVATE PFFFT_ENABLE_FLOAT)
-  target_link_libraries(example_cpp98_cplx_flt_fwd PFFFT ${MATHLIB})
+  target_link_libraries(example_cpp98_cplx_flt_fwd PFFFT ${STDCXXLIB} ${MATHLIB})
   set_property(TARGET example_cpp98_cplx_flt_fwd PROPERTY CXX_STANDARD 98)
   set_property(TARGET example_cpp98_cplx_flt_fwd PROPERTY CXX_STANDARD_REQUIRED ON)
 

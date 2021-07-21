@@ -114,6 +114,12 @@ else()
   endif()
 endif()
 
+set(STDCXXLIB "")
+if (MINGW)
+  set(STDCXXLIB "stdc++")
+endif()
+
+
 set( SIMD_FLOAT_HDRS simd/pf_float.h simd/pf_sse1_float.h simd/pf_altivec_float.h simd/pf_neon_float.h simd/pf_scalar_float.h )
 set( SIMD_DOUBLE_HDRS simd/pf_double.h simd/pf_avx_double.h simd/pf_scalar_double.h )
 
@@ -310,7 +316,7 @@ endif()
 if (USE_TYPE_DOUBLE)
   target_compile_definitions(test_pffft_cpp PRIVATE PFFFT_ENABLE_DOUBLE)
 endif()
-target_link_libraries( test_pffft_cpp  PFFFT ${ASANLIB} )
+target_link_libraries( test_pffft_cpp  PFFFT ${STDCXXLIB} ${ASANLIB} )
 
 ######################################################
 
@@ -322,7 +328,7 @@ endif()
 if (USE_TYPE_DOUBLE)
   target_compile_definitions(test_pffft_cpp_11 PRIVATE PFFFT_ENABLE_DOUBLE)
 endif()
-target_link_libraries( test_pffft_cpp_11  PFFFT ${ASANLIB} )
+target_link_libraries( test_pffft_cpp_11  PFFFT ${STDCXXLIB} ${ASANLIB} )
 
 set_property(TARGET test_pffft_cpp_11 PROPERTY CXX_STANDARD 11)
 set_property(TARGET test_pffft_cpp_11 PROPERTY CXX_STANDARD_REQUIRED ON)
