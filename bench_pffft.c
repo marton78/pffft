@@ -1154,9 +1154,11 @@ int main(int argc, char **argv) {
   int Npow2[NUMPOW2FFTLENS];  /* exp = 1 .. 21, -1 */
   const int *Nvalues = NULL;
   double tmeas[2][MAXNUMFFTLENS][NUM_TYPES][NUM_FFT_ALGOS];
-  double iterCalReal, iterCalCplx;
+  double iterCalReal = 0.0, iterCalCplx = 0.0;
 
   int benchReal=1, benchCplx=1, withFFTWfullMeas=0, outputTable2File=1, usePow2=1;
+  int max_N = 1024 * 1024 * 2;
+  int quicktest = 0;
   int realCplxIdx, typeIdx;
   int i, k;
   FILE *tableFile = NULL;
@@ -1197,6 +1199,14 @@ int main(int argc, char **argv) {
       Nvalues = NnonPow2;
       usePow2 = 0;
     }
+    else if (!strcmp(argv[i], "--max-len") && i+1 < argc) {
+      max_N = atoi(argv[i+1]);
+      ++i;
+    }
+    else if (!strcmp(argv[i], "--quick")) {
+      fprintf(stdout, "actived quicktest mode\n");
+      quicktest = 1;
+    }
     else if (!strcmp(argv[i], "--validate")) {
 #ifdef HAVE_FFTPACK
       int r;
@@ -1210,7 +1220,7 @@ int main(int argc, char **argv) {
       return 0;
     }
     else /* if (!strcmp(argv[i], "--help")) */ {
-      printf("usage: %s [--array-format|--table] [--no-tab] [--real|--cplx] [--validate] [--fftw-full-measure] [--non-pow2]\n", argv[0]);
+      printf("usage: %s [--array-format|--table] [--no-tab] [--real|--cplx] [--validate] [--fftw-full-measure] [--non-pow2] [--max-len <N>] [--quick]\n", argv[0]);
       exit(0);
     }
   }
@@ -1251,6 +1261,7 @@ int main(int argc, char **argv) {
   */
 
   /* calibrate test duration */
+  if (!quicktest)
   {
     double t0, t1, dur;
     printf("calibrating fft benchmark duration at size N = 512 ..\n");
@@ -1270,11 +1281,11 @@ int main(int argc, char **argv) {
 
   if (!array_output_format) {
     if (benchReal) {
-      for (i=0; Nvalues[i] > 0; ++i)
+      for (i=0; Nvalues[i] > 0 && Nvalues[i] <= max_N; ++i)
         benchmark_ffts(Nvalues[i], 0 /* real fft */, withFFTWfullMeas, iterCalReal, tmeas[0][i], haveAlgo, NULL);
     }
     if (benchCplx) {
-      for (i=0; Nvalues[i] > 0; ++i)
+      for (i=0; Nvalues[i] > 0 && Nvalues[i] <= max_N; ++i)
         benchmark_ffts(Nvalues[i], 1 /* cplx fft */, withFFTWfullMeas, iterCalCplx, tmeas[1][i], haveAlgo, NULL);
     }
 
@@ -1316,7 +1327,7 @@ int main(int argc, char **argv) {
       print_table(":|\n", tableFile);
     }
 
-    for (i=0; Nvalues[i] > 0; ++i) {
+    for (i=0; Nvalues[i] > 0 && Nvalues[i] <= max_N; ++i) {
       {
         double t0, t1;
         print_table_fftsize(Nvalues[i], tableFile);
@@ -1371,7 +1382,7 @@ int main(int argc, char **argv) {
               fprintf(f, "%s, ", algoName[k]);
           fprintf(f, "\n");
         }
-        for (i=0; Nvalues[i] > 0; ++i)
+        for (i=0; Nvalues[i] > 0 && Nvalues[i] <= max_N; ++i)
         {
           {
             fprintf(f, "%d, %.3f, ", Nvalues[i], log10((double)Nvalues[i])/log10(2.0) );

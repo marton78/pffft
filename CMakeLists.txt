@@ -463,12 +463,12 @@ endif()
 if (USE_TYPE_FLOAT)
 
   add_test(NAME bench_pffft_pow2
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/bench_pffft_float"
+    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/bench_pffft_float" "--max-len" "128" "--quick"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
 
   add_test(NAME bench_pffft_non2
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/bench_pffft_float" "--non-pow2"
+    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/bench_pffft_float" "--non-pow2" "--max-len" "192" "--quick"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
 
