@@ -14,6 +14,10 @@
 #include <assert.h>
 #include <string.h>
 
+#if defined(__linux__)
+#define HAVE_SYS_TIMES
+#endif
+
 #ifdef HAVE_SYS_TIMES
 #  include <sys/times.h>
 #  include <unistd.h>
