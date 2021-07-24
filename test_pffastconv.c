@@ -611,16 +611,11 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
             for ( k = 0; k < 128 && offC +blkLen < lenC; ++k )
             {
               offS = cplxFactor * offC;
-              Nout = aConv[yi]( aSetupCfg[yi], X +offS, blkLen, Y[yi] +offS, Y[0], (offC +blkLen >= lenC) /* applyFlush */ );
+              Nout = aConv[yi]( aSetupCfg[yi], X +offS, blkLen, Y[yi] +offS, Y[0], 0 /* applyFlush */ );
               offC += Nout;
               ++iter;
               if ( !Nout )
                 break;
-              if ( offC +blkLen >= lenC )
-              {
-                outN[yi] += offC;
-                offC = 0;
-              }
             }
             t1 = uclock_sec();
           } while ( t1 < tstop );
