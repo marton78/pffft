@@ -880,6 +880,9 @@ int main(int argc, char **argv)
 
   if (benchConv)
   {
+      printf("quickTest is %d\n", quickTest);
+      printf("slowTest is %d\n", slowTest);
+
     for ( k = 0; k < 3; ++k )
     {
       if ( (k == 0 && !testReal) || (k > 0 && !testCplx) )
@@ -894,11 +897,15 @@ int main(int argc, char **argv)
       printDbg = 0;
       printSpeed = 1;
       if (!slowTest) {
-        result |= test( 32,     flagsC, testOutLen, printDbg, printSpeed);
-        result |= test( 32+ 16, flagsC, testOutLen, printDbg, printSpeed);
-        result |= test( 64,     flagsC, testOutLen, printDbg, printSpeed);
-        result |= test( 64+ 32, flagsC, testOutLen, printDbg, printSpeed);
-        result |= test(128,     flagsC, testOutLen, printDbg, printSpeed);
+        if (!quickTest) {
+          result |= test(32, flagsC, testOutLen, printDbg, printSpeed);
+          result |= test(32 + 16, flagsC, testOutLen, printDbg, printSpeed);
+        }
+        result |= test(64, flagsC, testOutLen, printDbg, printSpeed);
+        if (!quickTest) {
+          result |= test(64 + 32, flagsC, testOutLen, printDbg, printSpeed);
+          result |= test(128, flagsC, testOutLen, printDbg, printSpeed);
+        }
       }
       if (!quickTest) {
         result |= test(128+ 64, flagsC, testOutLen, printDbg, printSpeed);
