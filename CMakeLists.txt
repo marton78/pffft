@@ -114,6 +114,12 @@ else()
   endif()
 endif()
 
+set(STDCXXLIB "")
+if (MINGW)
+  set(STDCXXLIB "stdc++")
+endif()
+
+
 set( SIMD_FLOAT_HDRS simd/pf_float.h simd/pf_sse1_float.h simd/pf_altivec_float.h simd/pf_neon_float.h simd/pf_scalar_float.h )
 set( SIMD_DOUBLE_HDRS simd/pf_double.h simd/pf_avx_double.h simd/pf_scalar_double.h )
 
@@ -155,11 +161,17 @@ if (USE_SIMD AND USE_SIMD_NEON)
   target_compile_options(PFFFT PRIVATE "-mfpu=neon")
 endif()
 if (USE_SIMD AND USE_TYPE_DOUBLE)
-  if(WIN32)
+  if(MSVC)
     if(DISABLE_SIMD_AVX)
       set_property(SOURCE pffft_double.c PROPERTY COMPILE_FLAGS "/arch:SSE2")
     else()
       set_property(SOURCE pffft_double.c PROPERTY COMPILE_FLAGS "/arch:AVX")
+    endif()
+  elseif(CMAKE_COMPILER_IS_GNUCC)
+    if(DISABLE_SIMD_AVX)
+      set_property(SOURCE pffft_double.c PROPERTY COMPILE_FLAGS "-msse2")
+    else()
+      set_property(SOURCE pffft_double.c PROPERTY COMPILE_FLAGS "-mavx")
     endif()
   else()
     set_property(SOURCE pffft_double.c PROPERTY COMPILE_FLAGS "-march=native")
@@ -304,7 +316,7 @@ endif()
 if (USE_TYPE_DOUBLE)
   target_compile_definitions(test_pffft_cpp PRIVATE PFFFT_ENABLE_DOUBLE)
 endif()
-target_link_libraries( test_pffft_cpp  PFFFT ${ASANLIB} )
+target_link_libraries( test_pffft_cpp  PFFFT ${STDCXXLIB} ${ASANLIB} )
 
 ######################################################
 
@@ -316,7 +328,7 @@ endif()
 if (USE_TYPE_DOUBLE)
   target_compile_definitions(test_pffft_cpp_11 PRIVATE PFFFT_ENABLE_DOUBLE)
 endif()
-target_link_libraries( test_pffft_cpp_11  PFFFT ${ASANLIB} )
+target_link_libraries( test_pffft_cpp_11  PFFFT ${STDCXXLIB} ${ASANLIB} )
 
 set_property(TARGET test_pffft_cpp_11 PROPERTY CXX_STANDARD 11)
 set_property(TARGET test_pffft_cpp_11 PROPERTY CXX_STANDARD_REQUIRED ON)
@@ -488,12 +500,12 @@ if (USE_TYPE_FLOAT)
   )
 
   add_test(NAME bench_pfconv_symetric
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-len" "--sym"
+    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-len" "--quick" "--sym"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
 
   add_test(NAME bench_pfconv_non_sym
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-len"
+    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-len" "--quick"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
 

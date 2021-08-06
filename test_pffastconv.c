@@ -611,16 +611,11 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
             for ( k = 0; k < 128 && offC +blkLen < lenC; ++k )
             {
               offS = cplxFactor * offC;
-              Nout = aConv[yi]( aSetupCfg[yi], X +offS, blkLen, Y[yi] +offS, Y[0], (offC +blkLen >= lenC) /* applyFlush */ );
+              Nout = aConv[yi]( aSetupCfg[yi], X +offS, blkLen, Y[yi] +offS, Y[0], 0 /* applyFlush */ );
               offC += Nout;
               ++iter;
               if ( !Nout )
                 break;
-              if ( offC +blkLen >= lenC )
-              {
-                outN[yi] += offC;
-                offC = 0;
-              }
             }
             t1 = uclock_sec();
           } while ( t1 < tstop );
@@ -880,6 +875,9 @@ int main(int argc, char **argv)
 
   if (benchConv)
   {
+      printf("quickTest is %d\n", quickTest);
+      printf("slowTest is %d\n", slowTest);
+
     for ( k = 0; k < 3; ++k )
     {
       if ( (k == 0 && !testReal) || (k > 0 && !testCplx) )
@@ -894,11 +892,15 @@ int main(int argc, char **argv)
       printDbg = 0;
       printSpeed = 1;
       if (!slowTest) {
-        result |= test( 32,     flagsC, testOutLen, printDbg, printSpeed);
-        result |= test( 32+ 16, flagsC, testOutLen, printDbg, printSpeed);
-        result |= test( 64,     flagsC, testOutLen, printDbg, printSpeed);
-        result |= test( 64+ 32, flagsC, testOutLen, printDbg, printSpeed);
-        result |= test(128,     flagsC, testOutLen, printDbg, printSpeed);
+        if (!quickTest) {
+          result |= test(32, flagsC, testOutLen, printDbg, printSpeed);
+          result |= test(32 + 16, flagsC, testOutLen, printDbg, printSpeed);
+        }
+        result |= test(64, flagsC, testOutLen, printDbg, printSpeed);
+        if (!quickTest) {
+          result |= test(64 + 32, flagsC, testOutLen, printDbg, printSpeed);
+          result |= test(128, flagsC, testOutLen, printDbg, printSpeed);
+        }
       }
       if (!quickTest) {
         result |= test(128+ 64, flagsC, testOutLen, printDbg, printSpeed);
