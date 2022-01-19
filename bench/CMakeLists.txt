@@ -15,6 +15,11 @@ else()
   set(BENCH_ARCH "" CACHE STRING "target architecture - use full compiler option!")
 endif()
 
+# architecture/optimization options
+option(USE_SIMD        "use SIMD (SSE/AVX/NEON/ALTIVEC) CPU features? - " ON)
+option(DISABLE_SIMD_AVX "disable AVX CPU features? - " OFF)
+option(USE_SIMD_NEON   "force using NEON on ARM? (requires USE_SIMD)" OFF)
+option(USE_SCALAR_VECT "use 4-element vector scalar operations (if no other SIMD)" ON)
 
 option(USE_BENCH_FFTW   "use (system-installed) FFTW3 in fft benchmark?" OFF)
 option(USE_BENCH_GREEN  "use Green FFT in fft benchmark? - if exists in subdir" ON)
@@ -68,6 +73,10 @@ add_custom_command(OUTPUT "${benchdir}/info.txt"
   COMMAND ${CMAKE_COMMAND} -E echo ""                                              >> "${benchdir}/info.txt"
   COMMAND ${CMAKE_COMMAND} -E echo "Architecture:   ${BENCH_ARCH}"                 >> "${benchdir}/info.txt"
   COMMAND ${CMAKE_COMMAND} -E echo "Fast math:      ${BENCH_FAST_MATH}"            >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "config USE_SIMD=${USE_SIMD}"                   >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "config DISABLE_SIMD_AVX=${DISABLE_SIMD_AVX}"   >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "config USE_SIMD_NEON=${USE_SIMD_NEON}"         >> "${benchdir}/info.txt"
+  COMMAND ${CMAKE_COMMAND} -E echo "config USE_SCALAR_VECT=${USE_SCALAR_VECT}"     >> "${benchdir}/info.txt"
   COMMAND ${CMAKE_COMMAND} -E echo "config USE_BENCH_FFTW=${USE_BENCH_FFTW}"       >> "${benchdir}/info.txt"
   COMMAND ${CMAKE_COMMAND} -E echo "config USE_BENCH_GREEN=${USE_BENCH_GREEN}"     >> "${benchdir}/info.txt"
   COMMAND ${CMAKE_COMMAND} -E echo "config USE_BENCH_KISS=${USE_BENCH_KISS}"       >> "${benchdir}/info.txt"
@@ -123,6 +132,10 @@ add_custom_target(build_float
                         -DUSE_TYPE_FLOAT=ON
                         -DUSE_TYPE_DOUBLE=OFF
                         -DUSE_FLOAT_PREC=ON
+                        -DUSE_SIMD=${USE_SIMD}
+                        -DDISABLE_SIMD_AVX=${DISABLE_SIMD_AVX}
+                        -DUSE_SIMD_NEON=${USE_SIMD_NEON}
+                        -DUSE_SCALAR_VECT=${USE_SCALAR_VECT}
                         -DUSE_BENCH_FFTW=${USE_BENCH_FFTW}
                         -DUSE_BENCH_GREEN=${USE_BENCH_GREEN}
                         -DUSE_BENCH_KISS=${USE_BENCH_KISS}
@@ -145,6 +158,10 @@ add_custom_target(build_double
                         -DUSE_TYPE_FLOAT=OFF
                         -DUSE_TYPE_DOUBLE=ON
                         -DUSE_FLOAT_PREC=OFF
+                        -DUSE_SIMD=${USE_SIMD}
+                        -DDISABLE_SIMD_AVX=${DISABLE_SIMD_AVX}
+                        -DUSE_SIMD_NEON=${USE_SIMD_NEON}
+                        -DUSE_SCALAR_VECT=${USE_SCALAR_VECT}
                         -DUSE_BENCH_FFTW=${USE_BENCH_FFTW}
                         -DUSE_BENCH_GREEN=${USE_BENCH_GREEN}
                         -DUSE_BENCH_KISS=${USE_BENCH_KISS}
@@ -178,6 +195,24 @@ add_custom_target(bench ALL
   COMMAND ${CMAKE_COMMAND} -E echo "now mail result file bench_${BENCH_ID}.tgz"
   # DEPENDS "${benchdir}/info.txt" "${benchdir}/unix_info.txt"
   DEPENDS "${benchdir}/info.txt" bench_float bench_double "${benchdir}/unix_info.txt"
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+
+add_custom_target(bench_float_tar
+  COMMAND ${CMAKE_COMMAND} -E echo ""
+  COMMAND ${CMAKE_COMMAND} -E tar cvz "bench_${BENCH_ID}.tgz" ${benchdir}
+  COMMAND ${CMAKE_COMMAND} -E echo ""
+  COMMAND ${CMAKE_COMMAND} -E echo "now mail result file bench_${BENCH_ID}.tgz"
+  DEPENDS "${benchdir}/info.txt" bench_float "${benchdir}/unix_info.txt"
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+
+add_custom_target(bench_double_tar
+  COMMAND ${CMAKE_COMMAND} -E echo ""
+  COMMAND ${CMAKE_COMMAND} -E tar cvz "bench_${BENCH_ID}.tgz" ${benchdir}
+  COMMAND ${CMAKE_COMMAND} -E echo ""
+  COMMAND ${CMAKE_COMMAND} -E echo "now mail result file bench_${BENCH_ID}.tgz"
+  DEPENDS "${benchdir}/info.txt" bench_double "${benchdir}/unix_info.txt"
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
 
