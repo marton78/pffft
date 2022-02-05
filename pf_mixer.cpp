@@ -139,7 +139,7 @@ int have_sse_shift_mixer_impl()
 /**************/
 
 PF_TARGET_CLONES
-float shift_math_cc(complexf *input, complexf* output, int input_size, float rate, float starting_phase)
+float shift_math_cc(const complexf *input, complexf* output, int input_size, float rate, float starting_phase)
 {
     rate*=2;
     //Shifts the complex spectrum. Basically a complex mixer. This version uses cmath.

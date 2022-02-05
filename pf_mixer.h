@@ -33,23 +33,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdio.h>
 #include <stdint.h>
 
+#include "pf_cplx.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-
-/*
-   _____                      _
-  / ____|                    | |
- | |     ___  _ __ ___  _ __ | | _____  __
- | |    / _ \| '_ ` _ \| '_ \| |/ _ \ \/ /
- | |___| (_) | | | | | | |_) | |  __/>  <
-  \_____\___/|_| |_| |_| .__/|_|\___/_/\_\
-                       | |
-                       |_|
-*/
-
-typedef struct complexf_s { float i; float q; } complexf;
 
 // =================================================================================
 
@@ -62,7 +51,7 @@ int have_sse_shift_mixer_impl();
 /*** ALGO A ***/
 /**************/
 
-float shift_math_cc(complexf *input, complexf* output, int input_size, float rate, float starting_phase);
+float shift_math_cc(const complexf *input, complexf* output, int input_size, float rate, float starting_phase);
 
 
 /*********************************************************************/
