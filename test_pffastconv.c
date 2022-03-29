@@ -23,6 +23,9 @@
 #  include <unistd.h>
 #endif
 
+/* benchmark duration: 250 ms */
+#define BENCH_TEST_DURATION_IN_SEC      0.5
+
 /* 
    vector support macros: the rest of the code is independant of
    SSE/Altivec/NEON -- adding support for other platforms with 4-element
@@ -459,10 +462,10 @@ void printFirst( const float * V, const char * st, const int N, const int perLin
 
 
 
-#define NUMY       11
+#define NUMY       15
 
 
-int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int printSpeed) {
+int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int printSpeed, int abortFirstFastAlgo, int printErrValues, int printAsCSV, int *pIsFirstFilterLen) {
   double t0, t1, tstop, td, tdref;
   float *X, *H;
   float *Y[NUMY];
@@ -483,23 +486,25 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
   int i, j, numErrOverLimit, iter;
   int retErr = 0;
 
-  /*                                  0               1               2               3                   4                   5                   6                   7                   8                      9  */
-  pfnConvSetup   aSetup[NUMY]     = { convSetupRev,   convSetupRev,   convSetupRev,   fastConvSetup,      fastConvSetup,      fastConvSetup,      fastConvSetup,      fastConvSetup,      fastConvSetup,         fastConvSetup   };
-  pfnConvDestroy aDestroy[NUMY]   = { convDestroyRev, convDestroyRev, convDestroyRev, fastConvDestroy,    fastConvDestroy,    fastConvDestroy,    fastConvDestroy,    fastConvDestroy,    fastConvDestroy,       fastConvDestroy };
-  pfnGetConvFnPtr aGetFnPtr[NUMY] = { NULL,           NULL,           NULL,           NULL,               NULL,               NULL,               NULL,               NULL,               NULL,                  NULL,           };
-  pfnConvolution aConv[NUMY]      = { slow_conv_R,    slow_conv_A,    slow_conv_B,    fast_conv,          fast_conv,          fast_conv,          fast_conv,          fast_conv,          fast_conv,             fast_conv       };
-  const char * convText[NUMY]     = { "R(non-simd)",  "A(non-simd)",  "B(non-simd)",  "fast_conv_64",     "fast_conv_128",    "fast_conv_256",    "fast_conv_512",    "fast_conv_1K",     "fast_conv_2K",        "fast_conv_4K"  };
-  int    aFastAlgo[NUMY]          = { 0,              0,              0,              1,                  1,                  1,                  1,                  1,                  1,                     1               };
-  void * aSetupCfg[NUMY]          = { NULL,           NULL,           NULL,           NULL,               NULL,               NULL,               NULL,               NULL,               NULL,                  NULL            };
-  int    aBlkLen[NUMY]            = { 1024,           1024,           1024,           64,                 128,                256,                512,                1024,               2048,                  4096            };
+  /*                                  0               1               2               3                   4                   5                   6                   7                   8                      9,                   10,                  11,                   12,                   13                     */
+  pfnConvSetup   aSetup[NUMY]     = { convSetupRev,   convSetupRev,   convSetupRev,   fastConvSetup,      fastConvSetup,      fastConvSetup,      fastConvSetup,      fastConvSetup,      fastConvSetup,         fastConvSetup,       fastConvSetup,       fastConvSetup,        fastConvSetup,        fastConvSetup,         };
+  pfnConvDestroy aDestroy[NUMY]   = { convDestroyRev, convDestroyRev, convDestroyRev, fastConvDestroy,    fastConvDestroy,    fastConvDestroy,    fastConvDestroy,    fastConvDestroy,    fastConvDestroy,       fastConvDestroy,     fastConvDestroy,     fastConvDestroy,      fastConvDestroy,      fastConvDestroy,       };
+  pfnGetConvFnPtr aGetFnPtr[NUMY] = { NULL,           NULL,           NULL,           NULL,               NULL,               NULL,               NULL,               NULL,               NULL,                  NULL,                NULL,                NULL,                 NULL,                 NULL,                  };
+  pfnConvolution aConv[NUMY]      = { slow_conv_R,    slow_conv_A,    slow_conv_B,    fast_conv,          fast_conv,          fast_conv,          fast_conv,          fast_conv,          fast_conv,             fast_conv,           fast_conv,           fast_conv,            fast_conv,            fast_conv,             };
+  const char * convText[NUMY]     = { "R(non-simd)",  "A(non-simd)",  "B(non-simd)",  "fast_conv_64",     "fast_conv_128",    "fast_conv_256",    "fast_conv_512",    "fast_conv_1K",     "fast_conv_2K",        "fast_conv_4K",      "fast_conv_8K",      "fast_conv_16K",      "fast_conv_32K",      "fast_conv_64K",       };
+  int    aFastAlgo[NUMY]          = { 0,              0,              0,              1,                  1,                  1,                  1,                  1,                  1,                     1,                   1,                   1,                    1,                    1,                     };
+  void * aSetupCfg[NUMY]          = { NULL,           NULL,           NULL,           NULL,               NULL,               NULL,               NULL,               NULL,               NULL,                  NULL,                NULL,                NULL,                 NULL,                 NULL,                  };
+//int    aBlkLen[NUMY]            = { 1024,           1024,           1024,           64,                 128,                256,                512,                1024,               2048,                  4096,                8192,                16384,                32768,                65536,                 };
+  int    aBlkLen[NUMY]            = { 8192,           8192,           8192,           64,                 128,                256,                512,                1024,               2048,                  4096,                8192,                16384,                32768,                65536,                 };
 #if 1
-  int    aRunAlgo[NUMY]           = { 1,              1,              1,              FILTERLEN<64,       FILTERLEN<128,      FILTERLEN<256,      FILTERLEN<512,      FILTERLEN<1024,     FILTERLEN<2048,        FILTERLEN<4096  };
+  int    aRunAlgo[NUMY]           = { 1,              1,              1,              FILTERLEN<64,       FILTERLEN<128,      FILTERLEN<256,      FILTERLEN<512,      FILTERLEN<1024,     FILTERLEN<2048,        FILTERLEN<4096,      FILTERLEN<8192,      FILTERLEN<16384,      FILTERLEN<32768,      FILTERLEN<65536,       };
 #elif 0
-  int    aRunAlgo[NUMY]           = { 1,              0,              0,              0 && FILTERLEN<64,  1 && FILTERLEN<128, 1 && FILTERLEN<256, 0 && FILTERLEN<512, 0 && FILTERLEN<1024, 0 && FILTERLEN<2048,  0 && FILTERLEN<4096  };
+  int    aRunAlgo[NUMY]           = { 1,              0,              0,              0 && FILTERLEN<64,  1 && FILTERLEN<128, 1 && FILTERLEN<256, 0 && FILTERLEN<512, 0 && FILTERLEN<1024, 0 && FILTERLEN<2048,  0 && FILTERLEN<4096, 0 && FILTERLEN<8192, 0 && FILTERLEN<16384, 0 && FILTERLEN<32768, 0 && FILTERLEN<65536,  };
 #else
-  int    aRunAlgo[NUMY]           = { 1,              1,              1,              0 && FILTERLEN<64,  0 && FILTERLEN<128, 1 && FILTERLEN<256, 0 && FILTERLEN<512, 0 && FILTERLEN<1024, 0 && FILTERLEN<2048,  0 && FILTERLEN<4096  };
+  int    aRunAlgo[NUMY]           = { 1,              1,              1,              0 && FILTERLEN<64,  0 && FILTERLEN<128, 1 && FILTERLEN<256, 0 && FILTERLEN<512, 0 && FILTERLEN<1024, 0 && FILTERLEN<2048,  0 && FILTERLEN<4096, 0 && FILTERLEN<8192, 0 && FILTERLEN<16384, 0 && FILTERLEN<32768, 0 && FILTERLEN<65536,  };
 #endif
   double aSpeedFactor[NUMY], aDuration[NUMY], procSmpPerSec[NUMY];
+  int aNumIters[NUMY], aNumLoops[NUMY];
 
   X = pffastconv_malloc( (unsigned)(len+4) * sizeof(float) );
   for ( i=0; i < NUMY; ++i)
@@ -513,6 +518,8 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
     aSpeedFactor[i] = -1.0;
     aDuration[i] = -1.0;
     procSmpPerSec[i] = -1.0;
+    aNumIters[i] = 0;
+    aNumLoops[i] = 0;
   }
 
   H = pffastconv_malloc((unsigned)FILTERLEN * sizeof(float));
@@ -570,11 +577,16 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
   if (!testOutLen)
     printFirst( H, "H", FILTERLEN, 8 );
 
-  printf("\n");
-  printf("filterLen = %d\t%s%s\t%s:\n", FILTERLEN,
-    ((convFlags & PFFASTCONV_CPLX_INP_OUT)?"cplx":"real"),
-    (convFlags & PFFASTCONV_CPLX_INP_OUT)?((convFlags & PFFASTCONV_CPLX_SINGLE_FFT)?" single":" 2x") : "",
-    ((convFlags & PFFASTCONV_SYMMETRIC)?"symmetric":"non-sym") );
+  if (!printAsCSV)
+  {
+    printf("\n");
+    printf("filterLen = %d\t%s%s\t%s:\n", FILTERLEN,
+      ((convFlags & PFFASTCONV_CPLX_INP_OUT)?"cplx":"real"),
+      (convFlags & PFFASTCONV_CPLX_INP_OUT)?((convFlags & PFFASTCONV_CPLX_SINGLE_FFT)?" single":" 2x") : "",
+      ((convFlags & PFFASTCONV_SYMMETRIC)?"symmetric":"non-sym") );
+  }
+
+  int hadFastAlgo = 0;
 
   while (1)
   {
@@ -584,13 +596,22 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
       if (!aRunAlgo[yi])
         continue;
 
+      if ( aFastAlgo[yi] && abortFirstFastAlgo && hadFastAlgo )
+      {
+        aRunAlgo[yi] = 0;
+        continue;
+      }
+
+      hadFastAlgo = hadFastAlgo | aFastAlgo[yi];
+
       aSetupCfg[yi] = aSetup[yi]( H, FILTERLEN, &aBlkLen[yi], convFlags );
 
       /* get effective apply function ptr */
       if ( aSetupCfg[yi] && aGetFnPtr[yi] )
         aConv[yi] = aGetFnPtr[yi]( aSetupCfg[yi] );
 
-      if ( aSetupCfg[yi] && aConv[yi] ) {
+      if ( aSetupCfg[yi] && aConv[yi] )
+      {
         if (testOutLen)
         {
           t0 = uclock_sec();
@@ -600,14 +621,18 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
         }
         else
         {
-          const int blkLen = 4096;  /* required for 'fast_conv_4K' */
+          //const int blkLen = 4096;  /* required for 'fast_conv_4K' */
+          const int blkLen = aBlkLen[yi];
           int64_t offC = 0, offS, Nout;
           int k;
           iter = 0;
           outN[yi] = 0;
+          aNumLoops[yi] = 1;
           t0 = uclock_sec();
-          tstop = t0 + 0.25;  /* benchmark duration: 250 ms */
-          do {
+          tstop = t0 + BENCH_TEST_DURATION_IN_SEC;
+          do
+          {
+            const int prev_iter = iter;
             for ( k = 0; k < 128 && offC +blkLen < lenC; ++k )
             {
               offS = cplxFactor * offC;
@@ -617,19 +642,29 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
               if ( !Nout )
                 break;
             }
+            //if ( !Nout )
+            //  break;
             t1 = uclock_sec();
+            if ( prev_iter == iter )    // restart from begin of input?
+            {
+                offC = 0;
+                ++aNumLoops[yi];
+            }
           } while ( t1 < tstop );
-          outN[yi] += offC;
+          outN[yi] = offC;
           td = t1 - t0;
-          procSmpPerSec[yi] = cplxFactor * (double)outN[yi] / td;
+          procSmpPerSec[yi] = cplxFactor * (double)outN[yi] * (1.0 / td);
+          aNumIters[yi] = iter;
+          aDuration[yi] = td;
+
+          //printf("algo '%s':\t%.2f MSmp\tin\t%.1f ms\t= %g kSmpPerSec\t%d iters\t%.1f ms\n",
+          //  convText[yi], (double)outN[yi]/(1000.0 * 1000.0), 1000.0 * aDuration[yi], procSmpPerSec[yi] * 0.001, aNumIters[yi], 1000.0 * td );
         }
       }
       else
       {
-        t0 = t1 = td = 0.0;
         outN[yi] = 0;
       }
-      aDuration[yi] = td;
       if ( yi == 0 ) {
         const float * Yvals = Y[0];
         const int64_t refOutLen = cplxFactor * outN[0];
@@ -716,12 +751,38 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
         }
         else
         {
+          // print columns in 1st line
+          if (printAsCSV && *pIsFirstFilterLen)
+          {
+            printf("\n# filterLen, filterOrder, Re/Cx, type, sym, ");
+            for ( yc = 0; yc < NUMY; ++yc )
+            {
+              if (!aRunAlgo[yc] || procSmpPerSec[yc] <= 0.0)
+                continue;
+              if (printAsCSV)
+                printf("%s, ", convText[yc]);
+            }
+            *pIsFirstFilterLen = 0;
+          }
+
           for ( yc = 0; yc < NUMY; ++yc )
           {
+            if (!yc)
+            {
+              double filterExp = log10((double)FILTERLEN) / log10(2.0);
+              printf("\n%5d, %5.1f, %s, %s, %s, ", FILTERLEN, filterExp,
+                     ((convFlags & PFFASTCONV_CPLX_INP_OUT)?"cplx":"real"),
+                     (convFlags & PFFASTCONV_CPLX_INP_OUT)?((convFlags & PFFASTCONV_CPLX_SINGLE_FFT)?" single":" 2x") : "",
+                     ((convFlags & PFFASTCONV_SYMMETRIC)?"symmetric":"non-sym")
+                     );
+            }
             if (!aRunAlgo[yc] || procSmpPerSec[yc] <= 0.0)
               continue;
-            printf("algo '%s':\t%.2f MSmp\tin\t%.1f ms\t= %g kSmpPerSec\n",
-              convText[yc], (double)outN[yc]/(1000.0 * 1000.0), 1000.0 * aDuration[yc], procSmpPerSec[yc] * 0.001 );
+            if (printAsCSV)
+              printf("%.0f, ", procSmpPerSec[yc] * 0.001);
+            else
+              printf("algo '%s':\t%.2f MSmp\tin\t%.1f ms\t= %g kSmpPerSec\t%d iters\t%d loops\n",
+                     convText[yc], (double)outN[yc]/(1000.0 * 1000.0), 1000.0 * aDuration[yc], procSmpPerSec[yc] * 0.001, aNumIters[yc], aNumLoops[yc] );
           }
         }
 
@@ -743,7 +804,8 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
 
       if ( outN[yc] == 0 )
       {
-        printf("output size 0: '%s' not implemented\n", convText[yc]);
+        if (!printAsCSV)
+          printf("output size 0: '%s' not implemented\n", convText[yc]);
       }
       else if ( outN[0] != outN[yc] /* && aFastAlgo[yc] */ && testOutLen )
       {
@@ -765,7 +827,7 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
       numErrOverLimit = 0;
       for ( i = 0; i < outMin; ++i )
       {
-        if ( numErrOverLimit < 6 && fabs(Ycurr[i] - Yref[i]) >= yErrLimit )
+        if ( numErrOverLimit < 6 && fabs(Ycurr[i] - Yref[i]) >= yErrLimit && printErrValues )
         {
           printf("algo '%s': at %d: ***ERROR*** = %f, errLimit = %f, ref = %f, actual = %f\n",
             convText[yc], i, fabs(Ycurr[i] - Yref[i]), yErrLimit, Yref[i], Ycurr[i] );
@@ -811,7 +873,8 @@ int main(int argc, char **argv)
   int result = 0;
   int i, k, M, flagsA, flagsB, flagsC, testOutLen, printDbg, printSpeed;
   int testOutLens = 1, benchConv = 1, quickTest = 0, slowTest = 0;
-  int testReal = 1, testCplx = 1, testSymetric = 0;
+  int testReal = 1, testCplx = 1, testSymetric = 0, abortFirstFastAlgo = 1, printErrValues = 0, printAsCSV = 1;
+  int isFirstFilterLen = 1;
 
   for ( i = 1; i < argc; ++i ) {
 
@@ -868,7 +931,7 @@ int main(int argc, char **argv)
       {
         if ( (M % 16) != 0 && testSymetric )
           continue;
-        result |= test(M, flagsB, testOutLen, printDbg, printSpeed);
+        result |= test(M, flagsB, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, 0, &isFirstFilterLen);
       }
     }
   }
@@ -882,9 +945,12 @@ int main(int argc, char **argv)
     {
       if ( (k == 0 && !testReal) || (k > 0 && !testCplx) )
         continue;
-      printf("\n\n==========\n");
-      printf("starting %s %s benchmark against linear convolutions ..\n", (k == 0 ? "real" : "cplx"), ( k == 0 ? "" : (k==1 ? "2x" : "single") ) );
-      printf("==========\n");
+      if (!printAsCSV)
+      {
+        printf("\n\n==========\n");
+        printf("starting %s %s benchmark against linear convolutions ..\n", (k == 0 ? "real" : "cplx"), ( k == 0 ? "" : (k==1 ? "2x" : "single") ) );
+        printf("==========\n");
+      }
       flagsA = (k == 0) ? 0 : PFFASTCONV_CPLX_INP_OUT;
       flagsB = flagsA | ( testSymetric ? PFFASTCONV_SYMMETRIC : 0 );
       flagsC = flagsB | ( k == 2 ? PFFASTCONV_CPLX_SINGLE_FFT : 0 );
@@ -893,22 +959,30 @@ int main(int argc, char **argv)
       printSpeed = 1;
       if (!slowTest) {
         if (!quickTest) {
-          result |= test(32, flagsC, testOutLen, printDbg, printSpeed);
-          result |= test(32 + 16, flagsC, testOutLen, printDbg, printSpeed);
+          result |= test(32, flagsC, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, printAsCSV, &isFirstFilterLen);
+          result |= test(32 + 16, flagsC, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, printAsCSV, &isFirstFilterLen);
         }
-        result |= test(64, flagsC, testOutLen, printDbg, printSpeed);
+        result |= test(64, flagsC, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, printAsCSV, &isFirstFilterLen);
         if (!quickTest) {
-          result |= test(64 + 32, flagsC, testOutLen, printDbg, printSpeed);
-          result |= test(128, flagsC, testOutLen, printDbg, printSpeed);
+          result |= test(64 + 32, flagsC, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, printAsCSV, &isFirstFilterLen);
+          result |= test(128, flagsC, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, printAsCSV, &isFirstFilterLen);
         }
       }
       if (!quickTest) {
-        result |= test(128+ 64, flagsC, testOutLen, printDbg, printSpeed);
-        result |= test(256,     flagsC, testOutLen, printDbg, printSpeed);
-        result |= test(256+128, flagsC, testOutLen, printDbg, printSpeed);
-        result |= test(512,     flagsC, testOutLen, printDbg, printSpeed);
-        result |= test(1024,    flagsC, testOutLen, printDbg, printSpeed);
+        result |= test(128+ 64, flagsC, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, printAsCSV, &isFirstFilterLen);
+        result |= test(256,     flagsC, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, printAsCSV, &isFirstFilterLen);
+        result |= test(256+128, flagsC, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, printAsCSV, &isFirstFilterLen);
+        result |= test(512,     flagsC, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, printAsCSV, &isFirstFilterLen);
+        result |= test(1024,    flagsC, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, printAsCSV, &isFirstFilterLen);
+
+        result |= test(2048,    flagsC, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, printAsCSV, &isFirstFilterLen);
+        result |= test(4096,    flagsC, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, printAsCSV, &isFirstFilterLen);
+        result |= test(8192,    flagsC, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, printAsCSV, &isFirstFilterLen);
+        result |= test(16384,   flagsC, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, printAsCSV, &isFirstFilterLen);
+        result |= test(32768,   flagsC, testOutLen, printDbg, printSpeed, abortFirstFastAlgo, printErrValues, printAsCSV, &isFirstFilterLen);
       }
+      if (printAsCSV)
+        printf("\n");
     }
   }
 
