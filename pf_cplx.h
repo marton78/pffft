@@ -29,6 +29,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 /*
    _____                      _
   / ____|                    | |
@@ -40,5 +45,99 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
                        |_|
 */
 
-typedef struct complexf_s { float i; float q; } complexf;
+typedef struct complexf_s {
+    float i;
+    float q;
 
+#ifdef __cplusplus
+    inline complexf_s & operator=(float r) {
+        this->i = r;
+        this->q = 0.0F;
+        return *this;
+    }
+#endif
+
+} complexf;
+
+
+typedef struct complexd_s {
+    double i;
+    double q;
+
+#ifdef __cplusplus
+    inline complexd_s & operator=(double r) {
+        this->i = r;
+        this->q = 0.0;
+        return *this;
+    }
+#endif
+
+} complexd;
+
+
+
+#ifdef __cplusplus
+}
+
+/* add/define some helper functions */
+
+static inline float real(const float self) {
+    return self;
+}
+
+static inline float real(const complexf &self) {
+    return self.i;
+}
+
+static inline float imag(const complexf &self) {
+    return self.q;
+}
+
+static inline void operator+=(complexf &self, float r) {
+    self.i += r;
+}
+
+static inline void operator+=(complexf &self, const complexf sum) {
+    self.i += sum.i;
+    self.q += sum.q;
+}
+
+static inline void operator*=(complexf &self, float r) {
+    self.i *= r;
+    self.q *= r;
+}
+
+
+
+static inline double real(const double self) {
+    return self;
+}
+
+static inline double real(const complexd &self) {
+    return self.i;
+}
+
+static inline double imag(const complexd &self) {
+    return self.q;
+}
+
+static inline void operator+=(complexd &self, double r) {
+    self.i += r;
+}
+
+static inline void operator+=(complexd &self, const complexd sum) {
+    self.i += sum.i;
+    self.q += sum.q;
+}
+
+static inline void operator+=(complexd &self, const complexf sum) {
+    self.i += sum.i;
+    self.q += sum.q;
+}
+
+static inline void operator*=(complexd &self, double r) {
+    self.i *= r;
+    self.q *= r;
+}
+
+#endif
