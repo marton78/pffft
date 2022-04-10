@@ -30,10 +30,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
 
+#include "pf_cplx.h"
+
 #include <stdio.h>
 #include <stdint.h>
-
-#include "pf_cplx.h"
 
 #ifdef __cplusplus
 extern "C" {
