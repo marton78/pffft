@@ -246,6 +246,8 @@ public:
    *     the imag() part contains the result for the Nyquist frequency Samplerate/2
    *   both 0-frequency and half frequency components, which are real,
    *   are assembled in the first entry as  F(0)+i*F(N/2).
+   *   with the output size N/2 complex values, it is obvious, that the
+   *   result for negative frequencies are not output, cause of symmetry.
    *
    * input and output may alias - if you do nasty type conversion.
    * return is just the given output parameter 'spectrum'.
