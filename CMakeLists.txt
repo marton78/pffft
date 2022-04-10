@@ -116,7 +116,7 @@ endif()
 ########################################################################
 # select the release build type by default to get optimization flags
 ########################################################################
-if(NOT CMAKE_BUILD_TYPE)
+if (NOT CMAKE_BUILD_TYPE)
    set(CMAKE_BUILD_TYPE "Release")
    message(STATUS "Build type not specified: defaulting to release.")
 endif(NOT CMAKE_BUILD_TYPE)
@@ -196,7 +196,13 @@ endif()
 ######################################################
 
 if (PFFFT_USE_TYPE_FLOAT)
-  add_library(PFDSP STATIC pf_mixer.cpp pf_mixer.h pf_cplx.h pf_carrier.cpp pf_carrier.h pf_cic.cpp pf_cic.h fmv.h )
+  add_library(PFDSP STATIC
+    pf_windowing.cpp pf_windowing.h
+    pf_mixer.cpp pf_mixer.h
+    pf_carrier.cpp pf_carrier.h
+    pf_cic.cpp pf_cic.h
+    pf_cplx.h fmv.h
+  )
   set_property(TARGET PFDSP PROPERTY CXX_STANDARD 11)
   set_property(TARGET PFDSP PROPERTY CXX_STANDARD_REQUIRED ON)
   set_target_properties(PFDSP PROPERTIES OUTPUT_NAME "pfdsp")
@@ -216,7 +222,7 @@ if (PFFFT_USE_TYPE_FLOAT)
   )
   if (INSTALL_PFDSP)
       set(INSTALL_TARGETS ${INSTALL_TARGETS} PFDSP)
-      set(INSTALL_HEADERS ${INSTALL_HEADERS} pf_mixer.h pf_cplx.h pf_carrier.h pf_cic.h)
+      set(INSTALL_HEADERS ${INSTALL_HEADERS} pf_windowing.h pf_mixer.h pf_carrier.h pf_cic.h pf_cplx.h)
   endif()
 endif()
 
@@ -593,6 +599,18 @@ if (PFFFT_USE_TYPE_FLOAT)
   endif()
   target_link_libraries( bench_pf_conv_float  pf_conv_dispatcher PFDSP $<$<CXX_COMPILER_ID:GNU>:stdc++> )
 
+  ############################################################################
+
+  add_executable(bench_pf_window_float   bench_windowing.cpp pf_helper_uclock.c pf_helper_uclock.h)
+  target_compile_definitions(bench_pf_window_float PRIVATE _USE_MATH_DEFINES)
+  target_compile_definitions(bench_pf_window_float PRIVATE PFFFT_ENABLE_FLOAT)
+  target_link_libraries( bench_pf_window_float  PFDSP ${STDCXXLIB} ${ASANLIB} )
+
+  add_executable(test_windowing_float   test_windowing.cpp pf_helper_uclock.c pf_helper_uclock.h)
+  target_compile_definitions(test_windowing_float PRIVATE _USE_MATH_DEFINES)
+  target_compile_definitions(test_windowing_float PRIVATE PFFFT_ENABLE_FLOAT)
+  target_link_libraries( test_windowing_float  PFDSP ${STDCXXLIB} ${ASANLIB} )
+
 endif()
 
 ######################################################
@@ -656,6 +674,11 @@ if (PFFFT_USE_TYPE_FLOAT)
 
   add_test(NAME bench_pfconv_non_sym
     COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-len" "--quick"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )
+
+  add_test(NAME test_windowing_float
+    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_windowing_float"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
 
