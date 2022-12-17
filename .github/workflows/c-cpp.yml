@@ -31,15 +31,15 @@ jobs:
 
     - uses: actions/checkout@v2
     - name: cmake_make_simd_float_double
-      run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
+      run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
     - name: cmake_make_simd_float
-      run: mkdir build_simd_float && cmake -S . -B build_simd_float -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_TYPE_DOUBLE=OFF -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_float
+      run: mkdir build_simd_float && cmake -S . -B build_simd_float -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_DOUBLE=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_float
     - name: cmake_make_simd_double
-      run: mkdir build_simd_double && cmake -S . -B build_simd_double -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_TYPE_FLOAT=OFF -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_double
+      run: mkdir build_simd_double && cmake -S . -B build_simd_double -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_FLOAT=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_double
     - name: cmake_make_no-simd_float_double
-      run: mkdir build_no-simd_full && cmake -S . -B build_no-simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_SIMD=OFF -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_no-simd_full
+      run: mkdir build_no-simd_full && cmake -S . -B build_no-simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_no-simd_full
     - name: cmake_make_no-simd_scalar_float_double
-      run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_SIMD=OFF -DUSE_SCALAR_VECT=ON -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
+      run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=ON -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
     - name: compress
       run: tar zcvf pffft_w_mipp_ubuntu-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
     - name: 'Upload Artifact'
@@ -54,15 +54,15 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: cmake_make_simd_float_double
-      run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
+      run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
     - name: cmake_make_simd_float
-      run: mkdir build_simd_float && cmake -S . -B build_simd_float -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_TYPE_DOUBLE=OFF -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_float
+      run: mkdir build_simd_float && cmake -S . -B build_simd_float -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_DOUBLE=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_float
     - name: cmake_make_simd_double
-      run: mkdir build_simd_double && cmake -S . -B build_simd_double -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_TYPE_FLOAT=OFF -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_double
+      run: mkdir build_simd_double && cmake -S . -B build_simd_double -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_FLOAT=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_double
     - name: cmake_make_no-simd_float_double
-      run: mkdir build_no-simd_full && cmake -S . -B build_no-simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_SIMD=OFF -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_no-simd_full
+      run: mkdir build_no-simd_full && cmake -S . -B build_no-simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_no-simd_full
     - name: cmake_make_no-simd_scalar_float_double
-      run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_SIMD=OFF -DUSE_SCALAR_VECT=ON -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
+      run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=ON -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
     - name: compress
       run: tar zcvf pffft_ubuntu-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
     - name: 'Upload Artifact'
@@ -93,17 +93,17 @@ jobs:
     - uses: actions/checkout@v2
     - name: build_w32_no-simd
       working-directory: ${{runner.workspace}}
-      run: cd $GITHUB_WORKSPACE && bash ./cross_build_mingw32.sh no-simd -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_SIMD=OFF -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF
+      run: cd $GITHUB_WORKSPACE && bash ./cross_build_mingw32.sh no-simd -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF
     - name: build_w32_simd_full
       working-directory: ${{runner.workspace}}
-      run: X=$(pwd) && cd $GITHUB_WORKSPACE && bash ./cross_build_mingw32.sh simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=pentium4 -DTARGET_C_ARCH=pentium4 -DMIPP_INCLUDE_DIRS=$X/include/mipp
+      run: X=$(pwd) && cd $GITHUB_WORKSPACE && bash ./cross_build_mingw32.sh simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=pentium4 -DTARGET_C_ARCH=pentium4 -DMIPP_INCLUDE_DIRS=$X/include/mipp
 
     - name: build_w64_no-simd
       working-directory: ${{runner.workspace}}
-      run: cd $GITHUB_WORKSPACE && bash ./cross_build_mingw64.sh no-simd -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_SIMD=OFF -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF
+      run: cd $GITHUB_WORKSPACE && bash ./cross_build_mingw64.sh no-simd -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF
     - name: build_w64_simd_full
       working-directory: ${{runner.workspace}}
-      run: X=$(pwd) && cd $GITHUB_WORKSPACE && bash ./cross_build_mingw64.sh simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=sandybridge -DTARGET_C_ARCH=sandybridge -DMIPP_INCLUDE_DIRS=$X/include/mipp
+      run: X=$(pwd) && cd $GITHUB_WORKSPACE && bash ./cross_build_mingw64.sh simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=sandybridge -DTARGET_C_ARCH=sandybridge -DMIPP_INCLUDE_DIRS=$X/include/mipp
 
     - name: compress
       run: tar zcvf pffft_cross-build-windows-from-linux-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt  build_w32_no-simd build_w32_simd_full build_w64_no-simd build_w64_simd_full
@@ -140,7 +140,7 @@ jobs:
     - name: Configure CMake No-SIMD
       shell: bash
       working-directory: ${{runner.workspace}}
-      run: cmake -S $GITHUB_WORKSPACE -B build_no-simd -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DENABLE_PFDSP=ON -DUSE_SIMD=OFF -DTARGET_CXX_ARCH=none -DTARGET_C_ARCH=none
+      run: cmake -S $GITHUB_WORKSPACE -B build_no-simd -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DENABLE_PFDSP=ON -DPFFFT_USE_SIMD=OFF -DTARGET_CXX_ARCH=none -DTARGET_C_ARCH=none
     - name: Build No-SIMD
       shell: bash
       working-directory: ${{runner.workspace}}
@@ -150,7 +150,7 @@ jobs:
     - name: Configure CMake SSE2
       shell: bash
       working-directory: ${{runner.workspace}}
-      run: cmake -S $GITHUB_WORKSPACE -B build_sse2 -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DENABLE_PFDSP=ON -DTARGET_CXX_ARCH=SSE2 -DTARGET_C_ARCH=SSE2 -DMIPP_INCLUDE_DIRS=$(pwd)/include/mipp
+      run: cmake -S $GITHUB_WORKSPACE -B build_sse2 -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DENABLE_PFDSP=ON -DTARGET_CXX_ARCH=SSE2 -DTARGET_C_ARCH=SSE2 -DMIPP_INCLUDE_DIRS=$(pwd)/include/mipp
     - name: Build SSE2
       shell: bash
       working-directory: ${{runner.workspace}}
@@ -162,7 +162,7 @@ jobs:
       # access regardless of the host operating system
       shell: bash
       working-directory: ${{runner.workspace}}
-      run: cmake -S $GITHUB_WORKSPACE -B build_avx -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DENABLE_PFDSP=ON -DTARGET_CXX_ARCH=AVX -DTARGET_C_ARCH=AVX -DMIPP_INCLUDE_DIRS=$(pwd)/include/mipp
+      run: cmake -S $GITHUB_WORKSPACE -B build_avx -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DENABLE_PFDSP=ON -DTARGET_CXX_ARCH=AVX -DTARGET_C_ARCH=AVX -DMIPP_INCLUDE_DIRS=$(pwd)/include/mipp
     - name: Build AVX
       working-directory: ${{runner.workspace}}
       shell: bash
@@ -174,7 +174,7 @@ jobs:
       # access regardless of the host operating system
       shell: bash
       working-directory: ${{runner.workspace}}
-      run: cmake -S $GITHUB_WORKSPACE -B build_avx2 -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DENABLE_PFDSP=ON -DTARGET_CXX_ARCH=AVX2 -DTARGET_C_ARCH=AVX2 -DMIPP_INCLUDE_DIRS=$(pwd)/include/mipp
+      run: cmake -S $GITHUB_WORKSPACE -B build_avx2 -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DENABLE_PFDSP=ON -DTARGET_CXX_ARCH=AVX2 -DTARGET_C_ARCH=AVX2 -DMIPP_INCLUDE_DIRS=$(pwd)/include/mipp
     - name: Build AVX2
       working-directory: ${{runner.workspace}}
       shell: bash
@@ -207,7 +207,7 @@ jobs:
         msystem: MINGW64
         install: gcc cmake make
     - name: Configure cmake
-      run: CC=gcc cmake -DMINGW=ON -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native -S . -B build_mgw64
+      run: CC=gcc cmake -DMINGW=ON -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native -S . -B build_mgw64
     - name: Build
       run: cmake --build build_mgw64
 
@@ -227,15 +227,15 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: cmake_make_simd_float_double
-      run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
+      run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
     - name: cmake_make_simd_float
-      run: mkdir build_simd_float && cmake -S . -B build_simd_float -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_TYPE_DOUBLE=OFF -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_float
+      run: mkdir build_simd_float && cmake -S . -B build_simd_float -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_DOUBLE=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_float
     - name: cmake_make_simd_double
-      run: mkdir build_simd_double && cmake -S . -B build_simd_double -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_TYPE_FLOAT=OFF -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_double
+      run: mkdir build_simd_double && cmake -S . -B build_simd_double -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_FLOAT=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_double
     - name: cmake_make_no-simd_float_double
-      run: mkdir build_no-simd_full && cmake -S . -B build_no-simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_SIMD=OFF -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_no-simd_full
+      run: mkdir build_no-simd_full && cmake -S . -B build_no-simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_no-simd_full
     - name: cmake_make_no-simd_scalar_float_double
-      run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_SIMD=OFF -DUSE_SCALAR_VECT=ON -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
+      run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=ON -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
     - name: compress
       run: tar zcvf pffft_macos-11.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
     - name: 'Upload Artifact'
@@ -261,15 +261,15 @@ jobs:
 
     - uses: actions/checkout@v2
     - name: cmake_make_simd_float_double
-      run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
+      run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
     - name: cmake_make_simd_float
-      run: mkdir build_simd_float && cmake -S . -B build_simd_float -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_TYPE_DOUBLE=OFF -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_float
+      run: mkdir build_simd_float && cmake -S . -B build_simd_float -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_DOUBLE=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_float
     - name: cmake_make_simd_double
-      run: mkdir build_simd_double && cmake -S . -B build_simd_double -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_TYPE_FLOAT=OFF -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_double
+      run: mkdir build_simd_double && cmake -S . -B build_simd_double -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_FLOAT=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_double
     - name: cmake_make_no-simd_float_double
-      run: mkdir build_no-simd_full && cmake -S . -B build_no-simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_SIMD=OFF -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_no-simd_full
+      run: mkdir build_no-simd_full && cmake -S . -B build_no-simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_no-simd_full
     - name: cmake_make_no-simd_scalar_float_double
-      run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_SIMD=OFF -DUSE_SCALAR_VECT=ON -DUSE_BENCH_GREEN=OFF -DUSE_BENCH_KISS=OFF -DUSE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
+      run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=ON -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
     - name: compress
       run: tar zcvf pffft_w_mipp_macos-11.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
     - name: 'Upload Artifact'

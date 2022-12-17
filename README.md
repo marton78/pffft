@@ -132,16 +132,16 @@ sudo apt-get install cmake-curses-gui
 ```
 
 Some of the options:
-* `USE_TYPE_FLOAT` to activate single precision 'float' (default: ON)
-* `USE_TYPE_DOUBLE` to activate 'double' precision float (default: ON)
-* `USE_SIMD` to use SIMD (SSE/AVX/NEON/ALTIVEC) CPU features? (default: ON)
+* `PFFFT_USE_TYPE_FLOAT` to activate single precision 'float' (default: ON)
+* `PFFFT_USE_TYPE_DOUBLE` to activate 'double' precision float (default: ON)
+* `PFFFT_USE_SIMD` to use SIMD (SSE/AVX/NEON/ALTIVEC) CPU features? (default: ON)
 * `DISABLE_SIMD_AVX` to disable AVX CPU features (default: OFF)
-* `USE_SIMD_NEON` to force using NEON on ARM (requires USE_SIMD) (default: OFF)
-* `USE_SCALAR_VECT` to use 4-element vector scalar operations (if no other SIMD) (default: ON)
+* `PFFFT_USE_SIMD_NEON` to force using NEON on ARM (requires PFFFT_USE_SIMD) (default: OFF)
+* `PFFFT_USE_SCALAR_VECT` to use 4-element vector scalar operations (if no other SIMD) (default: ON)
 
 Options can be passed to `cmake` at command line, e.g.
 ```
-cmake -DUSE_TYPE_FLOAT=OFF -DUSE_TYPE_DOUBLE=ON
+cmake -DPFFFT_USE_TYPE_FLOAT=OFF -DPFFFT_USE_TYPE_DOUBLE=ON
 ```
 
 My Linux distribution defaults to GCC. With installed CLANG and the bash shell, you can use it with
@@ -269,7 +269,7 @@ git submodule update --init
 
 #### Fastest Fourier Transform in the West: FFTW
 To allow comparison with FFTW [http://www.fftw.org/](http://www.fftw.org/),
-cmake option `-DUSE_BENCH_FFTW=ON` has to be used with following commands.
+cmake option `-DPFFFT_USE_BENCH_FFTW=ON` has to be used with following commands.
 The cmake option requires previous setup of following (debian/ubuntu) package:
 ```
 sudo apt-get install libfftw3-dev
@@ -301,15 +301,15 @@ You can explore all available options with `cmake-gui` or `ccmake`, see [CMake](
 Some of the options:
 * `BENCH_ID`         name the benchmark - used in filename
 * `BENCH_ARCH`       target architecture passed to compiler for code optimization
-* `USE_BENCH_FFTW`   use (system-installed) FFTW3 in fft benchmark? (default: OFF)
-* `USE_BENCH_GREEN`  use Green FFT in fft benchmark? (default: ON)
-* `USE_BENCH_KISS`   use KissFFT in fft benchmark? (default: ON)
-* `USE_BENCH_POCKET` use PocketFFT in fft benchmark? (default: ON)
-* `USE_BENCH_MKL`    use Intel MKL in fft benchmark?  (default: OFF)
+* `PFFFT_USE_BENCH_FFTW`   use (system-installed) FFTW3 in fft benchmark? (default: OFF)
+* `PFFFT_USE_BENCH_GREEN`  use Green FFT in fft benchmark? (default: ON)
+* `PFFFT_USE_BENCH_KISS`   use KissFFT in fft benchmark? (default: ON)
+* `PFFFT_USE_BENCH_POCKET` use PocketFFT in fft benchmark? (default: ON)
+* `PFFFT_USE_BENCH_MKL`    use Intel MKL in fft benchmark?  (default: OFF)
 
 These options can be passed to `cmake` at command line, e.g.
 ```
-cmake -DBENCH_ARCH=native -DUSE_BENCH_FFTW=ON -DUSE_BENCH_MKL=ON ../bench
+cmake -DBENCH_ARCH=native -DPFFFT_USE_BENCH_FFTW=ON -DPFFFT_USE_BENCH_MKL=ON ../bench
 ```
 
 The benchmarks are built and executed with
@@ -320,11 +320,11 @@ cmake --build .
 You can also specify to use a different compiler/version with the cmake step, e.g.:
 
 ```
-CC=/usr/bin/gcc-9 CXX=/usr/bin/g++-9 cmake -DBENCH_ID=gcc9 -DBENCH_ARCH=native -DUSE_BENCH_FFTW=ON -DUSE_BENCH_MKL=ON ../bench
+CC=/usr/bin/gcc-9 CXX=/usr/bin/g++-9 cmake -DBENCH_ID=gcc9 -DBENCH_ARCH=native -DPFFFT_USE_BENCH_FFTW=ON -DPFFFT_USE_BENCH_MKL=ON ../bench
 ```
 
 ```
-CC=/usr/bin/clang-11 CXX=/usr/bin/clang++-11 cmake -DBENCH_ID=clang11 -DBENCH_ARCH=native -DUSE_BENCH_FFTW=ON -DUSE_BENCH_MKL=ON ../bench
+CC=/usr/bin/clang-11 CXX=/usr/bin/clang++-11 cmake -DBENCH_ID=clang11 -DBENCH_ARCH=native -DPFFFT_USE_BENCH_FFTW=ON -DPFFFT_USE_BENCH_MKL=ON ../bench
 ```
 
 For using MSVC/Windows, the cmake command requires/needs the generator and architecture options and to be called from the VS Developer prompt:
