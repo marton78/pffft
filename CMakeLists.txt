@@ -2,12 +2,12 @@ cmake_minimum_required(VERSION 2.8)
 project(PRETTY_FAST_FFT)
 
 # smaller library size?
-option(USE_TYPE_FLOAT  "activate single precision 'float'?" ON)
-option(USE_TYPE_DOUBLE "activate 'double' precision float?" ON)
+option(PFFFT_USE_TYPE_FLOAT  "activate single precision 'float'?" ON)
+option(PFFFT_USE_TYPE_DOUBLE "activate 'double' precision float?" ON)
 
 # architecture/optimization options
-option(USE_SIMD        "use SIMD (SSE/AVX/NEON/ALTIVEC) CPU features? - " ON)
-option(USE_SCALAR_VECT "use 4-element vector scalar operations (if no other SIMD)" ON)
+option(PFFFT_USE_SIMD        "use SIMD (SSE/AVX/NEON/ALTIVEC) CPU features? - " ON)
+option(PFFFT_USE_SCALAR_VECT "use 4-element vector scalar operations (if no other SIMD)" ON)
 
 # what to install?
 option(INSTALL_PFFFT      "install pffft to CMAKE_INSTALL_PREFIX?" ON)
@@ -15,16 +15,16 @@ option(INSTALL_PFDSP      "install pfdsp to CMAKE_INSTALL_PREFIX?" OFF)
 option(INSTALL_PFFASTCONV "install pffastconv to CMAKE_INSTALL_PREFIX?" OFF)
 
 # test options
-option(USE_BENCH_FFTW   "use (system-installed) FFTW3 in fft benchmark?" OFF)
-option(USE_BENCH_GREEN  "use Green FFT in fft benchmark? - if exists in subdir" ON)
-option(USE_BENCH_KISS   "use KissFFT in fft benchmark? - if exists in subdir" ON)
-option(USE_BENCH_POCKET "use PocketFFT in fft benchmark? - if exists in subdir" ON)
-option(USE_BENCH_MKL    "use Intel MKL in fft benchmark? needs to be installed" OFF)
-option(USE_FFTPACK      "compile and use FFTPACK in fft benchmark & validation?" ON)
+option(PFFFT_USE_BENCH_FFTW   "use (system-installed) FFTW3 in fft benchmark?" OFF)
+option(PFFFT_USE_BENCH_GREEN  "use Green FFT in fft benchmark? - if exists in subdir" ON)
+option(PFFFT_USE_BENCH_KISS   "use KissFFT in fft benchmark? - if exists in subdir" ON)
+option(PFFFT_USE_BENCH_POCKET "use PocketFFT in fft benchmark? - if exists in subdir" ON)
+option(PFFFT_USE_BENCH_MKL    "use Intel MKL in fft benchmark? needs to be installed" OFF)
+option(PFFFT_USE_FFTPACK      "compile and use FFTPACK in fft benchmark & validation?" ON)
 
-option(USE_DEBUG_ASAN  "use GCC's address sanitizer?" OFF)
+option(PFFFT_USE_DEBUG_ASAN  "use GCC's address sanitizer?" OFF)
 
-option(DISABLE_LINK_WITH_M "Disables linking with m library to build with clangCL from MSVC" OFF)
+option(PFFFT_DISABLE_LINK_WITH_M "Disables linking with m library to build with clangCL from MSVC" OFF)
 
 # C90 requires the gcc extensions for function attributes like always_inline
 # C99 provides the function attributes: no gcc extensions required
@@ -40,8 +40,8 @@ set(INSTALL_TARGETS "")
 set(INSTALL_HEADERS "")
 
 
-if ( (NOT USE_TYPE_FLOAT) AND (NOT USE_TYPE_DOUBLE) )
-  message(FATAL_ERROR "activate at least one of USE_TYPE_FLOAT or USE_TYPE_DOUBLE")
+if ( (NOT PFFFT_USE_TYPE_FLOAT) AND (NOT PFFFT_USE_TYPE_DOUBLE) )
+  message(FATAL_ERROR "activate at least one of PFFFT_USE_TYPE_FLOAT or PFFFT_USE_TYPE_DOUBLE")
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
@@ -57,7 +57,7 @@ else()
 endif()
 
 
-if (USE_DEBUG_ASAN)
+if (PFFFT_USE_DEBUG_ASAN)
   set(ASANLIB "asan")
 else()
   set(ASANLIB "")
@@ -80,7 +80,7 @@ if ( CMAKE_C_COMPILER_ID MATCHES "MSVC" )
 endif()
 
 
-if (USE_BENCH_GREEN)
+if (PFFFT_USE_BENCH_GREEN)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/greenffts/CMakeLists.txt")
     message(STATUS "found subdir greenffts")
     set(PATH_GREEN "${CMAKE_CURRENT_LIST_DIR}/greenffts")
@@ -90,7 +90,7 @@ if (USE_BENCH_GREEN)
   endif()
 endif()
 
-if (USE_BENCH_KISS)
+if (PFFFT_USE_BENCH_KISS)
   # git submodule add https://github.com/hayguen/kissfft.git
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/kissfft/CMakeLists.txt")
     message(STATUS "found subdir kissfft")
@@ -101,7 +101,7 @@ if (USE_BENCH_KISS)
   endif()
 endif()
 
-if (USE_BENCH_POCKET)
+if (PFFFT_USE_BENCH_POCKET)
   # git submodule add https://github.com/hayguen/pocketfft.git
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/pocketfft/pocketfft_double.c")
     message(STATUS "found subdir pocketfft")
@@ -133,7 +133,7 @@ if ( CMAKE_C_COMPILER_ID MATCHES "MSVC" )
   )
 
 else()
-  if(DISABLE_LINK_WITH_M)
+  if(PFFFT_DISABLE_LINK_WITH_M)
   else()
     message(STATUS "INFO: detected NO MSVC: ${CMAKE_C_COMPILER_ID}: will link math lib m")
     set(MATHLIB "m")
@@ -149,7 +149,7 @@ endif()
 set( SIMD_FLOAT_HDRS simd/pf_float.h simd/pf_sse1_float.h simd/pf_altivec_float.h simd/pf_neon_float.h simd/pf_scalar_float.h )
 set( SIMD_DOUBLE_HDRS simd/pf_double.h simd/pf_avx_double.h simd/pf_scalar_double.h )
 
-if (USE_TYPE_FLOAT)
+if (PFFFT_USE_TYPE_FLOAT)
   set( FLOAT_SOURCES pffft.c pffft.h ${SIMD_FLOAT_HDRS} )
   if (INSTALL_PFFFT)
     set(INSTALL_HEADERS ${INSTALL_HEADERS} pffft.h)
@@ -159,7 +159,7 @@ else()
 endif()
 
 
-if (USE_TYPE_DOUBLE)
+if (PFFFT_USE_TYPE_DOUBLE)
   set( DOUBLE_SOURCES pffft_double.c pffft_double.h ${SIMD_DOUBLE_HDRS} )
   if (INSTALL_PFFFT)
     set(INSTALL_HEADERS ${INSTALL_HEADERS} pffft_double.h)
@@ -174,14 +174,14 @@ add_library(PFFFT STATIC ${FLOAT_SOURCES} ${DOUBLE_SOURCES} pffft_common.c pffft
 set_target_properties(PFFFT PROPERTIES OUTPUT_NAME "pffft")
 target_compile_definitions(PFFFT PRIVATE _USE_MATH_DEFINES)
 target_activate_c_compiler_warnings(PFFFT)
-if (USE_SCALAR_VECT)
+if (PFFFT_USE_SCALAR_VECT)
   target_compile_definitions(PFFFT PRIVATE PFFFT_SCALVEC_ENABLED=1)
 endif()
-if (USE_DEBUG_ASAN)
+if (PFFFT_USE_DEBUG_ASAN)
   target_compile_options(PFFFT PRIVATE "-fsanitize=address")
 endif()
 target_set_c_arch_flags(PFFFT)
-if (NOT USE_SIMD)
+if (NOT PFFFT_USE_SIMD)
   target_compile_definitions(PFFFT PRIVATE PFFFT_SIMD_DISABLE=1)
 endif()
 target_link_libraries( PFFFT ${ASANLIB} ${MATHLIB} )
@@ -195,17 +195,17 @@ endif()
 
 ######################################################
 
-if (USE_TYPE_FLOAT)
+if (PFFFT_USE_TYPE_FLOAT)
   add_library(PFDSP STATIC pf_mixer.cpp pf_mixer.h pf_cplx.h pf_carrier.cpp pf_carrier.h pf_cic.cpp pf_cic.h fmv.h )
   set_property(TARGET PFDSP PROPERTY CXX_STANDARD 11)
   set_property(TARGET PFDSP PROPERTY CXX_STANDARD_REQUIRED ON)
   set_target_properties(PFDSP PROPERTIES OUTPUT_NAME "pfdsp")
   target_compile_definitions(PFDSP PRIVATE _USE_MATH_DEFINES)
   target_activate_cxx_compiler_warnings(PFDSP)
-  if (USE_DEBUG_ASAN)
+  if (PFFFT_USE_DEBUG_ASAN)
       target_compile_options(PFDSP PRIVATE "-fsanitize=address")
   endif()
-  if (USE_SIMD)
+  if (PFFFT_USE_SIMD)
       target_set_cxx_arch_flags(PFDSP)
   else()
       target_compile_definitions(PFDSP PRIVATE PFFFT_SIMD_DISABLE=1)
@@ -222,7 +222,7 @@ endif()
 
 ######################################################
 
-if (USE_FFTPACK)
+if (PFFFT_USE_FFTPACK)
 
   # float / single precision
   add_library(FFTPACK_FLOAT STATIC fftpack.c fftpack.h)
@@ -256,13 +256,13 @@ endif()
 
 ######################################################
 
-if (USE_TYPE_FLOAT)
+if (PFFFT_USE_TYPE_FLOAT)
   # only 'float' supported in PFFASTCONV
   add_library(PFFASTCONV STATIC pffastconv.c pffastconv.h pffft.h )
   set_target_properties(PFFASTCONV PROPERTIES OUTPUT_NAME "pffastconv")
   target_compile_definitions(PFFASTCONV PRIVATE _USE_MATH_DEFINES)
   target_activate_c_compiler_warnings(PFFASTCONV)
-  if (USE_DEBUG_ASAN)
+  if (PFFFT_USE_DEBUG_ASAN)
     target_compile_options(PFFASTCONV PRIVATE "-fsanitize=address")
   endif()
   target_link_libraries( PFFASTCONV PFFFT ${ASANLIB} ${MATHLIB} )
@@ -287,7 +287,7 @@ add_custom_target(uninstall
 
 #######################################################
 
-if (USE_TYPE_FLOAT)
+if (PFFFT_USE_TYPE_FLOAT)
   add_executable( test_pffft_float  test_pffft.c )
   target_compile_definitions(test_pffft_float PRIVATE _USE_MATH_DEFINES)
   target_compile_definitions(test_pffft_float PRIVATE PFFFT_ENABLE_FLOAT)
@@ -296,7 +296,7 @@ endif()
 
 ######################################################
 
-if (USE_TYPE_DOUBLE)
+if (PFFFT_USE_TYPE_DOUBLE)
   add_executable( test_pffft_double  test_pffft.c )
   target_compile_definitions(test_pffft_double PRIVATE _USE_MATH_DEFINES)
   target_compile_definitions(test_pffft_double PRIVATE PFFFT_ENABLE_DOUBLE)
@@ -306,10 +306,10 @@ endif()
 ######################################################
 
 add_executable( test_fft_factors  test_fft_factors.c )
-if (USE_TYPE_FLOAT)
+if (PFFFT_USE_TYPE_FLOAT)
   target_compile_definitions(test_fft_factors PRIVATE PFFFT_ENABLE_FLOAT)
 endif()
-if (USE_TYPE_DOUBLE)
+if (PFFFT_USE_TYPE_DOUBLE)
   target_compile_definitions(test_fft_factors PRIVATE PFFFT_ENABLE_DOUBLE)
 endif()
 target_link_libraries(test_fft_factors PFFFT ${ASANLIB} ${MATHLIB})
@@ -318,10 +318,10 @@ target_link_libraries(test_fft_factors PFFFT ${ASANLIB} ${MATHLIB})
 
 add_executable( test_pffft_cpp test_pffft.cpp )
 target_compile_definitions(test_pffft_cpp PRIVATE _USE_MATH_DEFINES)
-if (USE_TYPE_FLOAT)
+if (PFFFT_USE_TYPE_FLOAT)
   target_compile_definitions(test_pffft_cpp PRIVATE PFFFT_ENABLE_FLOAT)
 endif()
-if (USE_TYPE_DOUBLE)
+if (PFFFT_USE_TYPE_DOUBLE)
   target_compile_definitions(test_pffft_cpp PRIVATE PFFFT_ENABLE_DOUBLE)
 endif()
 target_link_libraries( test_pffft_cpp  PFFFT ${STDCXXLIB} ${ASANLIB} )
@@ -330,10 +330,10 @@ target_link_libraries( test_pffft_cpp  PFFFT ${STDCXXLIB} ${ASANLIB} )
 
 add_executable( test_pffft_cpp_11 test_pffft.cpp )
 target_compile_definitions(test_pffft_cpp_11 PRIVATE _USE_MATH_DEFINES)
-if (USE_TYPE_FLOAT)
+if (PFFFT_USE_TYPE_FLOAT)
   target_compile_definitions(test_pffft_cpp_11 PRIVATE PFFFT_ENABLE_FLOAT)
 endif()
-if (USE_TYPE_DOUBLE)
+if (PFFFT_USE_TYPE_DOUBLE)
   target_compile_definitions(test_pffft_cpp_11 PRIVATE PFFFT_ENABLE_DOUBLE)
 endif()
 target_link_libraries( test_pffft_cpp_11  PFFFT ${STDCXXLIB} ${ASANLIB} )
@@ -343,16 +343,16 @@ set_property(TARGET test_pffft_cpp_11 PROPERTY CXX_STANDARD_REQUIRED ON)
 
 ######################################################
 
-if (USE_TYPE_FLOAT)
+if (PFFFT_USE_TYPE_FLOAT)
   add_executable(test_pffastconv   test_pffastconv.c
     ${SIMD_FLOAT_HDRS} ${SIMD_DOUBLE_HDRS}
   )
   target_compile_definitions(test_pffastconv PRIVATE _USE_MATH_DEFINES)
-  if (USE_DEBUG_ASAN)
+  if (PFFFT_USE_DEBUG_ASAN)
     target_compile_options(test_pffastconv PRIVATE "-fsanitize=address")
   endif()
   target_set_c_arch_flags(test_pffastconv)
-  if (NOT USE_SIMD)
+  if (NOT PFFFT_USE_SIMD)
     target_compile_definitions(test_pffastconv PRIVATE PFFFT_SIMD_DISABLE=1)
   endif()
   target_link_libraries( test_pffastconv  PFFASTCONV ${ASANLIB} ${MATHLIB} )
@@ -361,86 +361,86 @@ endif()
 
 ######################################################
 
-if (USE_TYPE_FLOAT)
+if (PFFFT_USE_TYPE_FLOAT)
   add_executable(bench_pffft_float   bench_pffft.c pffft.h)
   target_compile_definitions(bench_pffft_float PRIVATE _USE_MATH_DEFINES)
   target_compile_definitions(bench_pffft_float PRIVATE PFFFT_ENABLE_FLOAT)
-  if (USE_DEBUG_ASAN)
+  if (PFFFT_USE_DEBUG_ASAN)
     target_compile_options(bench_pffft_float PRIVATE "-fsanitize=address")
   endif()
 
   target_link_libraries( bench_pffft_float  PFFFT ${ASANLIB} )
 
-  if (USE_FFTPACK)
+  if (PFFFT_USE_FFTPACK)
     target_compile_definitions(bench_pffft_float PRIVATE HAVE_FFTPACK=1)
     target_link_libraries(bench_pffft_float  FFTPACK_FLOAT)
   endif()
 
-  if (USE_BENCH_FFTW)
+  if (PFFFT_USE_BENCH_FFTW)
     target_compile_definitions(bench_pffft_float PRIVATE HAVE_FFTW=1)
     target_link_libraries(bench_pffft_float  fftw3f)
   endif()
 
-  if (PATH_GREEN AND USE_BENCH_GREEN)
+  if (PATH_GREEN AND PFFFT_USE_BENCH_GREEN)
     target_compile_definitions(bench_pffft_float PRIVATE HAVE_GREEN_FFTS=1)
     target_link_libraries(bench_pffft_float  GreenFFT)
   endif()
 
-  if (PATH_KISS AND USE_BENCH_KISS)
+  if (PATH_KISS AND PFFFT_USE_BENCH_KISS)
     target_compile_definitions(bench_pffft_float PRIVATE HAVE_KISS_FFT=1)
     target_link_libraries(bench_pffft_float  KissFFT)
   endif()
 
-  if (PATH_POCKET AND USE_BENCH_POCKET)
+  if (PATH_POCKET AND PFFFT_USE_BENCH_POCKET)
     target_compile_definitions(bench_pffft_float PRIVATE HAVE_POCKET_FFT=1)
     target_link_libraries(bench_pffft_float  PocketFFT)
   endif()
 
-  if (USE_BENCH_MKL)
+  if (PFFFT_USE_BENCH_MKL)
     if ( (CMAKE_SYSTEM_PROCESSOR STREQUAL "i686") OR (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64") )
       # has chances to work
     else()
       # other PROCESSORs could be "ppc", "ppc64",  "arm", "aarch64", "armv7l" - or something else?!
       message(WARNING "using Intel MKL on '${CMAKE_SYSTEM_PROCESSOR}' might fail.")
     endif()
-    message(STATUS "In case compiling/linking with Intel MKL fails, check CMakeLists.txt or deactivate USE_BENCH_MKL")
+    message(STATUS "In case compiling/linking with Intel MKL fails, check CMakeLists.txt or deactivate PFFFT_USE_BENCH_MKL")
     target_compile_definitions(bench_pffft_float PRIVATE HAVE_MKL=1)
     target_link_libraries(bench_pffft_float  mkl_intel_lp64 mkl_sequential -lmkl_core)
   endif()
 endif()
 
-if (USE_TYPE_DOUBLE)
+if (PFFFT_USE_TYPE_DOUBLE)
   add_executable(bench_pffft_double   bench_pffft.c pffft.h)
   target_compile_definitions(bench_pffft_double PRIVATE _USE_MATH_DEFINES)
   target_compile_definitions(bench_pffft_double PRIVATE PFFFT_ENABLE_DOUBLE)
-  if (USE_DEBUG_ASAN)
+  if (PFFFT_USE_DEBUG_ASAN)
     target_compile_options(bench_pffft_double PRIVATE "-fsanitize=address")
   endif()
   target_link_libraries( bench_pffft_double  PFFFT ${ASANLIB} )
 
-  if (USE_FFTPACK)
+  if (PFFFT_USE_FFTPACK)
     target_compile_definitions(bench_pffft_double PRIVATE HAVE_FFTPACK=1)
     target_link_libraries(bench_pffft_double  FFTPACK_DOUBLE)
   endif()
 
-  if (USE_BENCH_FFTW)
+  if (PFFFT_USE_BENCH_FFTW)
     target_compile_definitions(bench_pffft_double PRIVATE HAVE_FFTW=1)
     target_link_libraries(bench_pffft_double  fftw3)
   endif()
 
-  if (PATH_POCKET AND USE_BENCH_POCKET)
+  if (PATH_POCKET AND PFFFT_USE_BENCH_POCKET)
     target_compile_definitions(bench_pffft_double PRIVATE HAVE_POCKET_FFT=1)
     target_link_libraries(bench_pffft_double  PocketFFT)
   endif()
 
-  if (USE_BENCH_MKL)
+  if (PFFFT_USE_BENCH_MKL)
     if ( (CMAKE_SYSTEM_PROCESSOR STREQUAL "i686") OR (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64") )
       # has chances to work
     else()
       # other PROCESSORs could be "ppc", "ppc64",  "arm", "aarch64", "armv7l" - or something else?!
       message(WARNING "using Intel MKL on '${CMAKE_SYSTEM_PROCESSOR}' might fail.")
     endif()
-    message(STATUS "In case compiling/linking with Intel MKL fails, check CMakeLists.txt or deactivate USE_BENCH_MKL")
+    message(STATUS "In case compiling/linking with Intel MKL fails, check CMakeLists.txt or deactivate PFFFT_USE_BENCH_MKL")
     target_compile_definitions(bench_pffft_double PRIVATE HAVE_MKL=1)
     target_link_libraries(bench_pffft_double  mkl_intel_lp64 mkl_sequential -lmkl_core)
   endif()
@@ -448,13 +448,13 @@ endif()
 
 ######################################################
 
-if (USE_TYPE_FLOAT)
+if (PFFFT_USE_TYPE_FLOAT)
 
     add_executable(bench_pf_mixer_float   bench_mixers.cpp papi_perf_counter.h)
     target_compile_definitions(bench_pf_mixer_float PRIVATE _USE_MATH_DEFINES)
     target_compile_definitions(bench_pf_mixer_float PRIVATE PFFFT_ENABLE_FLOAT)
     target_link_libraries( bench_pf_mixer_float  ${ASANLIB} )
-    if (USE_DEBUG_ASAN)
+    if (PFFFT_USE_DEBUG_ASAN)
       target_compile_options(bench_pf_mixer_float PRIVATE "-fsanitize=address")
     endif()
     if (PAPI_FOUND)
@@ -550,7 +550,7 @@ if (USE_TYPE_FLOAT)
       message(STATUS "added library pf_conv_arch_${arch_opt}  with CONV_ARCH_POST=${arch_opt}")
   endforeach()
 
-  if (USE_DEBUG_ASAN)
+  if (PFFFT_USE_DEBUG_ASAN)
       foreach (arch_opt ${PF_CONV_ARCHES})
           target_compile_options(pf_conv_arch_${arch_opt} PRIVATE "-fsanitize=address")
           target_link_libraries( pf_conv_arch_${arch_opt} ${ASANLIB})
@@ -580,7 +580,7 @@ if (USE_TYPE_FLOAT)
   set_property(TARGET bench_pf_conv_float PROPERTY CXX_STANDARD_REQUIRED ON)
   target_compile_definitions(bench_pf_conv_float PRIVATE _USE_MATH_DEFINES)
   target_compile_definitions(bench_pf_conv_float PRIVATE PFFFT_ENABLE_FLOAT)
-  if (USE_DEBUG_ASAN)
+  if (PFFFT_USE_DEBUG_ASAN)
       target_compile_options(bench_pf_conv_float PRIVATE "-fsanitize=address")
   endif()
   target_link_libraries( bench_pf_conv_float  ${ASANLIB} )
@@ -609,7 +609,7 @@ add_test(NAME test_fft_factors
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-if (USE_FFTPACK)
+if (PFFFT_USE_FFTPACK)
   add_test(NAME test_fftpack_float
     COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_fftpack_float"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
@@ -622,7 +622,7 @@ if (USE_FFTPACK)
 endif()
 
 
-if (USE_TYPE_FLOAT)
+if (PFFFT_USE_TYPE_FLOAT)
 
   add_test(NAME bench_pffft_pow2
     COMMAND "${CMAKE_CURRENT_BINARY_DIR}/bench_pffft_float" "--max-len" "128" "--quick"
