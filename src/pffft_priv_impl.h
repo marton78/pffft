@@ -1153,7 +1153,7 @@ void FUNC_ZREORDER(SETUP_STRUCT *setup, const float *in, float *out, pffft_direc
   v4sf *vout = (v4sf*)out;
   assert(in != out);
   if (setup->transform == PFFFT_REAL) {
-    int k, dk = N/32;
+    int dk = N/32;
     if (direction == PFFFT_FORWARD) {
       for (k=0; k < dk; ++k) {
         INTERLEAVE2(vin[k*8 + 0], vin[k*8 + 1], vout[2*(0*dk + k) + 0], vout[2*(0*dk + k) + 1]);
