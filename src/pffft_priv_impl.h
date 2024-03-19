@@ -1070,27 +1070,19 @@ SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
   s->e = (float*)s->data;
   s->twiddle = (float*)(s->data + (2*s->Ncvec*(SIMD_SZ-1))/SIMD_SZ);  
 
-  if (transform == PFFFT_REAL) {
-    for (k=0; k < s->Ncvec; ++k) {
-      int i = k/SIMD_SZ;
-      int j = k%SIMD_SZ;
-      for (m=0; m < SIMD_SZ-1; ++m) {
-        float A = -2*(float)M_PI*(m+1)*k / N;
-        s->e[(2*(i*3 + m) + 0) * SIMD_SZ + j] = FUNC_COS(A);
-        s->e[(2*(i*3 + m) + 1) * SIMD_SZ + j] = FUNC_SIN(A);
-      }
+  for (k=0; k < s->Ncvec; ++k) {
+    int i = k/SIMD_SZ;
+    int j = k%SIMD_SZ;
+    for (m=0; m < SIMD_SZ-1; ++m) {
+      float A = -2*(float)M_PI*(m+1)*k / N;
+      s->e[(2*(i*3 + m) + 0) * SIMD_SZ + j] = FUNC_COS(A);
+      s->e[(2*(i*3 + m) + 1) * SIMD_SZ + j] = FUNC_SIN(A);
     }
+  }
+
+  if (transform == PFFFT_REAL) {
     rffti1_ps(N/SIMD_SZ, s->twiddle, s->ifac);
   } else {
-    for (k=0; k < s->Ncvec; ++k) {
-      int i = k/SIMD_SZ;
-      int j = k%SIMD_SZ;
-      for (m=0; m < SIMD_SZ-1; ++m) {
-        float A = -2*(float)M_PI*(m+1)*k / N;
-        s->e[(2*(i*3 + m) + 0)*SIMD_SZ + j] = FUNC_COS(A);
-        s->e[(2*(i*3 + m) + 1)*SIMD_SZ + j] = FUNC_SIN(A);
-      }
-    }
     cffti1_ps(N/SIMD_SZ, s->twiddle, s->ifac);
   }
 
