@@ -36,7 +36,8 @@
 /*
    Altivec support macros
 */
-#if !defined(PFFFT_SIMD_DISABLE) && (defined(__ppc__) || defined(__ppc64__) || defined(__powerpc__) || defined(__powerpc64__))
+#if !defined(PFFFT_SIMD_DISABLE) && (defined(__ppc__) || defined(__ppc64__) || defined(__powerpc__) || defined(__powerpc64__)) \
+    && (defined(__VEC__) || defined(__ALTIVEC__))
 #include <altivec.h>
 #pragma message( __FILE__ ": ALTIVEC float macros are defined" )
 typedef vector float v4sf;
