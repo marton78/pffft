@@ -896,6 +896,7 @@ static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *w
   return in; /* this is in fact the output .. */
 }
 
+#define IFAC_MAX_SIZE 25 /* max number of integer factors for the decomposition, +2 */
 static int decompose(int n, int *ifac, const int *ntryh) {
   int nl = n, nf = 0, i, j = 0;
   for (j=0; ntryh[j]; ++j) {
@@ -904,6 +905,7 @@ static int decompose(int n, int *ifac, const int *ntryh) {
       int nq = nl / ntry;
       int nr = nl - ntry * nq;
       if (nr == 0) {
+        assert(2 + nf < IFAC_MAX_SIZE);
         ifac[2+nf++] = ntry;
         nl = nq;
         if (ntry == 2 && nf != 1) {
@@ -1045,7 +1047,8 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
 struct SETUP_STRUCT {
   int     N;
   int     Ncvec;  /* nb of complex simd vectors (N/4 if PFFFT_COMPLEX, N/8 if PFFFT_REAL) */
-  int ifac[15];
+  /* hold the decomposition into small integers of N */
+  int ifac[IFAC_MAX_SIZE]; /* N, number of factors, factors (admitted values: 2, 3, 4 or 5) */
   pffft_transform_t transform;
   v4sf *data;     /* allocated room for twiddle coefs */
   float *e;       /* points into 'data', N/4*3 elements */
@@ -1055,7 +1058,16 @@ struct SETUP_STRUCT {
 SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
   SETUP_STRUCT *s = 0;
   int k, m;
-  /* unfortunately, the fft size must be a multiple of 16 for complex FFTs 
+  /* validate N for negative values or potential int overflow */
+  if (N < 0) {
+    return s;
+  }
+  if (N > (1<<26)) {
+    /* higher values of N will make you enter in the integer overflow world... */
+    assert(0);
+    return s;
+  }
+  /* unfortunately, the fft size must be a multiple of 16 for complex FFTs
      and 32 for real FFTs -- a lot of stuff would need to be rewritten to
      handle other cases (or maybe just switch to a scalar fft, I don't know..) */
   if (transform == PFFFT_REAL)    { if ((N%(2*SIMD_SZ*SIMD_SZ)) || N<=0) return s; }
