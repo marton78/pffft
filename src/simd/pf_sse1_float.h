@@ -36,7 +36,8 @@
 /*
   SSE1 support macros
 */
-#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && (defined(__x86_64__) || defined(__SSE__) || defined(_M_X64) || \
+/* we test _M_ARM64EC before _M_X64 because when _M_ARM64EC is defined, the microsoft compiler also defines _M_X64 */
+#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && !defined(_M_ARM64EC) && (defined(__x86_64__) || defined(__SSE__) || defined(_M_X64) || \
     (defined(_M_IX86_FP) && _M_IX86_FP >= 1))
 #pragma message( __FILE__ ": SSE1 float macros are defined" )
 
