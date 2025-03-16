@@ -69,7 +69,7 @@
 #endif
 
 
-int FUNC_SIMD_SIZE() { return SIMD_SZ; }
+int FUNC_SIMD_SIZE(void) { return SIMD_SZ; }
 
 int FUNC_MIN_FFT_SIZE(pffft_transform_t transform) {
   /* unfortunately, the fft size must be a multiple of 16 for complex FFTs
@@ -109,7 +109,7 @@ int FUNC_NEAREST_SIZE(int N, pffft_transform_t cplx, int higher) {
       return N;
 }
 
-const char * FUNC_SIMD_ARCH() { return VARCH; }
+const char * FUNC_SIMD_ARCH(void) { return VARCH; }
 
 
 /*
@@ -1819,7 +1819,7 @@ void FUNC_TRANSFORM_ORDERED(SETUP_STRUCT *setup, const float *input, float *outp
 #define assertv4(v,f0,f1,f2,f3) assert(v.f[0] == (f0) && v.f[1] == (f1) && v.f[2] == (f2) && v.f[3] == (f3))
 
 /* detect bugs with the vector support macros */
-void FUNC_VALIDATE_SIMD_A() {
+void FUNC_VALIDATE_SIMD_A(void) {
   float f[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
   v4sf_union a0, a1, a2, a3, t, u; 
   memcpy(a0.f, f, 4*sizeof(float));

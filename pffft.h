@@ -194,10 +194,10 @@ extern "C" {
   void pffft_zconvolve_no_accu(PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
 
   /* return 4 or 1 wether support SSE/NEON/Altivec instructions was enabled when building pffft.c */
-  int pffft_simd_size();
+  int pffft_simd_size(void);
 
   /* return string identifier of used architecture (SSE/NEON/Altivec/..) */
-  const char * pffft_simd_arch();
+  const char * pffft_simd_arch(void);
 
 
   /* following functions are identical to the pffftd_ functions */
