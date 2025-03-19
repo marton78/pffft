@@ -29,7 +29,7 @@ jobs:
     - name: cmake install MIPP headers
       run: cmake --build MIPP_build --target install && ls -alh $HOME/.local/ && ls -alh $HOME/.local/include/
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: cmake_make_simd_float_double
       run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
     - name: cmake_make_simd_float
@@ -43,7 +43,7 @@ jobs:
     - name: compress
       run: tar zcvf pffft_w_mipp_ubuntu-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
     - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: pffft_ubuntu_builds
         path: pffft_w_mipp_ubuntu-amd64.tar.gz
@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: cmake_make_simd_float_double
       run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
     - name: cmake_make_simd_float
@@ -66,7 +66,7 @@ jobs:
     - name: compress
       run: tar zcvf pffft_ubuntu-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
     - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: pffft_ubuntu_builds
         path: pffft_ubuntu-amd64.tar.gz
@@ -90,7 +90,7 @@ jobs:
       working-directory: ${{runner.workspace}}
       run: cmake --build MIPP_build --target install
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: build_w32_no-simd
       working-directory: ${{runner.workspace}}
       run: cd $GITHUB_WORKSPACE && bash ./cross_build_mingw32.sh no-simd -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF
@@ -108,7 +108,7 @@ jobs:
     - name: compress
       run: tar zcvf pffft_cross-build-windows-from-linux-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt  build_w32_no-simd build_w32_simd_full build_w64_no-simd build_w64_simd_full
     - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: pffft_windows_from_cross_builds
         path: pffft_cross-build-windows-from-linux-amd64.tar.gz
@@ -135,7 +135,7 @@ jobs:
       working-directory: ${{runner.workspace}}
       run: cmake --build MIPP_build --target install
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Configure CMake No-SIMD
       shell: bash
@@ -185,7 +185,7 @@ jobs:
       working-directory: ${{runner.workspace}}
       run: tar zcvf pffft_windows-msvc-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt  build_no-simd build_sse2 build_avx build_avx2
     - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: pffft_windows_msvc_builds
         path: ${{runner.workspace}}/pffft_windows-msvc-amd64.tar.gz
@@ -201,7 +201,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - uses: msys2/setup-msys2@v2
       with:
         msystem: MINGW64
@@ -214,7 +214,7 @@ jobs:
     - name: compress
       run: tar zcvf pffft_windows-mingw-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt  build_mgw64
     - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: pffft_windows_mingw_builds
         path: pffft_windows-mingw-amd64.tar.gz
@@ -225,7 +225,7 @@ jobs:
     runs-on: macos-11
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: cmake_make_simd_float_double
       run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
     - name: cmake_make_simd_float
@@ -239,7 +239,7 @@ jobs:
     - name: compress
       run: tar zcvf pffft_macos-11.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
     - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: pffft_macos_builds
         path: pffft_macos-11.tar.gz
@@ -259,7 +259,7 @@ jobs:
     - name: cmake install MIPP headers
       run: cmake --build MIPP_build --target install && ls -alh $HOME/.local/ && ls -alh $HOME/.local/include/
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: cmake_make_simd_float_double
       run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
     - name: cmake_make_simd_float
@@ -273,7 +273,7 @@ jobs:
     - name: compress
       run: tar zcvf pffft_w_mipp_macos-11.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
     - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: pffft_macos_builds
         path: pffft_w_mipp_macos-11.tar.gz
