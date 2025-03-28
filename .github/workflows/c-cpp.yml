@@ -20,7 +20,7 @@ jobs:
 
     steps:
     - name: check out MIPP
-      uses: actions/checkout@master
+      uses: actions/checkout@v4
       with:
           repository: hayguen/MIPP
           path: ./MIPP
@@ -45,7 +45,7 @@ jobs:
     - name: 'Upload Artifact'
       uses: actions/upload-artifact@v4
       with:
-        name: pffft_ubuntu_builds
+        name: pffft_w_mipp_ubuntu_builds
         path: pffft_w_mipp_ubuntu-amd64.tar.gz
 
   build_ubuntu-amd64:
@@ -68,7 +68,7 @@ jobs:
     - name: 'Upload Artifact'
       uses: actions/upload-artifact@v4
       with:
-        name: pffft_ubuntu_builds
+        name: pffft_ubuntu-amd64
         path: pffft_ubuntu-amd64.tar.gz
 
   cross_build_win_from_linux:
@@ -110,7 +110,7 @@ jobs:
     - name: 'Upload Artifact'
       uses: actions/upload-artifact@v4
       with:
-        name: pffft_windows_from_cross_builds
+        name: pffft_cross-build-windows-from-linux-amd64
         path: pffft_cross-build-windows-from-linux-amd64.tar.gz
 
 
@@ -187,8 +187,8 @@ jobs:
     - name: 'Upload Artifact'
       uses: actions/upload-artifact@v4
       with:
-        name: pffft_windows_msvc_builds
-        path: ${{runner.workspace}}/pffft_windows-msvc-amd64.tar.gz
+        name: pffft_windows-msvc-amd64
+        path: pffft_windows-msvc-amd64.tar.gz
 
 
   build_win_mingw:
@@ -216,13 +216,13 @@ jobs:
     - name: 'Upload Artifact'
       uses: actions/upload-artifact@v4
       with:
-        name: pffft_windows_mingw_builds
+        name: pffft_windows_mingw-amd64
         path: pffft_windows-mingw-amd64.tar.gz
 
 
-  build_macos11:
+  build_macos14:
     # copied from build_ubuntu-amd64 with minor renaming
-    runs-on: macos-11
+    runs-on: macos-14
 
     steps:
     - uses: actions/checkout@v4
@@ -237,16 +237,16 @@ jobs:
     - name: cmake_make_no-simd_scalar_float_double
       run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=ON -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
     - name: compress
-      run: tar zcvf pffft_macos-11.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
+      run: tar zcvf pffft_macos-14.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
     - name: 'Upload Artifact'
       uses: actions/upload-artifact@v4
       with:
-        name: pffft_macos_builds
-        path: pffft_macos-11.tar.gz
+        name: pffft_macos-14
+        path: pffft_macos-14.tar.gz
 
-  build_w_mipp_macos11:
+  build_w_mipp_macos14:
     # copied from build_w_mipp_ubuntu-amd64 with minor renaming
-    runs-on: macos-11
+    runs-on: macos-14
 
     steps:
     - name: check out MIPP
@@ -271,9 +271,9 @@ jobs:
     - name: cmake_make_no-simd_scalar_float_double
       run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=ON -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
     - name: compress
-      run: tar zcvf pffft_w_mipp_macos-11.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
+      run: tar zcvf pffft_w_mipp_macos-14.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
     - name: 'Upload Artifact'
       uses: actions/upload-artifact@v4
       with:
-        name: pffft_macos_builds
-        path: pffft_w_mipp_macos-11.tar.gz
+        name: pffft_w_mipp_macos-14
+        path: pffft_w_mipp_macos-14.tar.gz
