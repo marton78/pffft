@@ -2670,7 +2670,7 @@ int main(void)
   f77complex cx[200], cy[200];
   real xh[200];
   integer nz, nm1, np1, ns2;
-  real arg, tfn;
+  real arg;
   real sum, arg1, arg2;
   real sum1, sum2, dcfb;
   integer modn;
@@ -2740,7 +2740,6 @@ int main(void)
     n = nd[nz - 1];
     modn = n % 2;
     fn = (real) n;
-    tfn = fn + fn;
     np1 = n + 1;
     nm1 = n - 1;
     for (j = 1; j <= np1; ++j) {
