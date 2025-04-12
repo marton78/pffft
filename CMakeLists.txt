@@ -505,9 +505,9 @@ if (PFFFT_USE_TYPE_FLOAT)
         message(WARNING "unknown compiler ${CMAKE_CXX_COMPILER_ID} on CMAKE_SYSTEM_PROCESSOR ${CMAKE_SYSTEM_PROCESSOR}: can't do architecture specific compilation")
     endif()
 
-  elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+  elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
 
-      if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+      if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
           set(PF_CONV_ARCHES "armv8a")
           set(PF_CONV_OPT_armv8a   "armv8-a")  # emulate a map for arch
 
