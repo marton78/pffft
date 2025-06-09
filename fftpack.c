@@ -84,6 +84,10 @@ static double dmax(double a, double b) { return a < b ? b : a; }
   #define M_SQRT2 1.41421356237309504880  /* sqrt(2) */
 #endif
 
+#ifndef M_SQRT8
+  #define M_SQRT8 2.82842712474619009760  /* sqrt(8) */
+#endif
+
 
 /* translated by f2c (version 20061008), and slightly edited */
 
@@ -2303,7 +2307,7 @@ void cosqb(integer n, real *x, real *wsave)
     x[1] *= 4.f;
   } else if (n == 2) {
     x1 = (x[1] + x[2]) * 4.f;
-    x[2] = 2 * M_SQRT2 * (x[1] - x[2]);
+    x[2] = M_SQRT8 * (x[1] - x[2]);
     x[1] = x1;
   } else {
     cosqb1(n, &x[1], &wsave[1], &wsave[n + 1]);
