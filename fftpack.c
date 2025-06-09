@@ -856,10 +856,6 @@ static void radb3(integer ido, integer l1, const real *cc, real *ch,
 static void radb4(integer ido, integer l1, const real *cc, real *ch, 
                   const real *wa1, const real *wa2, const real *wa3)
 {
-  /* Initialized data */
-
-  static const real sqrt2 = 1.414213562373095f;
-
   /* System generated locals */
   integer cc_offset, ch_offset;
 
@@ -930,9 +926,9 @@ static void radb4(integer ido, integer l1, const real *cc, real *ch,
     tr1 = cc_ref(ido, 1, k) - cc_ref(ido, 3, k);
     tr2 = cc_ref(ido, 1, k) + cc_ref(ido, 3, k);
     ch_ref(ido, k, 1) = tr2 + tr2;
-    ch_ref(ido, k, 2) = sqrt2 * (tr1 - ti1);
+    ch_ref(ido, k, 2) = M_SQRT2 * (tr1 - ti1);
     ch_ref(ido, k, 3) = ti2 + ti2;
-    ch_ref(ido, k, 4) = -sqrt2 * (tr1 + ti1);
+    ch_ref(ido, k, 4) = -M_SQRT2 * (tr1 + ti1);
   }
 } /* radb4 */
 
@@ -2296,8 +2292,6 @@ static void cosqb1(integer n, real *x, real *w, real *xh)
 
 void cosqb(integer n, real *x, real *wsave)
 {
-  static const real tsqrt2 = 2.82842712474619f;
-
   /* Local variables */
   real x1;
 
@@ -2309,7 +2303,7 @@ void cosqb(integer n, real *x, real *wsave)
     x[1] *= 4.f;
   } else if (n == 2) {
     x1 = (x[1] + x[2]) * 4.f;
-    x[2] = tsqrt2 * (x[1] - x[2]);
+    x[2] = 2 * M_SQRT2 * (x[1] - x[2]);
     x[1] = x1;
   } else {
     cosqb1(n, &x[1], &wsave[1], &wsave[n + 1]);
@@ -2358,8 +2352,6 @@ static void cosqf1(integer n, real *x, real *w, real *xh)
 
 void cosqf(integer n, real *x, real *wsave)
 {
-  static const real sqrt2 = 1.4142135623731f;
-
   /* Local variables */
   real tsqx;
 
@@ -2368,7 +2360,7 @@ void cosqf(integer n, real *x, real *wsave)
   --x;
 
   if (n == 2) {
-    tsqx = sqrt2 * x[2];
+    tsqx = M_SQRT2 * x[2];
     x[2] = x[1] - tsqx;
     x[1] += tsqx;
   } else if (n > 2) {
@@ -2675,7 +2667,6 @@ int main(void)
   real sum1, sum2, dcfb;
   integer modn;
   real rftb, rftf;
-  real sqrt2;
   real rftfb;
   real costt, sintt, dcfftb, dcfftf, cosqfb, costfb;
   real sinqfb;
@@ -2734,7 +2725,6 @@ int main(void)
   /*     19.  CFFTB     UNNORMALIZED INVERSE OF CFFTF */
 
 
-  sqrt2 = sqrt(2.f);
   int all_ok = 1;
   for (nz = 1; nz <= (int)(sizeof nd/sizeof nd[0]); ++nz) {
     n = nd[nz - 1];
@@ -2743,7 +2733,7 @@ int main(void)
     np1 = n + 1;
     nm1 = n - 1;
     for (j = 1; j <= np1; ++j) {
-      x[j - 1] = sin((real) j * sqrt2);
+      x[j - 1] = sin((real) j * M_SQRT2);
       y[j - 1] = x[j - 1];
       xh[j - 1] = x[j - 1];
     }
@@ -3007,8 +2997,8 @@ int main(void)
     /*     TEST  CFFTI,CFFTF,CFFTB */
 
     for (i = 1; i <= n; ++i) {
-      r1 = FFTPACK_COS(sqrt2 * (real) i);
-      r2 = FFTPACK_SIN(sqrt2 * (real) (i * i));
+      r1 = FFTPACK_COS(M_SQRT2 * (real) i);
+      r2 = FFTPACK_SIN(M_SQRT2 * (real) (i * i));
       q1.r = r1, q1.i = r2;
       cx[i-1].r = q1.r, cx[i-1].i = q1.i;
     }
