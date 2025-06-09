@@ -72,7 +72,7 @@ jobs:
         path: pffft_ubuntu-amd64.tar.gz
 
   cross_build_win_from_linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - name: prerequisites
