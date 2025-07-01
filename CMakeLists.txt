@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.10)
 project(PRETTY_FAST_FFT)
 
+if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    set(PFFFT_TOPLEVEL_PROJECT ON)
+else ()
+    set(PFFFT_TOPLEVEL_PROJECT OFF) # pffft is build as a dependency with add_subdirectory or fetchContent
+endif()
+
 # smaller library size?
 option(PFFFT_USE_TYPE_FLOAT  "activate single precision 'float'?" ON)
 option(PFFFT_USE_TYPE_DOUBLE "activate 'double' precision float?" ON)
@@ -15,12 +21,15 @@ option(INSTALL_PFDSP      "install pfdsp to CMAKE_INSTALL_PREFIX?" OFF)
 option(INSTALL_PFFASTCONV "install pffastconv to CMAKE_INSTALL_PREFIX?" OFF)
 
 # test options
-option(PFFFT_USE_BENCH_FFTW   "use (system-installed) FFTW3 in fft benchmark?" OFF)
-option(PFFFT_USE_BENCH_GREEN  "use Green FFT in fft benchmark? - if exists in subdir" ON)
-option(PFFFT_USE_BENCH_KISS   "use KissFFT in fft benchmark? - if exists in subdir" ON)
-option(PFFFT_USE_BENCH_POCKET "use PocketFFT in fft benchmark? - if exists in subdir" ON)
-option(PFFFT_USE_BENCH_MKL    "use Intel MKL in fft benchmark? needs to be installed" OFF)
-option(PFFFT_USE_FFTPACK      "compile and use FFTPACK in fft benchmark & validation?" ON)
+option(PFFFT_ENABLE_TESTING    "enables unit-tests for pffft" ${PFFFT_TOPLEVEL_PROJECT})
+option(PFFFT_ENABLE_BENCHMARKS "enables benchmarks for pffft" ${PFFFT_TOPLEVEL_PROJECT})
+option(PFFFT_ENABLE_EXAMPLES   "enables examples for pffft" ${PFFFT_TOPLEVEL_PROJECT})
+option(PFFFT_USE_BENCH_FFTW    "use (system-installed) FFTW3 in fft benchmark?" OFF)
+option(PFFFT_USE_BENCH_GREEN   "use Green FFT in fft benchmark? - if exists in subdir" ON)
+option(PFFFT_USE_BENCH_KISS    "use KissFFT in fft benchmark? - if exists in subdir" ON)
+option(PFFFT_USE_BENCH_POCKET  "use PocketFFT in fft benchmark? - if exists in subdir" ON)
+option(PFFFT_USE_BENCH_MKL     "use Intel MKL in fft benchmark? needs to be installed" OFF)
+option(PFFFT_USE_FFTPACK       "compile and use FFTPACK in fft benchmark & validation?" ON)
 
 option(PFFFT_USE_DEBUG_ASAN  "use GCC's address sanitizer?" OFF)
 
@@ -80,7 +89,7 @@ if ( CMAKE_C_COMPILER_ID MATCHES "MSVC" )
 endif()
 
 
-if (PFFFT_USE_BENCH_GREEN)
+if (PFFT_ENABLE_BENCHMARKS AND PFFFT_USE_BENCH_GREEN)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/greenffts/CMakeLists.txt")
     message(STATUS "found subdir greenffts")
     set(PATH_GREEN "${CMAKE_CURRENT_LIST_DIR}/greenffts")
@@ -90,7 +99,7 @@ if (PFFFT_USE_BENCH_GREEN)
   endif()
 endif()
 
-if (PFFFT_USE_BENCH_KISS)
+if (PFFT_ENABLE_BENCHMARKS AND PFFFT_USE_BENCH_KISS)
   # git submodule add https://github.com/hayguen/kissfft.git
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/kissfft/CMakeLists.txt")
     message(STATUS "found subdir kissfft")
@@ -101,7 +110,7 @@ if (PFFFT_USE_BENCH_KISS)
   endif()
 endif()
 
-if (PFFFT_USE_BENCH_POCKET)
+if (PFFT_ENABLE_BENCHMARKS AND PFFFT_USE_BENCH_POCKET)
   # git submodule add https://github.com/hayguen/pocketfft.git
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/pocketfft/pocketfft_double.c")
     message(STATUS "found subdir pocketfft")
@@ -183,6 +192,12 @@ endif()
 target_set_c_arch_flags(PFFFT)
 if (NOT PFFFT_USE_SIMD)
   target_compile_definitions(PFFFT PRIVATE PFFFT_SIMD_DISABLE=1)
+endif()
+if (PFFFT_USE_TYPE_FLOAT)
+    target_compile_definitions(PFFFT PUBLIC PFFFT_ENABLE_FLOAT)
+endif()
+if (PFFFT_USE_TYPE_DOUBLE)
+    target_compile_definitions(PFFFT PUBLIC PFFFT_ENABLE_DOUBLE)
 endif()
 target_link_libraries( PFFFT ${ASANLIB} ${MATHLIB} )
 set_property(TARGET PFFFT APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
@@ -287,7 +302,7 @@ add_custom_target(uninstall
 
 #######################################################
 
-if (PFFFT_USE_TYPE_FLOAT)
+if (PFFT_ENABLE_TESTING AND PFFFT_USE_TYPE_FLOAT)
   add_executable( test_pffft_float  test_pffft.c )
   target_compile_definitions(test_pffft_float PRIVATE _USE_MATH_DEFINES)
   target_compile_definitions(test_pffft_float PRIVATE PFFFT_ENABLE_FLOAT)
@@ -296,75 +311,57 @@ endif()
 
 ######################################################
 
-if (PFFFT_USE_TYPE_DOUBLE)
+if (PFFT_ENABLE_TESTING AND PFFFT_USE_TYPE_DOUBLE)
   add_executable( test_pffft_double  test_pffft.c )
   target_compile_definitions(test_pffft_double PRIVATE _USE_MATH_DEFINES)
-  target_compile_definitions(test_pffft_double PRIVATE PFFFT_ENABLE_DOUBLE)
   target_link_libraries( test_pffft_double  PFFFT ${ASANLIB} )
 endif()
 
 ######################################################
 
-add_executable( test_fft_factors  test_fft_factors.c )
-if (PFFFT_USE_TYPE_FLOAT)
-  target_compile_definitions(test_fft_factors PRIVATE PFFFT_ENABLE_FLOAT)
-endif()
-if (PFFFT_USE_TYPE_DOUBLE)
-  target_compile_definitions(test_fft_factors PRIVATE PFFFT_ENABLE_DOUBLE)
-endif()
-target_link_libraries(test_fft_factors PFFFT ${ASANLIB} ${MATHLIB})
+if (PFFT_ENABLE_TESTING)
+    add_executable( test_fft_factors  test_fft_factors.c )
+    target_link_libraries(test_fft_factors PFFFT ${ASANLIB} ${MATHLIB})
 
 ######################################################
 
-add_executable( test_pffft_cpp test_pffft.cpp )
-target_compile_definitions(test_pffft_cpp PRIVATE _USE_MATH_DEFINES)
-if (PFFFT_USE_TYPE_FLOAT)
-  target_compile_definitions(test_pffft_cpp PRIVATE PFFFT_ENABLE_FLOAT)
-endif()
-if (PFFFT_USE_TYPE_DOUBLE)
-  target_compile_definitions(test_pffft_cpp PRIVATE PFFFT_ENABLE_DOUBLE)
-endif()
-target_link_libraries( test_pffft_cpp  PFFFT ${STDCXXLIB} ${ASANLIB} )
+    add_executable( test_pffft_cpp test_pffft.cpp )
+    target_compile_definitions(test_pffft_cpp PRIVATE _USE_MATH_DEFINES)
+    target_link_libraries( test_pffft_cpp  PFFFT ${STDCXXLIB} ${ASANLIB} )
 
 ######################################################
 
-add_executable( test_pffft_cpp_11 test_pffft.cpp )
-target_compile_definitions(test_pffft_cpp_11 PRIVATE _USE_MATH_DEFINES)
-if (PFFFT_USE_TYPE_FLOAT)
-  target_compile_definitions(test_pffft_cpp_11 PRIVATE PFFFT_ENABLE_FLOAT)
-endif()
-if (PFFFT_USE_TYPE_DOUBLE)
-  target_compile_definitions(test_pffft_cpp_11 PRIVATE PFFFT_ENABLE_DOUBLE)
-endif()
-target_link_libraries( test_pffft_cpp_11  PFFFT ${STDCXXLIB} ${ASANLIB} )
+    add_executable( test_pffft_cpp_11 test_pffft.cpp )
+    target_compile_definitions(test_pffft_cpp_11 PRIVATE _USE_MATH_DEFINES)
+    target_link_libraries( test_pffft_cpp_11  PFFFT ${STDCXXLIB} ${ASANLIB} )
 
-set_property(TARGET test_pffft_cpp_11 PROPERTY CXX_STANDARD 11)
-set_property(TARGET test_pffft_cpp_11 PROPERTY CXX_STANDARD_REQUIRED ON)
+    set_property(TARGET test_pffft_cpp_11 PROPERTY CXX_STANDARD 11)
+    set_property(TARGET test_pffft_cpp_11 PROPERTY CXX_STANDARD_REQUIRED ON)
 
 ######################################################
 
-if (PFFFT_USE_TYPE_FLOAT)
-  add_executable(test_pffastconv   test_pffastconv.c
-    ${SIMD_FLOAT_HDRS} ${SIMD_DOUBLE_HDRS}
-  )
-  target_compile_definitions(test_pffastconv PRIVATE _USE_MATH_DEFINES)
-  if (PFFFT_USE_DEBUG_ASAN)
-    target_compile_options(test_pffastconv PRIVATE "-fsanitize=address")
-  endif()
-  target_set_c_arch_flags(test_pffastconv)
-  if (NOT PFFFT_USE_SIMD)
-    target_compile_definitions(test_pffastconv PRIVATE PFFFT_SIMD_DISABLE=1)
-  endif()
-  target_link_libraries( test_pffastconv  PFFASTCONV ${ASANLIB} ${MATHLIB} )
+    if (PFFFT_USE_TYPE_FLOAT)
+      add_executable(test_pffastconv   test_pffastconv.c
+        ${SIMD_FLOAT_HDRS} ${SIMD_DOUBLE_HDRS}
+      )
+      target_compile_definitions(test_pffastconv PRIVATE _USE_MATH_DEFINES)
+      if (PFFFT_USE_DEBUG_ASAN)
+        target_compile_options(test_pffastconv PRIVATE "-fsanitize=address")
+      endif()
+      target_set_c_arch_flags(test_pffastconv)
+      if (NOT PFFFT_USE_SIMD)
+        target_compile_definitions(test_pffastconv PRIVATE PFFFT_SIMD_DISABLE=1)
+      endif()
+      target_link_libraries( test_pffastconv  PFFASTCONV ${ASANLIB} ${MATHLIB} )
 
+    endif()
 endif()
 
 ######################################################
 
-if (PFFFT_USE_TYPE_FLOAT)
+if (PFFFT_ENABLE_BENCHMARKS AND PFFFT_USE_TYPE_FLOAT)
   add_executable(bench_pffft_float   bench_pffft.c pffft.h)
   target_compile_definitions(bench_pffft_float PRIVATE _USE_MATH_DEFINES)
-  target_compile_definitions(bench_pffft_float PRIVATE PFFFT_ENABLE_FLOAT)
   if (PFFFT_USE_DEBUG_ASAN)
     target_compile_options(bench_pffft_float PRIVATE "-fsanitize=address")
   endif()
@@ -409,10 +406,9 @@ if (PFFFT_USE_TYPE_FLOAT)
   endif()
 endif()
 
-if (PFFFT_USE_TYPE_DOUBLE)
+if (PFFFT_ENABLE_BENCHMARKS AND PFFFT_USE_TYPE_DOUBLE)
   add_executable(bench_pffft_double   bench_pffft.c pffft.h)
   target_compile_definitions(bench_pffft_double PRIVATE _USE_MATH_DEFINES)
-  target_compile_definitions(bench_pffft_double PRIVATE PFFFT_ENABLE_DOUBLE)
   if (PFFFT_USE_DEBUG_ASAN)
     target_compile_options(bench_pffft_double PRIVATE "-fsanitize=address")
   endif()
@@ -448,7 +444,7 @@ endif()
 
 ######################################################
 
-if (PFFFT_USE_TYPE_FLOAT)
+if (PPFFFT_ENABLE_BENCHMARKS AND FFFT_USE_TYPE_FLOAT)
 
     add_executable(bench_pf_mixer_float   bench_mixers.cpp papi_perf_counter.h)
     target_compile_definitions(bench_pf_mixer_float PRIVATE _USE_MATH_DEFINES)
@@ -579,7 +575,6 @@ if (PFFFT_USE_TYPE_FLOAT)
   set_property(TARGET bench_pf_conv_float PROPERTY CXX_STANDARD 11)
   set_property(TARGET bench_pf_conv_float PROPERTY CXX_STANDARD_REQUIRED ON)
   target_compile_definitions(bench_pf_conv_float PRIVATE _USE_MATH_DEFINES)
-  target_compile_definitions(bench_pf_conv_float PRIVATE PFFFT_ENABLE_FLOAT)
   if (PFFFT_USE_DEBUG_ASAN)
       target_compile_options(bench_pf_conv_float PRIVATE "-fsanitize=address")
   endif()
@@ -597,67 +592,71 @@ endif()
 
 ######################################################
 
-add_subdirectory(examples)
+if (PFFFT_ENABLE_EXAMPLES)
+    add_subdirectory(examples)
+endif()
 
 ######################################################
 
-enable_testing()
+if (PFFFT_ENABLE_TESTING)
+
+    enable_testing()
+
+    add_test(NAME test_fft_factors
+      COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_fft_factors"
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+
+    if (PFFFT_USE_FFTPACK)
+      add_test(NAME test_fftpack_float
+        COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_fftpack_float"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      )
+
+      add_test(NAME test_fftpack_double
+        COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_fftpack_double"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      )
+    endif()
 
 
-add_test(NAME test_fft_factors
-  COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_fft_factors"
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
+    if (PFFFT_USE_TYPE_FLOAT)
 
-if (PFFFT_USE_FFTPACK)
-  add_test(NAME test_fftpack_float
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_fftpack_float"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  )
+      add_test(NAME bench_pffft_pow2
+        COMMAND "${CMAKE_CURRENT_BINARY_DIR}/bench_pffft_float" "--max-len" "128" "--quick"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      )
 
-  add_test(NAME test_fftpack_double
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_fftpack_double"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  )
+      add_test(NAME bench_pffft_non2
+        COMMAND "${CMAKE_CURRENT_BINARY_DIR}/bench_pffft_float" "--non-pow2" "--max-len" "192" "--quick"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      )
+
+      # add_test(NAME bench_plots
+      #   COMMAND bash "-c" "${CMAKE_CURRENT_SOURCE_DIR}/plots.sh"
+      #   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      # )
+
+      add_test(NAME test_pfconv_lens_symetric
+        COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-bench" "--quick" "--sym"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      )
+
+      add_test(NAME test_pfconv_lens_non_sym
+        COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-bench" "--quick"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      )
+
+      add_test(NAME bench_pfconv_symetric
+        COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-len" "--quick" "--sym"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      )
+
+      add_test(NAME bench_pfconv_non_sym
+        COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-len" "--quick"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      )
+
+    endif()
+
 endif()
-
-
-if (PFFFT_USE_TYPE_FLOAT)
-
-  add_test(NAME bench_pffft_pow2
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/bench_pffft_float" "--max-len" "128" "--quick"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  )
-
-  add_test(NAME bench_pffft_non2
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/bench_pffft_float" "--non-pow2" "--max-len" "192" "--quick"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  )
-
-  # add_test(NAME bench_plots
-  #   COMMAND bash "-c" "${CMAKE_CURRENT_SOURCE_DIR}/plots.sh"
-  #   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  # )
-
-  add_test(NAME test_pfconv_lens_symetric
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-bench" "--quick" "--sym"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  )
-
-  add_test(NAME test_pfconv_lens_non_sym
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-bench" "--quick"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  )
-
-  add_test(NAME bench_pfconv_symetric
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-len" "--quick" "--sym"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  )
-
-  add_test(NAME bench_pfconv_non_sym
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-len" "--quick"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  )
-
-endif()
-
