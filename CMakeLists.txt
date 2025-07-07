@@ -4,7 +4,7 @@ project(PRETTY_FAST_FFT)
 if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     set(PFFFT_TOPLEVEL_PROJECT ON)
 else ()
-    set(PFFFT_TOPLEVEL_PROJECT OFF) # pffft is build as a dependency with add_subdirectory or fetchContent
+    set(PFFFT_TOPLEVEL_PROJECT OFF) # pffft is built as a dependency with add_subdirectory or fetchContent
 endif()
 
 # smaller library size?
@@ -89,7 +89,7 @@ if ( CMAKE_C_COMPILER_ID MATCHES "MSVC" )
 endif()
 
 
-if (PFFT_ENABLE_BENCHMARKS AND PFFFT_USE_BENCH_GREEN)
+if (PFFFT_ENABLE_BENCHMARKS AND PFFFT_USE_BENCH_GREEN)
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/greenffts/CMakeLists.txt")
     message(STATUS "found subdir greenffts")
     set(PATH_GREEN "${CMAKE_CURRENT_LIST_DIR}/greenffts")
@@ -99,7 +99,7 @@ if (PFFT_ENABLE_BENCHMARKS AND PFFFT_USE_BENCH_GREEN)
   endif()
 endif()
 
-if (PFFT_ENABLE_BENCHMARKS AND PFFFT_USE_BENCH_KISS)
+if (PFFFT_ENABLE_BENCHMARKS AND PFFFT_USE_BENCH_KISS)
   # git submodule add https://github.com/hayguen/kissfft.git
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/kissfft/CMakeLists.txt")
     message(STATUS "found subdir kissfft")
@@ -110,7 +110,7 @@ if (PFFT_ENABLE_BENCHMARKS AND PFFFT_USE_BENCH_KISS)
   endif()
 endif()
 
-if (PFFT_ENABLE_BENCHMARKS AND PFFFT_USE_BENCH_POCKET)
+if (PFFFT_ENABLE_BENCHMARKS AND PFFFT_USE_BENCH_POCKET)
   # git submodule add https://github.com/hayguen/pocketfft.git
   if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/pocketfft/pocketfft_double.c")
     message(STATUS "found subdir pocketfft")
@@ -302,16 +302,15 @@ add_custom_target(uninstall
 
 #######################################################
 
-if (PFFT_ENABLE_TESTING AND PFFFT_USE_TYPE_FLOAT)
+if (PFFFT_ENABLE_TESTING AND PFFFT_USE_TYPE_FLOAT)
   add_executable( test_pffft_float  test_pffft.c )
   target_compile_definitions(test_pffft_float PRIVATE _USE_MATH_DEFINES)
-  target_compile_definitions(test_pffft_float PRIVATE PFFFT_ENABLE_FLOAT)
   target_link_libraries( test_pffft_float  PFFFT ${ASANLIB} )
 endif()
 
 ######################################################
 
-if (PFFT_ENABLE_TESTING AND PFFFT_USE_TYPE_DOUBLE)
+if (PFFFT_ENABLE_TESTING AND PFFFT_USE_TYPE_DOUBLE)
   add_executable( test_pffft_double  test_pffft.c )
   target_compile_definitions(test_pffft_double PRIVATE _USE_MATH_DEFINES)
   target_link_libraries( test_pffft_double  PFFFT ${ASANLIB} )
@@ -319,7 +318,7 @@ endif()
 
 ######################################################
 
-if (PFFT_ENABLE_TESTING)
+if (PFFFT_ENABLE_TESTING)
     add_executable( test_fft_factors  test_fft_factors.c )
     target_link_libraries(test_fft_factors PFFFT ${ASANLIB} ${MATHLIB})
 
