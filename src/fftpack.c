@@ -296,8 +296,8 @@ static void passb2(integer ido, integer l1, const real *cc, real *ch, const real
 
 static void passb3(integer ido, integer l1, const real *cc, real *ch, const real *wa1, const real *wa2)
 {
-  static const real taur = -.5;
-  static const real taui = .866025403784439;
+  static const real taur = (real)-.5;
+  static const real taui = (real).866025403784439;
 
   /* System generated locals */
   integer cc_offset, ch_offset;
@@ -442,10 +442,10 @@ static void passb4(integer ido, integer l1, const real *cc, real *ch,
 static void passfb5(integer ido, integer l1, const real *cc, real *ch, 
                     const real *wa1, const real *wa2, const real *wa3, const real *wa4, real fsign)
 {
-  const real tr11 = .309016994374947;
-  const real ti11 = .951056516295154*fsign;
-  const real tr12 = -.809016994374947;
-  const real ti12 = .587785252292473*fsign;
+  const real tr11 = (real)(.309016994374947);
+  const real ti11 = ((real).951056516295154)*fsign;
+  const real tr12 = (real)-.809016994374947;
+  const real ti12 = ((real).587785252292473)*fsign;
 
   /* System generated locals */
   integer cc_offset, ch_offset;
@@ -594,8 +594,8 @@ static void passf2(integer ido, integer l1, const real *cc, real *ch, const real
 static void passf3(integer ido, integer l1, const real *cc, real *ch, 
                    const real *wa1, const real *wa2)
 {
-  static const real taur = -.5;
-  static const real taui = -.866025403784439;
+  static const real taur = (real)-.5;
+  static const real taui = (real)-.866025403784439;
 
   /* System generated locals */
   integer cc_offset, ch_offset;
@@ -794,8 +794,8 @@ static void radb3(integer ido, integer l1, const real *cc, real *ch,
 {
   /* Initialized data */
 
-  static const real taur = -.5;
-  static const real taui = .866025403784439;
+  static const real taur = (real)-.5;
+  static const real taui = (real).866025403784439;
 
   /* System generated locals */
   integer cc_offset, ch_offset;
@@ -945,10 +945,10 @@ static void radb5(integer ido, integer l1, const real *cc, real *ch,
 {
   /* Initialized data */
 
-  static const real tr11 = .309016994374947;
-  static const real ti11 = .951056516295154;
-  static const real tr12 = -.809016994374947;
-  static const real ti12 = .587785252292473;
+  static const real tr11 = (real)(.309016994374947);
+  static const real ti11 = (real).951056516295154;
+  static const real tr12 = (real)-.809016994374947;
+  static const real ti12 = (real).587785252292473;
 
   /* System generated locals */
   integer cc_offset, ch_offset;
@@ -1073,7 +1073,7 @@ static void radbg(integer ido, integer ip, integer l1, integer idl1,
   --wa;
 
   /* Function Body */
-  arg = (2*M_PI) / (real) (ip);
+  arg = (2*(real)M_PI) / (real) (ip);
   dcp = FFTPACK_COS(arg);
   dsp = FFTPACK_SIN(arg);
   idp2 = ido + 2;
@@ -1304,8 +1304,8 @@ static void radf2(integer ido, integer l1, const real *cc, real *ch,
 static void radf3(integer ido, integer l1, const real *cc, real *ch, 
                   const real *wa1, const real *wa2)
 {
-  static const real taur = -.5;
-  static const real taui = .866025403784439;
+  static const real taur = (real)-.5;
+  static const real taui = (real).866025403784439;
 
   /* System generated locals */
   integer ch_offset, cc_offset;
@@ -1374,7 +1374,7 @@ static void radf4(integer ido, integer l1, const real *cc, real *ch,
 {
   /* Initialized data */
 
-  static const real hsqt2 = .7071067811865475;
+  static const real hsqt2 = (real).7071067811865475;
 
   /* System generated locals */
   integer cc_offset, ch_offset;
@@ -1465,10 +1465,10 @@ static void radf5(integer ido, integer l1, const real *cc, real *ch,
 {
   /* Initialized data */
 
-  static const real tr11 = .309016994374947;
-  static const real ti11 = .951056516295154;
-  static const real tr12 = -.809016994374947;
-  static const real ti12 = .587785252292473;
+  static const real tr11 = (real)(.309016994374947);
+  static const real ti11 = (real).951056516295154;
+  static const real tr12 = (real)-.809016994374947;
+  static const real ti12 = (real).587785252292473;
 
   /* System generated locals */
   integer cc_offset, ch_offset;
@@ -1589,7 +1589,7 @@ static void radfg(integer ido, integer ip, integer l1, integer idl1,
   --wa;
 
   /* Function Body */
-  arg = (2*M_PI) / (real) (ip);
+  arg = (2*(real)M_PI) / (real) (ip);
   dcp = FFTPACK_COS(arg);
   dsp = FFTPACK_SIN(arg);
   ipph = (ip + 1) / 2;
@@ -1991,7 +1991,7 @@ static void cffti1(integer n, real *wa, integer *ifac)
 
   nf = decompose(n, ifac, ntryh);
 
-  argh = (2*M_PI) / (real) (n);
+  argh = (2*(real)M_PI) / (real) (n);
   i = 2;
   l1 = 1;
   for (k1 = 1; k1 <= nf; ++k1) {
@@ -2010,7 +2010,7 @@ static void cffti1(integer n, real *wa, integer *ifac)
       argld = (real) ld * argh;
       for (ii = 4; ii <= idot; ii += 2) {
         i += 2;
-        fi += 1.;
+        fi += 1;
         arg = fi * argld;
         wa[i - 1] = FFTPACK_COS(arg);
         wa[i] = FFTPACK_SIN(arg);
@@ -2194,7 +2194,7 @@ static void rffti1(integer n, real *wa, integer *ifac)
 
   nf = decompose(n, ifac, ntryh);
 
-  argh = (2*M_PI) / (real) (n);
+  argh = (2*(real)M_PI) / (real) (n);
   is = 0;
   nfm1 = nf - 1;
   l1 = 1;
@@ -2214,7 +2214,7 @@ static void rffti1(integer n, real *wa, integer *ifac)
       fi = 0.;
       for (ii = 3; ii <= ido; ii += 2) {
         i += 2;
-        fi += 1.;
+        fi += 1;
         arg = fi * argld;
         wa[i - 1] = FFTPACK_COS(arg);
         wa[i] = FFTPACK_SIN(arg);
@@ -2304,9 +2304,9 @@ void cosqb(integer n, real *x, real *wsave)
   --x;
 
   if (n < 2) {
-    x[1] *= 4.;
+    x[1] *= 4;
   } else if (n == 2) {
-    x1 = (x[1] + x[2]) * 4.;
+    x1 = (x[1] + x[2]) * 4;
     x[2] = M_SQRT8 * (x[1] - x[2]);
     x[1] = x1;
   } else {
@@ -2381,10 +2381,10 @@ void cosqi(integer n, real *wsave)
   /* Parameter adjustments */
   --wsave;
 
-  dt = M_PI/2 / (real) (n);
+  dt = (real)M_PI/2 / (real) (n);
   fk = 0.;
   for (k = 1; k <= n; ++k) {
-    fk += 1.;
+    fk += 1;
     wsave[k] = FFTPACK_COS(fk * dt);
   }
   rffti(n, &wsave[n + 1]);
@@ -2471,13 +2471,13 @@ void costi(integer n, real *wsave)
   nm1 = n - 1;
   np1 = n + 1;
   ns2 = n / 2;
-  dt = M_PI / (real) nm1;
+  dt = (real)M_PI / (real) nm1;
   fk = 0.;
   for (k = 2; k <= ns2; ++k) {
     kc = np1 - k;
-    fk += 1.;
-    wsave[k] = FFTPACK_SIN(fk * dt) * 2.;
-    wsave[kc] = FFTPACK_COS(fk * dt) * 2.;
+    fk += 1;
+    wsave[k] = FFTPACK_SIN(fk * dt) * 2;
+    wsave[kc] = FFTPACK_COS(fk * dt) * 2;
   }
   rffti(nm1, &wsave[n + 1]);
 } /* costi */
@@ -2494,7 +2494,7 @@ void sinqb(integer n, real *x, real *wsave)
 
   /* Function Body */
   if (n <= 1) {
-    x[1] *= 4.;
+    x[1] *= 4;
     return;
   }
   ns2 = n / 2;
@@ -2552,7 +2552,7 @@ static void sint1(integer n, real *war, real *was, real *xh, real *
 {
   /* Initialized data */
 
-  static const real sqrt3 = 1.73205080756888;
+  static const real sqrt3 = (real)1.73205080756888;
 
   /* Local variables */
   integer i, k;
@@ -2592,10 +2592,10 @@ static void sint1(integer n, real *war, real *was, real *xh, real *
     }
     modn = n % 2;
     if (modn != 0) {
-      x[ns2 + 2] = xh[ns2 + 1] * 4.;
+      x[ns2 + 2] = xh[ns2 + 1] * 4;
     }
     rfftf1(np1, &x[1], &xh[1], &war[1], &ifac[1]);
-    xh[1] = x[1] * .5;
+    xh[1] = x[1] * (real).5;
     for (i = 3; i <= n; i += 2) {
       xh[i - 1] = -x[i];
       xh[i] = xh[i - 2] + x[i - 1];
@@ -2626,9 +2626,9 @@ void sinti(integer n, real *wsave)
   }
   ns2 = n / 2;
   np1 = n + 1;
-  dt = M_PI / (real) np1;
+  dt = (real)M_PI / (real) np1;
   for (k = 1; k <= ns2; ++k) {
-    wsave[k] = FFTPACK_SIN(k * dt) * 2.;
+    wsave[k] = FFTPACK_SIN(k * dt) * 2;
   }
   rffti(np1, &wsave[ns2 + 1]);
 } /* sinti */
@@ -2737,7 +2737,7 @@ int main(void)
     np1 = n + 1;
     nm1 = n - 1;
     for (j = 1; j <= np1; ++j) {
-      x[j - 1] = sin((real) j * M_SQRT2);
+      x[j - 1] = (real)sin((real) j * M_SQRT2);
       y[j - 1] = x[j - 1];
       xh[j - 1] = x[j - 1];
     }
@@ -2745,7 +2745,7 @@ int main(void)
     /*     TEST SUBROUTINES RFFTI,RFFTF AND RFFTB */
 
     rffti(n, w);
-    dt = (2*M_PI) / fn;
+    dt = (2*(real)M_PI) / fn;
     ns2 = (n + 1) / 2;
     if (ns2 < 2) {
       goto L104;
@@ -2756,8 +2756,8 @@ int main(void)
       arg = (real) (k - 1) * dt;
       for (i = 1; i <= n; ++i) {
         arg1 = (real) (i - 1) * arg;
-        sum1 += x[i - 1] * cos(arg1);
-        sum2 += x[i - 1] * sin(arg1);
+        sum1 += x[i - 1] * (real)cos(arg1);
+        sum2 += x[i - 1] * (real)sin(arg1);
       }
       y[(k << 1) - 3] = sum1;
       y[(k << 1) - 2] = -sum2;
@@ -2793,8 +2793,8 @@ int main(void)
       }
       for (k = 2; k <= ns2; ++k) {
         arg1 = (real) (k - 1) * arg;
-        sum = sum + x[(k << 1) - 3] * cos(arg1) - x[(k << 1) - 2] * 
-          sin(arg1);
+        sum = sum + x[(k << 1) - 3] * cos(arg1) - x[(k << 1) - 2] *
+          (real)sin(arg1);
       }
     L108:
       if (modn == 0) {
@@ -2824,7 +2824,7 @@ int main(void)
 
     /*     TEST SUBROUTINES SINTI AND SINT */
 
-    dt = M_PI / fn;
+    dt = (real)M_PI / fn;
     for (i = 1; i <= nm1; ++i) {
       x[i - 1] = xh[i - 1];
     }
@@ -2832,7 +2832,7 @@ int main(void)
       y[i - 1] = 0.;
       arg1 = (real) i * dt;
       for (k = 1; k <= nm1; ++k) {
-        y[i - 1] += x[k - 1] * sin((real) k * arg1);
+        y[i - 1] += x[k - 1] * (real)sin((real) k * arg1);
       }
       y[i - 1] += y[i - 1];
     }
@@ -2898,14 +2898,14 @@ int main(void)
     for (i = 1; i <= n; ++i) {
       y[i - 1] = xh[i - 1];
     }
-    dt = M_PI / (fn + fn);
+    dt = (real)M_PI / (fn + fn);
     for (i = 1; i <= n; ++i) {
       x[i - 1] = 0.;
       arg = dt * (real) i;
       for (k = 1; k <= n; ++k) {
-        x[i - 1] += y[k - 1] * sin((real) (k + k - 1) * arg);
+        x[i - 1] += y[k - 1] * (real)sin((real) (k + k - 1) * arg);
       }
-      x[i - 1] *= 4.;
+      x[i - 1] *= 4;
     }
     sinqi(n, w);
     sinqb(n, y, w);
@@ -2922,7 +2922,7 @@ int main(void)
       arg = (real) (i + i - 1) * dt;
       y[i - 1] = (real) pow(-1, i+1) * .5 * x[n - 1];
       for (k = 1; k <= nm1; ++k) {
-        y[i - 1] += x[k - 1] * sin((real) k * arg);
+        y[i - 1] += x[k - 1] * (real)sin((real) k * arg);
       }
       y[i - 1] += y[i - 1];
     }
@@ -2957,7 +2957,7 @@ int main(void)
       for (k = 1; k <= n; ++k) {
         x[i - 1] += y[k - 1] * FFTPACK_COS((real) (k + k - 1) * arg);
       }
-      x[i - 1] *= 4.;
+      x[i - 1] *= 4;
     }
     cosqi(n, w);
     cosqb(n, y, w);
@@ -3006,7 +3006,7 @@ int main(void)
       q1.r = r1, q1.i = r2;
       cx[i-1].r = q1.r, cx[i-1].i = q1.i;
     }
-    dt = (2*M_PI) / fn;
+    dt = (2*(real)M_PI) / fn;
     for (i = 1; i <= n; ++i) {
       arg1 = -((real) (i - 1)) * dt;
       cy[i-1].r = 0., cy[i-1].i = 0.;
