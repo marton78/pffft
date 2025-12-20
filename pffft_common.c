@@ -1,6 +1,7 @@
 
 #include "pffft.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 
 /* SSE and co like 16-bytes aligned pointers
@@ -10,7 +11,7 @@
 static void * Valigned_malloc(size_t nb_bytes) {
   void *p, *p0 = malloc(nb_bytes + MALLOC_V4SF_ALIGNMENT);
   if (!p0) return (void *) 0;
-  p = (void *) (((size_t) p0 + MALLOC_V4SF_ALIGNMENT) & (~((size_t) (MALLOC_V4SF_ALIGNMENT-1))));
+  p = (void *) (((uintptr_t) p0 + MALLOC_V4SF_ALIGNMENT) & (~((uintptr_t) (MALLOC_V4SF_ALIGNMENT-1))));
   *((void **) p - 1) = p0;
   return p;
 }
