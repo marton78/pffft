@@ -7,11 +7,12 @@
 /* SSE and co like 16-bytes aligned pointers
  * with a 64-byte alignment, we are even aligned on L2 cache lines... */
 #define MALLOC_V4SF_ALIGNMENT 64
+#define EXTRA_BYTES_FOR_ALIGNMENT_AND_A_POINTER (MALLOC_V4SF_ALIGNMENT - 1 + sizeof(void*))
 
 static void * Valigned_malloc(size_t nb_bytes) {
-  void *p, *p0 = malloc(nb_bytes + MALLOC_V4SF_ALIGNMENT);
+  void *p, *p0 = malloc(nb_bytes + EXTRA_BYTES_FOR_ALIGNMENT_AND_A_POINTER);
   if (!p0) return (void *) 0;
-  p = (void *) (((uintptr_t) p0 + MALLOC_V4SF_ALIGNMENT) & (~((uintptr_t) (MALLOC_V4SF_ALIGNMENT-1))));
+  p = (void *) (((uintptr_t) p0 + EXTRA_BYTES_FOR_ALIGNMENT_AND_A_POINTER) & (~((uintptr_t) (MALLOC_V4SF_ALIGNMENT-1))));
   *((void **) p - 1) = p0;
   return p;
 }
