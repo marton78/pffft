@@ -2628,7 +2628,7 @@ void sinti(integer n, real *wsave)
   np1 = n + 1;
   dt = M_PI / (real) np1;
   for (k = 1; k <= ns2; ++k) {
-    wsave[k] = sin(k * dt) * 2.f;
+    wsave[k] = FFTPACK_SIN(k * dt) * 2.f;
   }
   rffti(np1, &wsave[ns2 + 1]);
 } /* sinti */
