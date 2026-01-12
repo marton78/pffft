@@ -25,7 +25,7 @@ jobs:
           repository: hayguen/MIPP
           path: ./MIPP
     - name: cmake configure MIPP
-      run: cmake -S MIPP -B MIPP_build -DCMAKE_INSTALL_PREFIX=$HOME/.local
+      run: cmake -S MIPP -B MIPP_build -DCMAKE_INSTALL_PREFIX=$HOME/.local -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     - name: cmake install MIPP headers
       run: cmake --build MIPP_build --target install && ls -alh $HOME/.local/ && ls -alh $HOME/.local/include/
 
@@ -85,7 +85,7 @@ jobs:
           path: ./MIPP
     - name: cmake configure MIPP
       working-directory: ${{runner.workspace}}
-      run: cmake -S pffft/MIPP -B MIPP_build -DCMAKE_INSTALL_PREFIX=$(pwd)
+      run: cmake -S pffft/MIPP -B MIPP_build -DCMAKE_INSTALL_PREFIX=$(pwd) -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     - name: cmake install MIPP headers
       working-directory: ${{runner.workspace}}
       run: cmake --build MIPP_build --target install
@@ -130,7 +130,7 @@ jobs:
     - name: cmake configure MIPP
       shell: bash
       working-directory: ${{runner.workspace}}
-      run: cmake -S pffft/MIPP -B MIPP_build -DCMAKE_INSTALL_PREFIX=$(pwd)
+      run: cmake -S pffft/MIPP -B MIPP_build -DCMAKE_INSTALL_PREFIX=$(pwd) -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     - name: cmake install MIPP headers
       working-directory: ${{runner.workspace}}
       run: cmake --build MIPP_build --target install
@@ -255,7 +255,7 @@ jobs:
           repository: hayguen/MIPP
           path: ./MIPP
     - name: cmake configure MIPP
-      run: cmake -S MIPP -B MIPP_build -DCMAKE_INSTALL_PREFIX=$HOME/.local
+      run: cmake -S MIPP -B MIPP_build -DCMAKE_INSTALL_PREFIX=$HOME/.local -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     - name: cmake install MIPP headers
       run: cmake --build MIPP_build --target install && ls -alh $HOME/.local/ && ls -alh $HOME/.local/include/
 
