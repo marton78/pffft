@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.10)
 project(PRETTY_FAST_FFT)
 
+# detect if pffft is the top-level project or built as a dependency
+if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+  set(PFFFT_IS_TOPLEVEL ON)
+else()
+  set(PFFFT_IS_TOPLEVEL OFF)
+endif()
+
 # smaller library size?
 option(PFFFT_USE_TYPE_FLOAT  "activate single precision 'float'?" ON)
 option(PFFFT_USE_TYPE_DOUBLE "activate 'double' precision float?" ON)
@@ -25,6 +32,11 @@ option(PFFFT_USE_FFTPACK      "compile and use FFTPACK in fft benchmark & valida
 option(PFFFT_USE_DEBUG_ASAN  "use GCC's address sanitizer?" OFF)
 
 option(PFFFT_DISABLE_LINK_WITH_M "Disables linking with m library to build with clangCL from MSVC" OFF)
+
+# build control options (default to ON for top-level builds, OFF for subdirectory/FetchContent)
+option(PFFFT_BUILD_TESTS      "Build pffft tests?" ${PFFFT_IS_TOPLEVEL})
+option(PFFFT_BUILD_BENCHMARKS "Build pffft benchmarks?" ${PFFFT_IS_TOPLEVEL})
+option(PFFFT_BUILD_EXAMPLES   "Build pffft examples?" ${PFFFT_IS_TOPLEVEL})
 
 # C90 requires the gcc extensions for function attributes like always_inline
 # C99 provides the function attributes: no gcc extensions required
@@ -80,35 +92,37 @@ if ( CMAKE_C_COMPILER_ID MATCHES "MSVC" )
 endif()
 
 
-if (PFFFT_USE_BENCH_GREEN)
-  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/greenffts/CMakeLists.txt")
-    message(STATUS "found subdir greenffts")
-    set(PATH_GREEN "${CMAKE_CURRENT_LIST_DIR}/greenffts")
-    add_subdirectory( "${PATH_GREEN}" )
-  else()
-    message(WARNING "GreenFFT not found in subdir greenffts")
+if (PFFFT_BUILD_BENCHMARKS)
+  if (PFFFT_USE_BENCH_GREEN)
+    if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/greenffts/CMakeLists.txt")
+      message(STATUS "found subdir greenffts")
+      set(PATH_GREEN "${CMAKE_CURRENT_LIST_DIR}/greenffts")
+      add_subdirectory( "${PATH_GREEN}" )
+    else()
+      message(WARNING "GreenFFT not found in subdir greenffts")
+    endif()
   endif()
-endif()
 
-if (PFFFT_USE_BENCH_KISS)
-  # git submodule add https://github.com/hayguen/kissfft.git
-  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/kissfft/CMakeLists.txt")
-    message(STATUS "found subdir kissfft")
-    set(PATH_KISS "${CMAKE_CURRENT_LIST_DIR}/kissfft")
-    add_subdirectory( "${PATH_KISS}" )
-  else()
-    message(WARNING "KissFFT not found in subdir kissfft")
+  if (PFFFT_USE_BENCH_KISS)
+    # git submodule add https://github.com/hayguen/kissfft.git
+    if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/kissfft/CMakeLists.txt")
+      message(STATUS "found subdir kissfft")
+      set(PATH_KISS "${CMAKE_CURRENT_LIST_DIR}/kissfft")
+      add_subdirectory( "${PATH_KISS}" )
+    else()
+      message(WARNING "KissFFT not found in subdir kissfft")
+    endif()
   endif()
-endif()
 
-if (PFFFT_USE_BENCH_POCKET)
-  # git submodule add https://github.com/hayguen/pocketfft.git
-  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/pocketfft/pocketfft_double.c")
-    message(STATUS "found subdir pocketfft")
-    set(PATH_POCKET "${CMAKE_CURRENT_LIST_DIR}/pocketfft")
-    add_subdirectory( "${PATH_POCKET}" )
-  else()
-    message(WARNING "PocketFFT not found in subdir pocketfft")
+  if (PFFFT_USE_BENCH_POCKET)
+    # git submodule add https://github.com/hayguen/pocketfft.git
+    if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/pocketfft/pocketfft_double.c")
+      message(STATUS "found subdir pocketfft")
+      set(PATH_POCKET "${CMAKE_CURRENT_LIST_DIR}/pocketfft")
+      add_subdirectory( "${PATH_POCKET}" )
+    else()
+      message(WARNING "PocketFFT not found in subdir pocketfft")
+    endif()
   endif()
 endif()
 
@@ -222,7 +236,7 @@ endif()
 
 ######################################################
 
-if (PFFFT_USE_FFTPACK)
+if ((PFFFT_BUILD_TESTS OR PFFFT_BUILD_BENCHMARKS) AND PFFFT_USE_FFTPACK)
 
   # float / single precision
   add_library(FFTPACK_FLOAT STATIC fftpack.c fftpack.h)
@@ -243,14 +257,16 @@ if (PFFFT_USE_FFTPACK)
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   )
 
-  # builtin test program of fftpack
-  add_executable(test_fftpack_float fftpack.c fftpack.h)
-  target_compile_definitions(test_fftpack_float PRIVATE _USE_MATH_DEFINES TESTING_FFTPACK)
-  target_link_libraries(test_fftpack_float ${MATHLIB})
+  if (PFFFT_BUILD_TESTS)
+    # builtin test program of fftpack
+    add_executable(test_fftpack_float fftpack.c fftpack.h)
+    target_compile_definitions(test_fftpack_float PRIVATE _USE_MATH_DEFINES TESTING_FFTPACK)
+    target_link_libraries(test_fftpack_float ${MATHLIB})
 
-  add_executable(test_fftpack_double fftpack.c fftpack.h)
-  target_compile_definitions(test_fftpack_double PRIVATE _USE_MATH_DEFINES FFTPACK_DOUBLE_PRECISION TESTING_FFTPACK)
-  target_link_libraries(test_fftpack_double ${MATHLIB})
+    add_executable(test_fftpack_double fftpack.c fftpack.h)
+    target_compile_definitions(test_fftpack_double PRIVATE _USE_MATH_DEFINES FFTPACK_DOUBLE_PRECISION TESTING_FFTPACK)
+    target_link_libraries(test_fftpack_double ${MATHLIB})
+  endif()
 
 endif()
 
@@ -286,6 +302,8 @@ add_custom_target(uninstall
 )
 
 #######################################################
+
+if (PFFFT_BUILD_TESTS)
 
 if (PFFFT_USE_TYPE_FLOAT)
   add_executable( test_pffft_float  test_pffft.c )
@@ -359,7 +377,11 @@ if (PFFFT_USE_TYPE_FLOAT)
 
 endif()
 
+endif() # PFFFT_BUILD_TESTS
+
 ######################################################
+
+if (PFFFT_BUILD_BENCHMARKS)
 
 if (PFFFT_USE_TYPE_FLOAT)
   add_executable(bench_pffft_float   bench_pffft.c pffft.h)
@@ -595,11 +617,17 @@ if (PFFFT_USE_TYPE_FLOAT)
 
 endif()
 
-######################################################
-
-add_subdirectory(examples)
+endif() # PFFFT_BUILD_BENCHMARKS
 
 ######################################################
+
+if (PFFFT_BUILD_EXAMPLES)
+  add_subdirectory(examples)
+endif()
+
+######################################################
+
+if (PFFFT_BUILD_TESTS)
 
 enable_testing()
 
@@ -660,4 +688,6 @@ if (PFFFT_USE_TYPE_FLOAT)
   )
 
 endif()
+
+endif() # PFFFT_BUILD_TESTS
 
