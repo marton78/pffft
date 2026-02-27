@@ -53,6 +53,22 @@
 #include <stddef.h> /* for size_t */
 #include "pffft.h"
 
+#ifndef PFFASTCONV_EXPORT
+  #ifdef PFFASTCONV_STATIC_DEFINE
+    #define PFFASTCONV_EXPORT
+  #elif defined(_WIN32) || defined(__CYGWIN__)
+    #ifdef PFFASTCONV_EXPORTS
+      #define PFFASTCONV_EXPORT __declspec(dllexport)
+    #else
+      #define PFFASTCONV_EXPORT __declspec(dllimport)
+    #endif
+  #elif defined(PFFASTCONV_EXPORTS) && (defined(__GNUC__) || defined(__clang__))
+    #define PFFASTCONV_EXPORT __attribute__((visibility("default")))
+  #else
+    #define PFFASTCONV_EXPORT
+  #endif
+#endif
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -126,9 +142,9 @@ extern "C" {
     PFFASTCONV_Setup structure can't be shared accross multiple filters
     or concurrent threads.
   */
-  PFFASTCONV_Setup * pffastconv_new_setup( const float * filterCoeffs, int filterLen, int * blockLen, int flags );
+  PFFASTCONV_EXPORT PFFASTCONV_Setup * pffastconv_new_setup( const float * filterCoeffs, int filterLen, int * blockLen, int flags );
 
-  void pffastconv_destroy_setup(PFFASTCONV_Setup *);
+  PFFASTCONV_EXPORT void pffastconv_destroy_setup(PFFASTCONV_Setup *);
 
   /* 
      Perform the fast convolution.
@@ -155,13 +171,13 @@ extern "C" {
      input[].
 
   */
-  int pffastconv_apply(PFFASTCONV_Setup * s, const float *input, int inputLen, float *output, int applyFlush);
+  PFFASTCONV_EXPORT int pffastconv_apply(PFFASTCONV_Setup * s, const float *input, int inputLen, float *output, int applyFlush);
 
-  void *pffastconv_malloc(size_t nb_bytes);
-  void pffastconv_free(void *);
+  PFFASTCONV_EXPORT void *pffastconv_malloc(size_t nb_bytes);
+  PFFASTCONV_EXPORT void pffastconv_free(void *);
 
   /* return 4 or 1 wether support SSE/Altivec instructions was enabled when building pffft.c */
-  int pffastconv_simd_size();
+  PFFASTCONV_EXPORT int pffastconv_simd_size();
 
 
 #ifdef __cplusplus

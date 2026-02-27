@@ -5,8 +5,8 @@
 
 #define _WANT_SNAN  1
 
-#include "pffft.h"
-#include "pffastconv.h"
+#include "pffft/pffft.h"
+#include "pffft/pffastconv.h"
 
 #include <math.h>
 #include <float.h>

@@ -30,44 +30,43 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
 
-#include <stdio.h>
 #include <stdint.h>
+
+#ifndef PFDSP_EXPORT
+  #ifdef PFDSP_STATIC_DEFINE
+    #define PFDSP_EXPORT
+  #elif defined(_WIN32) || defined(__CYGWIN__)
+    #ifdef PFDSP_EXPORTS
+      #define PFDSP_EXPORT __declspec(dllexport)
+    #else
+      #define PFDSP_EXPORT __declspec(dllimport)
+    #endif
+  #elif defined(PFDSP_EXPORTS) && (defined(__GNUC__) || defined(__clang__))
+    #define PFDSP_EXPORT __attribute__((visibility("default")))
+  #else
+    #define PFDSP_EXPORT
+  #endif
+#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-
 /*
-   _____                      _
-  / ____|                    | |
- | |     ___  _ __ ___  _ __ | | _____  __
- | |    / _ \| '_ ` _ \| '_ \| |/ _ \ \/ /
- | |___| (_) | | | | | | |_) | |  __/>  <
-  \_____\___/|_| |_| |_| .__/|_|\___/_/\_\
-                       | |
-                       |_|
+   ____ ___ ____   ____  ____   ____
+  / ___|_ _/ ___| |  _ \|  _ \ / ___|
+ | |    | | |     | | | | | | | |
+ | |___ | | |___  | |_| | |_| | |___
+  \____|___\____| |____/|____/ \____|
 */
 
 typedef struct complexf_s { float i; float q; } complexf;
 
-
-/* generation functions */
-void generate_dc_f(float* output, int size);
-void generate_dc_s16(short* output, int size);
-void generate_pos_fs4_f(float* output, int size);
-void generate_pos_fs4_s16(short* output, int size);
-void generate_neg_fs4_f(float* output, int size);
-void generate_neg_fs4_s16(short* output, int size);
-
-void generate_dc_pos_fs4_s16(short* output, int size);
-void generate_dc_neg_fs4_s16(short* output, int size);
-void generate_pos_neg_fs4_s16(short* output, int size);
-void generate_dc_pos_neg_fs4_s16(short* output, int size);
-
-void generate_pos_neg_fs2_s16(short* output, int size);
-void generate_dc_pos_neg_fs2_s16(short* output, int size);
-
+PFDSP_EXPORT void *cicddc_init(int factor);
+PFDSP_EXPORT void cicddc_free(void *state);
+PFDSP_EXPORT void cicddc_s16_c(void *state, int16_t *input, complexf *output, int outsize, float rate);
+PFDSP_EXPORT void cicddc_cs16_c(void *state, int16_t *input, complexf *output, int outsize, float rate);
+PFDSP_EXPORT void cicddc_cu8_c(void *state, uint8_t *input, complexf *output, int outsize, float rate);
 
 #ifdef __cplusplus
 }

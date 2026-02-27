@@ -1819,7 +1819,7 @@ void FUNC_TRANSFORM_ORDERED(SETUP_STRUCT *setup, const float *input, float *outp
 #define assertv4(v,f0,f1,f2,f3) assert(v.f[0] == (f0) && v.f[1] == (f1) && v.f[2] == (f2) && v.f[3] == (f3))
 
 /* detect bugs with the vector support macros */
-void FUNC_VALIDATE_SIMD_A(void) {
+PFFFT_EXPORT void FUNC_VALIDATE_SIMD_A(void) {
   float f[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
   v4sf_union a0, a1, a2, a3, t, u; 
   memcpy(a0.f, f, 4*sizeof(float));
@@ -1878,7 +1878,7 @@ static void pffft_assert4(  vsfscalar v0, vsfscalar v1, vsfscalar v2, vsfscalar 
 #define PFFFT_ASSERT4( V, a, b, c, d, FUNCTXT )  pffft_assert4( (V).f[0], (V).f[1], (V).f[2], (V).f[3], a, b, c, d, FUNCTXT, &numErrs, __FILE__, __LINE__ )
 
 
-int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
+PFFFT_EXPORT int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
 {
   int numErrs = 0;
 
@@ -2218,11 +2218,11 @@ int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
 
 #else  /* if ( SIMD_SZ == 4 ) */
 
-void FUNC_VALIDATE_SIMD_A()
+PFFFT_EXPORT void FUNC_VALIDATE_SIMD_A()
 {
 }
 
-int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
+PFFFT_EXPORT int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
 {
   return -1;
 }

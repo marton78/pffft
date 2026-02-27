@@ -35,6 +35,22 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "pf_cplx.h"
 
+#ifndef PFDSP_EXPORT
+  #ifdef PFDSP_STATIC_DEFINE
+    #define PFDSP_EXPORT
+  #elif defined(_WIN32) || defined(__CYGWIN__)
+    #ifdef PFDSP_EXPORTS
+      #define PFDSP_EXPORT __declspec(dllexport)
+    #else
+      #define PFDSP_EXPORT __declspec(dllimport)
+    #endif
+  #elif defined(PFDSP_EXPORTS) && (defined(__GNUC__) || defined(__clang__))
+    #define PFDSP_EXPORT __attribute__((visibility("default")))
+  #else
+    #define PFDSP_EXPORT
+  #endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -42,7 +58,7 @@ extern "C" {
 
 // =================================================================================
 
-int have_sse_shift_mixer_impl();
+PFDSP_EXPORT int have_sse_shift_mixer_impl();
 
 
 /*********************************************************************/
@@ -51,7 +67,7 @@ int have_sse_shift_mixer_impl();
 /*** ALGO A ***/
 /**************/
 
-float shift_math_cc(const complexf *input, complexf* output, int input_size, float rate, float starting_phase);
+PFDSP_EXPORT float shift_math_cc(const complexf *input, complexf* output, int input_size, float rate, float starting_phase);
 
 
 /*********************************************************************/
@@ -66,9 +82,9 @@ typedef struct shift_table_data_s
     int table_size;
 } shift_table_data_t;
 
-void shift_table_deinit(shift_table_data_t table_data);
-shift_table_data_t shift_table_init(int table_size);
-float shift_table_cc(complexf* input, complexf* output, int input_size, float rate, shift_table_data_t table_data, float starting_phase);
+PFDSP_EXPORT void shift_table_deinit(shift_table_data_t table_data);
+PFDSP_EXPORT shift_table_data_t shift_table_init(int table_size);
+PFDSP_EXPORT float shift_table_cc(complexf* input, complexf* output, int input_size, float rate, shift_table_data_t table_data, float starting_phase);
 
 /*********************************************************************/
 
@@ -83,9 +99,9 @@ typedef struct shift_addfast_data_s
     float phase_increment;
 } shift_addfast_data_t;
 
-shift_addfast_data_t shift_addfast_init(float rate);
-float shift_addfast_cc(complexf *input, complexf* output, int input_size, shift_addfast_data_t* d, float starting_phase);
-float shift_addfast_inp_c(complexf *in_out, int N_cplx, shift_addfast_data_t* d, float starting_phase);
+PFDSP_EXPORT shift_addfast_data_t shift_addfast_init(float rate);
+PFDSP_EXPORT float shift_addfast_cc(complexf *input, complexf* output, int input_size, shift_addfast_data_t* d, float starting_phase);
+PFDSP_EXPORT float shift_addfast_inp_c(complexf *in_out, int N_cplx, shift_addfast_data_t* d, float starting_phase);
 
 
 /*********************************************************************/
@@ -102,10 +118,10 @@ typedef struct shift_unroll_data_s
     int size;
 } shift_unroll_data_t;
 
-shift_unroll_data_t shift_unroll_init(float rate, int size);
-void shift_unroll_deinit(shift_unroll_data_t* d);
-float shift_unroll_cc(complexf *input, complexf* output, int size, shift_unroll_data_t* d, float starting_phase);
-float shift_unroll_inp_c(complexf* in_out, int size, shift_unroll_data_t* d, float starting_phase);
+PFDSP_EXPORT shift_unroll_data_t shift_unroll_init(float rate, int size);
+PFDSP_EXPORT void shift_unroll_deinit(shift_unroll_data_t* d);
+PFDSP_EXPORT float shift_unroll_cc(complexf *input, complexf* output, int size, shift_unroll_data_t* d, float starting_phase);
+PFDSP_EXPORT float shift_unroll_inp_c(complexf* in_out, int size, shift_unroll_data_t* d, float starting_phase);
 
 
 /*********************************************************************/
@@ -129,11 +145,11 @@ typedef struct shift_limited_unroll_data_s
     float phase_increment;
 } shift_limited_unroll_data_t;
 
-shift_limited_unroll_data_t shift_limited_unroll_init(float rate);
+PFDSP_EXPORT shift_limited_unroll_data_t shift_limited_unroll_init(float rate);
 /* size must be multiple of PF_SHIFT_LIMITED_SIMD_SZ */
 /* starting_phase for next call is kept internal in state */
-void shift_limited_unroll_cc(const complexf *input, complexf* output, int size, shift_limited_unroll_data_t* d);
-void shift_limited_unroll_inp_c(complexf* in_out, int size, shift_limited_unroll_data_t* d);
+PFDSP_EXPORT void shift_limited_unroll_cc(const complexf *input, complexf* output, int size, shift_limited_unroll_data_t* d);
+PFDSP_EXPORT void shift_limited_unroll_inp_c(complexf* in_out, int size, shift_limited_unroll_data_t* d);
 
 
 /*********************************************************************/
@@ -157,8 +173,8 @@ typedef struct shift_limited_unroll_A_sse_data_s
     float phase_increment;
 } shift_limited_unroll_A_sse_data_t;
 
-shift_limited_unroll_A_sse_data_t shift_limited_unroll_A_sse_init(float relative_freq, float phase_start_rad);
-void shift_limited_unroll_A_sse_inp_c(complexf* in_out, int N_cplx, shift_limited_unroll_A_sse_data_t* d);
+PFDSP_EXPORT shift_limited_unroll_A_sse_data_t shift_limited_unroll_A_sse_init(float relative_freq, float phase_start_rad);
+PFDSP_EXPORT void shift_limited_unroll_A_sse_inp_c(complexf* in_out, int N_cplx, shift_limited_unroll_A_sse_data_t* d);
 
 
 /*********************************************************************/
@@ -181,8 +197,8 @@ typedef struct shift_limited_unroll_B_sse_data_s
     float phase_increment;
 } shift_limited_unroll_B_sse_data_t;
 
-shift_limited_unroll_B_sse_data_t shift_limited_unroll_B_sse_init(float relative_freq, float phase_start_rad);
-void shift_limited_unroll_B_sse_inp_c(complexf* in_out, int N_cplx, shift_limited_unroll_B_sse_data_t* d);
+PFDSP_EXPORT shift_limited_unroll_B_sse_data_t shift_limited_unroll_B_sse_init(float relative_freq, float phase_start_rad);
+PFDSP_EXPORT void shift_limited_unroll_B_sse_inp_c(complexf* in_out, int N_cplx, shift_limited_unroll_B_sse_data_t* d);
 
 /*********************************************************************/
 
@@ -204,8 +220,8 @@ typedef struct shift_limited_unroll_C_sse_data_s
     float phase_increment;
 } shift_limited_unroll_C_sse_data_t;
 
-shift_limited_unroll_C_sse_data_t shift_limited_unroll_C_sse_init(float relative_freq, float phase_start_rad);
-void shift_limited_unroll_C_sse_inp_c(complexf* in_out, int N_cplx, shift_limited_unroll_C_sse_data_t* d);
+PFDSP_EXPORT shift_limited_unroll_C_sse_data_t shift_limited_unroll_C_sse_init(float relative_freq, float phase_start_rad);
+PFDSP_EXPORT void shift_limited_unroll_C_sse_inp_c(complexf* in_out, int N_cplx, shift_limited_unroll_C_sse_data_t* d);
 
 
 
@@ -231,14 +247,14 @@ typedef struct shift_recursive_osc_conf_s
     float k2;
 } shift_recursive_osc_conf_t;
 
-void shift_recursive_osc_init(float rate, float starting_phase, shift_recursive_osc_conf_t *conf, shift_recursive_osc_t *state);
-void shift_recursive_osc_update_rate(float rate, shift_recursive_osc_conf_t *conf, shift_recursive_osc_t* state);
+PFDSP_EXPORT void shift_recursive_osc_init(float rate, float starting_phase, shift_recursive_osc_conf_t *conf, shift_recursive_osc_t *state);
+PFDSP_EXPORT void shift_recursive_osc_update_rate(float rate, shift_recursive_osc_conf_t *conf, shift_recursive_osc_t* state);
 
 /* size must be multiple of PF_SHIFT_LIMITED_SIMD_SZ */
 /* starting_phase for next call is kept internal in state */
-void shift_recursive_osc_cc(const complexf *input, complexf* output, int size, const shift_recursive_osc_conf_t *conf, shift_recursive_osc_t* state);
-void shift_recursive_osc_inp_c(complexf* output, int size, const shift_recursive_osc_conf_t *conf, shift_recursive_osc_t* state);
-void gen_recursive_osc_c(complexf* output, int size, const shift_recursive_osc_conf_t *conf, shift_recursive_osc_t* state);
+PFDSP_EXPORT void shift_recursive_osc_cc(const complexf *input, complexf* output, int size, const shift_recursive_osc_conf_t *conf, shift_recursive_osc_t* state);
+PFDSP_EXPORT void shift_recursive_osc_inp_c(complexf* output, int size, const shift_recursive_osc_conf_t *conf, shift_recursive_osc_t* state);
+PFDSP_EXPORT void gen_recursive_osc_c(complexf* output, int size, const shift_recursive_osc_conf_t *conf, shift_recursive_osc_t* state);
 
 /*********************************************************************/
 
@@ -259,9 +275,9 @@ typedef struct shift_recursive_osc_sse_conf_s
     float k2;
 } shift_recursive_osc_sse_conf_t;
 
-void shift_recursive_osc_sse_init(float rate, float starting_phase, shift_recursive_osc_sse_conf_t *conf, shift_recursive_osc_sse_t *state);
-void shift_recursive_osc_sse_update_rate(float rate, shift_recursive_osc_sse_conf_t *conf, shift_recursive_osc_sse_t* state);
-void shift_recursive_osc_sse_inp_c(complexf* in_out, int N_cplx, const shift_recursive_osc_sse_conf_t *conf, shift_recursive_osc_sse_t* state_ext);
+PFDSP_EXPORT void shift_recursive_osc_sse_init(float rate, float starting_phase, shift_recursive_osc_sse_conf_t *conf, shift_recursive_osc_sse_t *state);
+PFDSP_EXPORT void shift_recursive_osc_sse_update_rate(float rate, shift_recursive_osc_sse_conf_t *conf, shift_recursive_osc_sse_t* state);
+PFDSP_EXPORT void shift_recursive_osc_sse_inp_c(complexf* in_out, int N_cplx, const shift_recursive_osc_sse_conf_t *conf, shift_recursive_osc_sse_t* state_ext);
 
 
 #ifdef __cplusplus

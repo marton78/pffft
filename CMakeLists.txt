@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(PRETTY_FAST_FFT)
 
+include(GNUInstallDirs)
+
 # detect if pffft is the top-level project or built as a dependency
 if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
   set(PFFFT_IS_TOPLEVEL ON)
@@ -128,13 +130,13 @@ if (MINGW)
 endif()
 
 
-set( SIMD_FLOAT_HDRS ${PFFFT_SOURCE_DIR}/simd/pf_float.h ${PFFFT_SOURCE_DIR}/simd/pf_sse1_float.h ${PFFFT_SOURCE_DIR}/simd/pf_altivec_float.h ${PFFFT_SOURCE_DIR}/simd/pf_neon_float.h ${PFFFT_SOURCE_DIR}/simd/pf_scalar_float.h )
-set( SIMD_DOUBLE_HDRS ${PFFFT_SOURCE_DIR}/simd/pf_double.h ${PFFFT_SOURCE_DIR}/simd/pf_avx_double.h ${PFFFT_SOURCE_DIR}/simd/pf_scalar_double.h )
+set( SIMD_FLOAT_HDRS ${PFFFT_SOURCE_DIR}/src/simd/pf_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_sse1_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_altivec_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_neon_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_scalar_float.h )
+set( SIMD_DOUBLE_HDRS ${PFFFT_SOURCE_DIR}/src/simd/pf_double.h ${PFFFT_SOURCE_DIR}/src/simd/pf_avx_double.h ${PFFFT_SOURCE_DIR}/src/simd/pf_scalar_double.h )
 
 if (PFFFT_USE_TYPE_FLOAT)
-  set( FLOAT_SOURCES pffft.c pffft.h ${SIMD_FLOAT_HDRS} )
+  set( FLOAT_SOURCES src/pffft.c include/pffft/pffft.h ${SIMD_FLOAT_HDRS} )
   if (INSTALL_PFFFT)
-    set(INSTALL_HEADERS ${INSTALL_HEADERS} pffft.h)
+    set(INSTALL_HEADERS ${INSTALL_HEADERS} include/pffft/pffft.h)
   endif()
 else()
   set( FLOAT_SOURCES  )
@@ -142,9 +144,9 @@ endif()
 
 
 if (PFFFT_USE_TYPE_DOUBLE)
-  set( DOUBLE_SOURCES pffft_double.c pffft_double.h ${SIMD_DOUBLE_HDRS} )
+  set( DOUBLE_SOURCES src/pffft_double.c include/pffft/pffft_double.h ${SIMD_DOUBLE_HDRS} )
   if (INSTALL_PFFFT)
-    set(INSTALL_HEADERS ${INSTALL_HEADERS} pffft_double.h)
+    set(INSTALL_HEADERS ${INSTALL_HEADERS} include/pffft/pffft_double.h)
   endif()
 else()
   set( DOUBLE_SOURCES )
@@ -152,7 +154,7 @@ endif()
 
 ######################################################
 
-add_library(PFFFT STATIC ${FLOAT_SOURCES} ${DOUBLE_SOURCES} pffft_common.c pffft_priv_impl.h pffft.hpp )
+add_library(PFFFT ${FLOAT_SOURCES} ${DOUBLE_SOURCES} src/pffft_common.c src/pffft_priv_impl.h include/pffft/pffft.hpp )
 add_library(PFFFT::PFFFT ALIAS PFFFT)
 set_target_properties(PFFFT PROPERTIES OUTPUT_NAME "pffft")
 target_compile_definitions(PFFFT PRIVATE _USE_MATH_DEFINES)
@@ -168,18 +170,30 @@ if (NOT PFFFT_USE_SIMD)
   target_compile_definitions(PFFFT PRIVATE PFFFT_SIMD_DISABLE=1)
 endif()
 target_link_libraries( PFFFT ${ASANLIB} ${MATHLIB} )
-set_property(TARGET PFFFT APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+target_include_directories(PFFFT
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/pffft
 )
+set_target_properties(PFFFT PROPERTIES
+  C_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN ON
+)
+if(NOT BUILD_SHARED_LIBS)
+  target_compile_definitions(PFFFT PUBLIC PFFFT_STATIC_DEFINE)
+endif()
 if (INSTALL_PFFFT)
   set(INSTALL_TARGETS ${INSTALL_TARGETS} PFFFT)
-  set(INSTALL_HEADERS ${INSTALL_HEADERS} pffft.hpp)
+  set(INSTALL_HEADERS ${INSTALL_HEADERS} include/pffft/pffft.hpp)
 endif()
 
 ######################################################
 
 if (PFFFT_USE_TYPE_FLOAT)
-  add_library(PFDSP STATIC pf_mixer.cpp pf_mixer.h pf_cplx.h pf_carrier.cpp pf_carrier.h pf_cic.cpp pf_cic.h fmv.h )
+  add_library(PFDSP src/pf_mixer.cpp include/pffft/pf_mixer.h include/pffft/pf_cplx.h src/pf_carrier.cpp include/pffft/pf_carrier.h src/pf_cic.cpp include/pffft/pf_cic.h src/fmv.h )
   set_property(TARGET PFDSP PROPERTY CXX_STANDARD 11)
   set_property(TARGET PFDSP PROPERTY CXX_STANDARD_REQUIRED ON)
   set_target_properties(PFDSP PROPERTIES OUTPUT_NAME "pfdsp")
@@ -194,12 +208,24 @@ if (PFFFT_USE_TYPE_FLOAT)
       target_compile_definitions(PFDSP PRIVATE PFFFT_SIMD_DISABLE=1)
   endif()
   target_link_libraries( PFDSP ${MATHLIB} )
-  set_property(TARGET PFDSP APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
-      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+  target_include_directories(PFDSP
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pffft
   )
+  set_target_properties(PFDSP PROPERTIES
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON
+  )
+  if(NOT BUILD_SHARED_LIBS)
+    target_compile_definitions(PFDSP PUBLIC PFDSP_STATIC_DEFINE)
+  endif()
   if (INSTALL_PFDSP)
       set(INSTALL_TARGETS ${INSTALL_TARGETS} PFDSP)
-      set(INSTALL_HEADERS ${INSTALL_HEADERS} pf_mixer.h pf_cplx.h pf_carrier.h pf_cic.h)
+      set(INSTALL_HEADERS ${INSTALL_HEADERS} include/pffft/pf_mixer.h include/pffft/pf_cplx.h include/pffft/pf_carrier.h include/pffft/pf_cic.h)
   endif()
 endif()
 
@@ -208,22 +234,22 @@ endif()
 if ((PFFFT_BUILD_TESTS OR PFFFT_BUILD_BENCHMARKS) AND PFFFT_USE_FFTPACK)
 
   # float / single precision
-  add_library(FFTPACK_FLOAT STATIC fftpack.c fftpack.h)
+  add_library(FFTPACK_FLOAT STATIC src/fftpack.c src/fftpack.h)
   target_compile_definitions(FFTPACK_FLOAT PRIVATE _USE_MATH_DEFINES)
   target_activate_c_compiler_warnings(FFTPACK_FLOAT)
   target_link_libraries( FFTPACK_FLOAT ${MATHLIB} )
-  set_property(TARGET FFTPACK_FLOAT APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+  target_include_directories(FFTPACK_FLOAT
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
   )
 
   # double precision
-  add_library(FFTPACK_DOUBLE STATIC fftpack.c fftpack.h)
+  add_library(FFTPACK_DOUBLE STATIC src/fftpack.c src/fftpack.h)
   target_compile_definitions(FFTPACK_DOUBLE PRIVATE _USE_MATH_DEFINES)
   target_compile_definitions(FFTPACK_DOUBLE PUBLIC FFTPACK_DOUBLE_PRECISION)
   target_activate_c_compiler_warnings(FFTPACK_DOUBLE)
   target_link_libraries( FFTPACK_DOUBLE ${MATHLIB} )
-  set_property(TARGET FFTPACK_DOUBLE APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+  target_include_directories(FFTPACK_DOUBLE
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
   )
 
 endif()
@@ -232,7 +258,7 @@ endif()
 
 if (PFFFT_USE_TYPE_FLOAT)
   # only 'float' supported in PFFASTCONV
-  add_library(PFFASTCONV STATIC pffastconv.c pffastconv.h pffft.h )
+  add_library(PFFASTCONV src/pffastconv.c include/pffft/pffastconv.h include/pffft/pffft.h )
   set_target_properties(PFFASTCONV PROPERTIES OUTPUT_NAME "pffastconv")
   target_compile_definitions(PFFASTCONV PRIVATE _USE_MATH_DEFINES)
   target_activate_c_compiler_warnings(PFFASTCONV)
@@ -240,20 +266,61 @@ if (PFFFT_USE_TYPE_FLOAT)
     target_compile_options(PFFASTCONV PRIVATE "-fsanitize=address")
   endif()
   target_link_libraries( PFFASTCONV PFFFT ${ASANLIB} ${MATHLIB} )
-  set_property(TARGET PFFASTCONV APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+  target_include_directories(PFFASTCONV
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pffft
   )
+  set_target_properties(PFFASTCONV PROPERTIES
+    C_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON
+  )
+  if(NOT BUILD_SHARED_LIBS)
+    target_compile_definitions(PFFASTCONV PUBLIC PFFASTCONV_STATIC_DEFINE)
+  endif()
   if (INSTALL_PFFASTCONV)
     set(INSTALL_TARGETS ${INSTALL_TARGETS} PFFASTCONV)
-    set(INSTALL_HEADERS ${INSTALL_HEADERS} pffastconv.h)
+    set(INSTALL_HEADERS ${INSTALL_HEADERS} include/pffft/pffastconv.h)
   endif()
 endif()
 
 
 ######################################################
 
-install( TARGETS ${INSTALL_TARGETS}  DESTINATION lib)
-install( FILES  ${INSTALL_HEADERS}  DESTINATION include)
+install( TARGETS ${INSTALL_TARGETS}
+  EXPORT pffft-targets
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+install( FILES  ${INSTALL_HEADERS}  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pffft)
+
+install(EXPORT pffft-targets
+  FILE pffft-targets.cmake
+  NAMESPACE PFFFT::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pffft
+)
+
+include(CMakePackageConfigHelpers)
+
+configure_package_config_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/pffft-config.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/pffft-config.cmake"
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pffft
+)
+
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/pffft-config-version.cmake"
+  VERSION 1.0
+  COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/pffft-config.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/pffft-config-version.cmake"
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pffft
+)
 
 add_custom_target(uninstall
     "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/uninstall.cmake"
