@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(PRETTY_FAST_FFT)
 
+include(GNUInstallDirs)
+
 # detect if pffft is the top-level project or built as a dependency
 if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
   set(PFFFT_IS_TOPLEVEL ON)
@@ -266,8 +268,8 @@ endif()
 
 ######################################################
 
-install( TARGETS ${INSTALL_TARGETS}  DESTINATION lib)
-install( FILES  ${INSTALL_HEADERS}  DESTINATION include/pffft)
+install( TARGETS ${INSTALL_TARGETS}  DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install( FILES  ${INSTALL_HEADERS}  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pffft)
 
 add_custom_target(uninstall
     "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/uninstall.cmake"
