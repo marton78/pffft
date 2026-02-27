@@ -268,8 +268,38 @@ endif()
 
 ######################################################
 
-install( TARGETS ${INSTALL_TARGETS}  DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install( TARGETS ${INSTALL_TARGETS}
+  EXPORT pffft-targets
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
 install( FILES  ${INSTALL_HEADERS}  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pffft)
+
+install(EXPORT pffft-targets
+  FILE pffft-targets.cmake
+  NAMESPACE PFFFT::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pffft
+)
+
+include(CMakePackageConfigHelpers)
+
+configure_package_config_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/pffft-config.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/pffft-config.cmake"
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pffft
+)
+
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/pffft-config-version.cmake"
+  VERSION 1.0
+  COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/pffft-config.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/pffft-config-version.cmake"
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pffft
+)
 
 add_custom_target(uninstall
     "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/uninstall.cmake"
