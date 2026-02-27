@@ -15,6 +15,7 @@
 - [Comparison with other FFTs](#comparison-with-other-ffts)
 - [Dependencies / Required Linux packages](#dependencies--required-linux-packages)
 - [Benchmarks and results](#benchmarks-and-results)
+- [Appendix: upstream commit map](#appendix-upstream-commit-map)
 
 <!-- tocstop -->
 
@@ -230,7 +231,7 @@ Git history shows following first commits of the major contributors:
 
 There are a few other contributors not listed here.
 
-The main changes include:
+The main changes on top of the original include:
 * improved benchmarking, see [https://github.com/hayguen/pffft_benchmarks](https://github.com/hayguen/pffft_benchmarks)
 * double support
 * avx(2) support
@@ -239,6 +240,12 @@ The main changes include:
 * additional library for fast convolution
 * cmake support
 * ctest
+
+The original repository has also continued to evolve independently, receiving
+portability fixes and warning cleanups from various contributors. Those changes
+have been cherry-picked into this fork where applicable. See the
+[Appendix: upstream commit map](#appendix-upstream-commit-map) for a full
+commit-by-commit comparison.
 
 
 ## Comparison with other FFTs:
@@ -399,4 +406,43 @@ The benchmark results are stored in a separate git-repository:
 See [https://github.com/hayguen/pffft_benchmarks](https://github.com/hayguen/pffft_benchmarks).
 
 This is to keep this repositories' sources small.
+
+
+## Appendix: upstream commit map
+
+The table below lists every non-merge commit on
+[jpommier/pffft master](https://bitbucket.org/jpommier/pffft/) starting from
+the last common ancestor (`16490be`, _"added numbers for the tegra K1"_,
+2014-09-03). For each commit the corresponding hash in this fork is given, or
+an explanation of why the change was not ported.
+
+| Date | Upstream | Author | Change | Ours | Notes |
+|------|----------|--------|--------|------|-------|
+| 2016-09-22 | `74d7261` | Julien Pommier | Add 64-bit ARM support | `3673ac0` | |
+| 2020-10-15 | `e7de7c2` | Gregor Jasny | Fix 32-bit x86 iOS simulator define | `66ba262` | |
+| 2021-05-07 | `82f5a59` | Julien Pommier | Add MKL to benchmark, update results | `e44faf5` | benchmark only |
+| 2021-05-07 | `57b818a` | Julien Pommier | Remove old README.txt | -- | already absent |
+| 2021-05-11 | `ed78751` | Julien Pommier | Fix compilation when SIMD not available | -- | handled by restructured code |
+| 2021-12-01 | `ccd5628` | Mike Hommey | Add missing `#include <altivec.h>` | `b5f1aaa` | cherry-picked |
+| 2021-12-02 | `233c266` | Dan Horák | Fix AltiVec vector initialization syntax | `ea9ccdf` | cherry-picked |
+| 2021-12-02 | `d3fd82b` | Dan Horák | Fix ppc/ppc64 detection for GCC | `dbaaf40` | cherry-picked |
+| 2022-02-15 | `7914df2` | Yair Chuchem | Fix Xcode 13.2.1 warnings | `617dbd9` | cherry-picked (comma-to-semicolons portion; `(void)` part was already done) |
+| 2023-03-26 | `045c091` | Yair Chuchem | Fix `-Wshadow` in `pffft_zreorder` | `843d253` | cherry-picked |
+| 2023-08-17 | `7ed8b4c` | Julien Pommier | Shorter test time on ARM | -- | test-only; our test infrastructure differs |
+| 2023-08-17 | `1adf4b9` | Julien Pommier | Remove `f` suffixes for double-precision safety | `9c0c63c` | cherry-picked |
+| 2023-10-11 | `f2455bf` | Nick Dowell | Fix clang `-Wstrict-prototypes` | `f41361d` | already done (void signatures) |
+| 2024-03-19 | `17b6d50` | Yair Chuchem | Extract duplicated twiddle code | `2b5b658` | cherry-picked |
+| 2024-04-08 | `180c2d6` | Yair Chuchem | Fix `-Wshadow` in `zconvolve_accumulate` | `c8259be` | cherry-picked |
+| 2024-11-20 | `c43a62c` | Chris Robinson | Check AltiVec is enabled before using it | `b04ffaa` | cherry-picked |
+| 2024-11-25 | `3e10d3b` | Fabian Greffrath | Better SIMD capability checks | `81e6fc3` | cherry-picked (SSE portion; NEON uses CMake option) |
+| 2024-11-26 | `8873dd4` | Fabian Greffrath | Define `_USE_MATH_DEFINES` | `1e139d9` | mitigated differently (constants defined directly) |
+| 2024-11-29 | `a9fdee9` | Julien Pommier | Add arm64ec support on Windows | `06c8002` | cherry-picked (adapted for split SIMD files) |
+| 2024-11-29 | `c0ef461` | Julien Pommier | Replace `long long` with `size_t` | `20a6015` | already uses `uintptr_t` |
+| 2024-11-29 | `a8a8013` | Julien Pommier | Enable WASM SIMD support | `ec031bd` | cherry-picked |
+| 2024-11-29 | `de2c855` | Julien Pommier | Whitespace cleanup | -- | cosmetic only |
+| 2024-11-29 | `6d6a123` | Julien Pommier | `ifac` overflow protection, N validation | `d16aab2` | cherry-picked (library portions) |
+| 2024-11-29 | `02fe771` | Julien Pommier | Guard `_USE_MATH_DEFINES` redefinition | -- | not needed (constants defined directly) |
+| 2025-02-12 | `0d7449a` | Dan Raviv | Fix MSVC `/fp:strict` C2099 errors | `4d1c78d` | cherry-picked |
+| 2025-12-19 | `c306b13` | Julien Pommier | Fix implicit double-to-float conversions | `31be131` | cherry-picked (fftpack.c portion) |
+| 2026-01-05 | `0979688` | Julien Pommier | Fix alignment for small `size_t` platforms | `a9786ad` | already uses `uintptr_t` |
 
