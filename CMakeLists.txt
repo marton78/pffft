@@ -173,7 +173,7 @@ target_link_libraries( PFFFT ${ASANLIB} ${MATHLIB} )
 target_include_directories(PFFFT
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/include/pffft
@@ -204,7 +204,7 @@ if (PFFFT_USE_TYPE_FLOAT)
   target_include_directories(PFDSP
     PUBLIC
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-      $<INSTALL_INTERFACE:include>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pffft
@@ -255,7 +255,7 @@ if (PFFFT_USE_TYPE_FLOAT)
   target_include_directories(PFFASTCONV
     PUBLIC
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-      $<INSTALL_INTERFACE:include>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pffft
   )
