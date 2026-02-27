@@ -44,12 +44,12 @@ static int is_power_of_two(int N) {
 
 
 
-void *pffft_aligned_malloc(size_t nb_bytes) { return Valigned_malloc(nb_bytes); }
-void pffft_aligned_free(void *p) { Valigned_free(p); }
-int pffft_next_power_of_two(int N) { return next_power_of_two(N); }
-int pffft_is_power_of_two(int N) { return is_power_of_two(N); }
+PFFFT_EXPORT void *pffft_aligned_malloc(size_t nb_bytes) { return Valigned_malloc(nb_bytes); }
+PFFFT_EXPORT void pffft_aligned_free(void *p) { Valigned_free(p); }
+PFFFT_EXPORT int pffft_next_power_of_two(int N) { return next_power_of_two(N); }
+PFFFT_EXPORT int pffft_is_power_of_two(int N) { return is_power_of_two(N); }
 
-void *pffftd_aligned_malloc(size_t nb_bytes) { return Valigned_malloc(nb_bytes); }
-void pffftd_aligned_free(void *p) { Valigned_free(p); }
-int pffftd_next_power_of_two(int N) { return next_power_of_two(N); }
-int pffftd_is_power_of_two(int N) { return is_power_of_two(N); }
+PFFFT_EXPORT void *pffftd_aligned_malloc(size_t nb_bytes) { return Valigned_malloc(nb_bytes); }
+PFFFT_EXPORT void pffftd_aligned_free(void *p) { Valigned_free(p); }
+PFFFT_EXPORT int pffftd_next_power_of_two(int N) { return next_power_of_two(N); }
+PFFFT_EXPORT int pffftd_is_power_of_two(int N) { return is_power_of_two(N); }

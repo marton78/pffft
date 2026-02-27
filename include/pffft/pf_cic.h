@@ -32,6 +32,22 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <stdint.h>
 
+#ifndef PFDSP_EXPORT
+  #ifdef PFDSP_STATIC_DEFINE
+    #define PFDSP_EXPORT
+  #elif defined(_WIN32) || defined(__CYGWIN__)
+    #ifdef PFDSP_EXPORTS
+      #define PFDSP_EXPORT __declspec(dllexport)
+    #else
+      #define PFDSP_EXPORT __declspec(dllimport)
+    #endif
+  #elif defined(PFDSP_EXPORTS) && (defined(__GNUC__) || defined(__clang__))
+    #define PFDSP_EXPORT __attribute__((visibility("default")))
+  #else
+    #define PFDSP_EXPORT
+  #endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -46,11 +62,11 @@ extern "C" {
 
 typedef struct complexf_s { float i; float q; } complexf;
 
-void *cicddc_init(int factor);
-void cicddc_free(void *state);
-void cicddc_s16_c(void *state, int16_t *input, complexf *output, int outsize, float rate);
-void cicddc_cs16_c(void *state, int16_t *input, complexf *output, int outsize, float rate);
-void cicddc_cu8_c(void *state, uint8_t *input, complexf *output, int outsize, float rate);
+PFDSP_EXPORT void *cicddc_init(int factor);
+PFDSP_EXPORT void cicddc_free(void *state);
+PFDSP_EXPORT void cicddc_s16_c(void *state, int16_t *input, complexf *output, int outsize, float rate);
+PFDSP_EXPORT void cicddc_cs16_c(void *state, int16_t *input, complexf *output, int outsize, float rate);
+PFDSP_EXPORT void cicddc_cu8_c(void *state, uint8_t *input, complexf *output, int outsize, float rate);
 
 #ifdef __cplusplus
 }

@@ -33,6 +33,22 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdio.h>
 #include <stdint.h>
 
+#ifndef PFDSP_EXPORT
+  #ifdef PFDSP_STATIC_DEFINE
+    #define PFDSP_EXPORT
+  #elif defined(_WIN32) || defined(__CYGWIN__)
+    #ifdef PFDSP_EXPORTS
+      #define PFDSP_EXPORT __declspec(dllexport)
+    #else
+      #define PFDSP_EXPORT __declspec(dllimport)
+    #endif
+  #elif defined(PFDSP_EXPORTS) && (defined(__GNUC__) || defined(__clang__))
+    #define PFDSP_EXPORT __attribute__((visibility("default")))
+  #else
+    #define PFDSP_EXPORT
+  #endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -53,20 +69,20 @@ typedef struct complexf_s { float i; float q; } complexf;
 
 
 /* generation functions */
-void generate_dc_f(float* output, int size);
-void generate_dc_s16(short* output, int size);
-void generate_pos_fs4_f(float* output, int size);
-void generate_pos_fs4_s16(short* output, int size);
-void generate_neg_fs4_f(float* output, int size);
-void generate_neg_fs4_s16(short* output, int size);
+PFDSP_EXPORT void generate_dc_f(float* output, int size);
+PFDSP_EXPORT void generate_dc_s16(short* output, int size);
+PFDSP_EXPORT void generate_pos_fs4_f(float* output, int size);
+PFDSP_EXPORT void generate_pos_fs4_s16(short* output, int size);
+PFDSP_EXPORT void generate_neg_fs4_f(float* output, int size);
+PFDSP_EXPORT void generate_neg_fs4_s16(short* output, int size);
 
-void generate_dc_pos_fs4_s16(short* output, int size);
-void generate_dc_neg_fs4_s16(short* output, int size);
-void generate_pos_neg_fs4_s16(short* output, int size);
-void generate_dc_pos_neg_fs4_s16(short* output, int size);
+PFDSP_EXPORT void generate_dc_pos_fs4_s16(short* output, int size);
+PFDSP_EXPORT void generate_dc_neg_fs4_s16(short* output, int size);
+PFDSP_EXPORT void generate_pos_neg_fs4_s16(short* output, int size);
+PFDSP_EXPORT void generate_dc_pos_neg_fs4_s16(short* output, int size);
 
-void generate_pos_neg_fs2_s16(short* output, int size);
-void generate_dc_pos_neg_fs2_s16(short* output, int size);
+PFDSP_EXPORT void generate_pos_neg_fs2_s16(short* output, int size);
+PFDSP_EXPORT void generate_dc_pos_neg_fs2_s16(short* output, int size);
 
 
 #ifdef __cplusplus

@@ -154,7 +154,7 @@ endif()
 
 ######################################################
 
-add_library(PFFFT STATIC ${FLOAT_SOURCES} ${DOUBLE_SOURCES} src/pffft_common.c src/pffft_priv_impl.h include/pffft/pffft.hpp )
+add_library(PFFFT ${FLOAT_SOURCES} ${DOUBLE_SOURCES} src/pffft_common.c src/pffft_priv_impl.h include/pffft/pffft.hpp )
 add_library(PFFFT::PFFFT ALIAS PFFFT)
 set_target_properties(PFFFT PROPERTIES OUTPUT_NAME "pffft")
 target_compile_definitions(PFFFT PRIVATE _USE_MATH_DEFINES)
@@ -178,6 +178,13 @@ target_include_directories(PFFFT
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/include/pffft
 )
+set_target_properties(PFFFT PROPERTIES
+  C_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN ON
+)
+if(NOT BUILD_SHARED_LIBS)
+  target_compile_definitions(PFFFT PUBLIC PFFFT_STATIC_DEFINE)
+endif()
 if (INSTALL_PFFFT)
   set(INSTALL_TARGETS ${INSTALL_TARGETS} PFFFT)
   set(INSTALL_HEADERS ${INSTALL_HEADERS} include/pffft/pffft.hpp)
@@ -186,7 +193,7 @@ endif()
 ######################################################
 
 if (PFFFT_USE_TYPE_FLOAT)
-  add_library(PFDSP STATIC src/pf_mixer.cpp include/pffft/pf_mixer.h include/pffft/pf_cplx.h src/pf_carrier.cpp include/pffft/pf_carrier.h src/pf_cic.cpp include/pffft/pf_cic.h src/fmv.h )
+  add_library(PFDSP src/pf_mixer.cpp include/pffft/pf_mixer.h include/pffft/pf_cplx.h src/pf_carrier.cpp include/pffft/pf_carrier.h src/pf_cic.cpp include/pffft/pf_cic.h src/fmv.h )
   set_property(TARGET PFDSP PROPERTY CXX_STANDARD 11)
   set_property(TARGET PFDSP PROPERTY CXX_STANDARD_REQUIRED ON)
   set_target_properties(PFDSP PROPERTIES OUTPUT_NAME "pfdsp")
@@ -209,6 +216,13 @@ if (PFFFT_USE_TYPE_FLOAT)
       ${CMAKE_CURRENT_SOURCE_DIR}/src
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pffft
   )
+  set_target_properties(PFDSP PROPERTIES
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON
+  )
+  if(NOT BUILD_SHARED_LIBS)
+    target_compile_definitions(PFDSP PUBLIC PFDSP_STATIC_DEFINE)
+  endif()
   if (INSTALL_PFDSP)
       set(INSTALL_TARGETS ${INSTALL_TARGETS} PFDSP)
       set(INSTALL_HEADERS ${INSTALL_HEADERS} include/pffft/pf_mixer.h include/pffft/pf_cplx.h include/pffft/pf_carrier.h include/pffft/pf_cic.h)
@@ -244,7 +258,7 @@ endif()
 
 if (PFFFT_USE_TYPE_FLOAT)
   # only 'float' supported in PFFASTCONV
-  add_library(PFFASTCONV STATIC src/pffastconv.c include/pffft/pffastconv.h include/pffft/pffft.h )
+  add_library(PFFASTCONV src/pffastconv.c include/pffft/pffastconv.h include/pffft/pffft.h )
   set_target_properties(PFFASTCONV PROPERTIES OUTPUT_NAME "pffastconv")
   target_compile_definitions(PFFASTCONV PRIVATE _USE_MATH_DEFINES)
   target_activate_c_compiler_warnings(PFFASTCONV)
@@ -259,6 +273,13 @@ if (PFFFT_USE_TYPE_FLOAT)
     PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pffft
   )
+  set_target_properties(PFFASTCONV PROPERTIES
+    C_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON
+  )
+  if(NOT BUILD_SHARED_LIBS)
+    target_compile_definitions(PFFASTCONV PUBLIC PFFASTCONV_STATIC_DEFINE)
+  endif()
   if (INSTALL_PFFASTCONV)
     set(INSTALL_TARGETS ${INSTALL_TARGETS} PFFASTCONV)
     set(INSTALL_HEADERS ${INSTALL_HEADERS} include/pffft/pffastconv.h)
