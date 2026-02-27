@@ -25,14 +25,14 @@
  */
 
 #ifdef PFFFT_ENABLE_FLOAT
-#include "pffft.h"
+#include "pffft/pffft.h"
 
 typedef float pffft_scalar;
 #else
 /*
 Note: adapted for double precision dynamic range version.
 */
-#include "pffft_double.h"
+#include "pffft/pffft_double.h"
 
 typedef double pffft_scalar;
 #endif

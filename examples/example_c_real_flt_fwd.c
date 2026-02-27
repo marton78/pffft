@@ -1,5 +1,5 @@
 
-#include "pffft.h"
+#include "pffft/pffft.h"
 
 #include <stdio.h>
 #include <stdlib.h>

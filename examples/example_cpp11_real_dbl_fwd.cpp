@@ -1,5 +1,5 @@
 
-#include "pffft.hpp"
+#include "pffft/pffft.hpp"
 
 #include <complex>
 #include <iostream>

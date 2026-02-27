@@ -5,7 +5,7 @@
 
  */
 
-#include <pf_mixer.h>
+#include <pffft/pf_mixer.h>
 
 #include <math.h>
 #include <stdio.h>

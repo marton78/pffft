@@ -32,7 +32,7 @@
 #define CONCAT_THREE_TOKENS(A, B, C)  A ## B ## C
 
 #ifdef PFFFT_ENABLE_FLOAT
-#include "pffft.h"
+#include "pffft/pffft.h"
 
 typedef float pffft_scalar;
 typedef PFFFT_Setup PFFFT_SETUP;
@@ -42,7 +42,7 @@ typedef PFFFT_Setup PFFFT_SETUP;
 /*
 Note: adapted for double precision dynamic range version.
 */
-#include "pffft_double.h"
+#include "pffft/pffft_double.h"
 
 typedef double pffft_scalar;
 typedef PFFFTD_Setup PFFFT_SETUP;

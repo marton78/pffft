@@ -1,11 +1,11 @@
 
 #ifdef PFFFT_ENABLE_FLOAT
-#include "pffft.h"
+#include "pffft/pffft.h"
 #endif
 
 
 #ifdef PFFFT_ENABLE_DOUBLE
-#include "pffft_double.h"
+#include "pffft/pffft_double.h"
 #endif
 
 #include <stdio.h>

@@ -20,7 +20,7 @@
  *    utilizing the target_set_cxx_arch_option() macro in the CMakeLists.txt
  */
 
-#include "pf_cplx.h"
+#include "pffft/pf_cplx.h"
 
 #if defined(_MSC_VER)
 #  define RESTRICT __restrict

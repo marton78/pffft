@@ -32,7 +32,7 @@
 
  */
 
-#include "pffft.hpp"
+#include "pffft/pffft.hpp"
 
 #include <assert.h>
 #include <math.h>
