@@ -68,6 +68,10 @@
   #define M_SQRT2 1.41421356237309504880  /* sqrt(2) */
 #endif
 
+#ifndef M_SQRT1_2
+  #define M_SQRT1_2 0.707106781186547524400844362104849039  /* 1/sqrt(2) */
+#endif
+
 
 int FUNC_SIMD_SIZE(void) { return SIMD_SZ; }
 
@@ -167,9 +171,9 @@ static NEVER_INLINE(void) passf3_ps(int ido, int l1, const v4sf *cc, v4sf *ch,
       dr3 = VADD(cr2, ci3);
       di2 = VADD(ci2, cr3);
       di3 = VSUB(ci2, cr3);
-      wr1=wa1[i], wi1=fsign*wa1[i+1], wr2=wa2[i], wi2=fsign*wa2[i+1]; 
+      wr1=wa1[i]; wi1=fsign*wa1[i+1]; wr2=wa2[i]; wi2=fsign*wa2[i+1];
       VCPLXMUL(dr2, di2, LD_PS1(wr1), LD_PS1(wi1));
-      ch[i+l1ido] = dr2; 
+      ch[i+l1ido] = dr2;
       ch[i+l1ido + 1] = di2;
       VCPLXMUL(dr3, di3, LD_PS1(wr2), LD_PS1(wi2));
       ch[i+2*l1ido] = dr3;
@@ -227,14 +231,14 @@ static NEVER_INLINE(void) passf4_ps(int ido, int l1, const v4sf *cc, v4sf *ch,
         cr4 = VSUB(tr1, tr4);
         ci2 = VADD(ti1, ti4);
         ci4 = VSUB(ti1, ti4);
-        wr1=wa1[i], wi1=fsign*wa1[i+1];
+        wr1=wa1[i]; wi1=fsign*wa1[i+1];
         VCPLXMUL(cr2, ci2, LD_PS1(wr1), LD_PS1(wi1));
-        wr2=wa2[i], wi2=fsign*wa2[i+1]; 
+        wr2=wa2[i]; wi2=fsign*wa2[i+1];
         ch[i + l1ido] = cr2;
         ch[i + l1ido + 1] = ci2;
 
         VCPLXMUL(cr3, ci3, LD_PS1(wr2), LD_PS1(wi2));
-        wr3=wa3[i], wi3=fsign*wa3[i+1]; 
+        wr3=wa3[i]; wi3=fsign*wa3[i+1];
         ch[i + 2*l1ido] = cr3;
         ch[i + 2*l1ido + 1] = ci3;
 
@@ -296,8 +300,8 @@ static NEVER_INLINE(void) passf5_ps(int ido, int l1, const v4sf *cc, v4sf *ch,
       dr2 = VSUB(cr2, ci5);
       di5 = VSUB(ci2, cr5);
       di2 = VADD(ci2, cr5);
-      wr1=wa1[i], wi1=fsign*wa1[i+1], wr2=wa2[i], wi2=fsign*wa2[i+1]; 
-      wr3=wa3[i], wi3=fsign*wa3[i+1], wr4=wa4[i], wi4=fsign*wa4[i+1]; 
+      wr1=wa1[i]; wi1=fsign*wa1[i+1]; wr2=wa2[i]; wi2=fsign*wa2[i+1];
+      wr3=wa3[i]; wi3=fsign*wa3[i+1]; wr4=wa4[i]; wi4=fsign*wa4[i+1];
       VCPLXMUL(dr2, di2, LD_PS1(wr1), LD_PS1(wi1));
       ch_ref(i - 1, 2) = dr2;
       ch_ref(i, 2)     = di2;
@@ -425,7 +429,7 @@ static void radb3_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch
 {
   static const float taur = -0.5f;
   static const float taui = 0.866025403784439f;
-  static const float taui_2 = 0.866025403784439f*2;
+  static const float taui_2 = 1.732050807568878f;
   int i, k, ic;
   v4sf ci2, ci3, di2, di3, cr2, cr3, dr2, dr3, ti2, tr2;
   for (k=0; k<l1; k++) {
@@ -896,6 +900,7 @@ static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *w
   return in; /* this is in fact the output .. */
 }
 
+#define IFAC_MAX_SIZE 25 /* max number of integer factors for the decomposition, +2 */
 static int decompose(int n, int *ifac, const int *ntryh) {
   int nl = n, nf = 0, i, j = 0;
   for (j=0; ntryh[j]; ++j) {
@@ -904,6 +909,7 @@ static int decompose(int n, int *ifac, const int *ntryh) {
       int nq = nl / ntry;
       int nr = nl - ntry * nq;
       if (nr == 0) {
+        assert(2 + nf < IFAC_MAX_SIZE);
         ifac[2+nf++] = ntry;
         nl = nq;
         if (ntry == 2 && nf != 1) {
@@ -1045,7 +1051,8 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
 struct SETUP_STRUCT {
   int     N;
   int     Ncvec;  /* nb of complex simd vectors (N/4 if PFFFT_COMPLEX, N/8 if PFFFT_REAL) */
-  int ifac[15];
+  /* hold the decomposition into small integers of N */
+  int ifac[IFAC_MAX_SIZE]; /* N, number of factors, factors (admitted values: 2, 3, 4 or 5) */
   pffft_transform_t transform;
   v4sf *data;     /* allocated room for twiddle coefs */
   float *e;       /* points into 'data', N/4*3 elements */
@@ -1055,7 +1062,16 @@ struct SETUP_STRUCT {
 SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
   SETUP_STRUCT *s = 0;
   int k, m;
-  /* unfortunately, the fft size must be a multiple of 16 for complex FFTs 
+  /* validate N for negative values or potential int overflow */
+  if (N < 0) {
+    return s;
+  }
+  if (N > (1<<26)) {
+    /* higher values of N will make you enter in the integer overflow world... */
+    assert(0);
+    return s;
+  }
+  /* unfortunately, the fft size must be a multiple of 16 for complex FFTs
      and 32 for real FFTs -- a lot of stuff would need to be rewritten to
      handle other cases (or maybe just switch to a scalar fft, I don't know..) */
   if (transform == PFFFT_REAL)    { if ((N%(2*SIMD_SZ*SIMD_SZ)) || N<=0) return s; }
@@ -1070,27 +1086,19 @@ SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
   s->e = (float*)s->data;
   s->twiddle = (float*)(s->data + (2*s->Ncvec*(SIMD_SZ-1))/SIMD_SZ);  
 
-  if (transform == PFFFT_REAL) {
-    for (k=0; k < s->Ncvec; ++k) {
-      int i = k/SIMD_SZ;
-      int j = k%SIMD_SZ;
-      for (m=0; m < SIMD_SZ-1; ++m) {
-        float A = -2*(float)M_PI*(m+1)*k / N;
-        s->e[(2*(i*3 + m) + 0) * SIMD_SZ + j] = FUNC_COS(A);
-        s->e[(2*(i*3 + m) + 1) * SIMD_SZ + j] = FUNC_SIN(A);
-      }
+  for (k=0; k < s->Ncvec; ++k) {
+    int i = k/SIMD_SZ;
+    int j = k%SIMD_SZ;
+    for (m=0; m < SIMD_SZ-1; ++m) {
+      float A = -2*(float)M_PI*(m+1)*k / N;
+      s->e[(2*(i*3 + m) + 0) * SIMD_SZ + j] = FUNC_COS(A);
+      s->e[(2*(i*3 + m) + 1) * SIMD_SZ + j] = FUNC_SIN(A);
     }
+  }
+
+  if (transform == PFFFT_REAL) {
     rffti1_ps(N/SIMD_SZ, s->twiddle, s->ifac);
   } else {
-    for (k=0; k < s->Ncvec; ++k) {
-      int i = k/SIMD_SZ;
-      int j = k%SIMD_SZ;
-      for (m=0; m < SIMD_SZ-1; ++m) {
-        float A = -2*(float)M_PI*(m+1)*k / N;
-        s->e[(2*(i*3 + m) + 0)*SIMD_SZ + j] = FUNC_COS(A);
-        s->e[(2*(i*3 + m) + 1)*SIMD_SZ + j] = FUNC_SIN(A);
-      }
-    }
     cffti1_ps(N/SIMD_SZ, s->twiddle, s->ifac);
   }
 
@@ -1153,7 +1161,7 @@ void FUNC_ZREORDER(SETUP_STRUCT *setup, const float *in, float *out, pffft_direc
   v4sf *vout = (v4sf*)out;
   assert(in != out);
   if (setup->transform == PFFFT_REAL) {
-    int k, dk = N/32;
+    int dk = N/32;
     if (direction == PFFFT_FORWARD) {
       for (k=0; k < dk; ++k) {
         INTERLEAVE2(vin[k*8 + 0], vin[k*8 + 1], vout[2*(0*dk + k) + 0], vout[2*(0*dk + k) + 1]);
@@ -1326,7 +1334,7 @@ static NEVER_INLINE(void) FUNC_REAL_FINALIZE(int Ncvec, const v4sf *in, v4sf *ou
   v4sf_union cr, ci, *uout = (v4sf_union*)out;
   v4sf save = in[7], zero=VZERO();
   float xr0, xi0, xr1, xi1, xr2, xi2, xr3, xi3;
-  static const float s = (float)M_SQRT2/2;
+  static const float s = (float)(M_SQRT1_2);
 
   cr.v = in[0]; ci.v = in[Ncvec*2-1];
   assert(in != out);
@@ -1547,19 +1555,19 @@ void FUNC_ZCONVOLVE_ACCUMULATE(SETUP_STRUCT *s, const float *a, const float *b, 
 # endif
 #endif
 
-  float ar, ai, br, bi, abr, abi;
+  float ar0, ai0, br0, bi0, abr0, abi0;
 #ifndef ZCONVOLVE_USING_INLINE_ASM
   v4sf vscal = LD_PS1(scaling);
   int i;
 #endif
 
   assert(VALIGNED(a) && VALIGNED(b) && VALIGNED(ab));
-  ar = ((v4sf_union*)va)[0].f[0];
-  ai = ((v4sf_union*)va)[1].f[0];
-  br = ((v4sf_union*)vb)[0].f[0];
-  bi = ((v4sf_union*)vb)[1].f[0];
-  abr = ((v4sf_union*)vab)[0].f[0];
-  abi = ((v4sf_union*)vab)[1].f[0];
+  ar0 = ((v4sf_union*)va)[0].f[0];
+  ai0 = ((v4sf_union*)va)[1].f[0];
+  br0 = ((v4sf_union*)vb)[0].f[0];
+  bi0 = ((v4sf_union*)vb)[1].f[0];
+  abr0 = ((v4sf_union*)vab)[0].f[0];
+  abi0 = ((v4sf_union*)vab)[1].f[0];
  
 #ifdef ZCONVOLVE_USING_INLINE_ASM
   /* inline asm version, unfortunately miscompiled by clang 3.2,
@@ -1616,8 +1624,8 @@ void FUNC_ZCONVOLVE_ACCUMULATE(SETUP_STRUCT *s, const float *a, const float *b, 
   }
 #endif
   if (s->transform == PFFFT_REAL) {
-    ((v4sf_union*)vab)[0].f[0] = abr + ar*br*scaling;
-    ((v4sf_union*)vab)[1].f[0] = abi + ai*bi*scaling;
+    ((v4sf_union*)vab)[0].f[0] = abr0 + ar0*br0*scaling;
+    ((v4sf_union*)vab)[1].f[0] = abi0 + ai0*bi0*scaling;
   }
 }
 
