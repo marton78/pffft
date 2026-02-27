@@ -10,6 +10,7 @@
 - [Brief Description](#brief-description)
 - [Why does it exist?](#why-does-it-exist)
 - [CMake](#cmake)
+- [Using pffft in your CMake project](#using-pffft-in-your-cmake-project)
 - [History / Origin / Changes](#history--origin--changes)
 - [Comparison with other FFTs](#comparison-with-other-ffts)
 - [Dependencies / Required Linux packages](#dependencies--required-linux-packages)
@@ -23,9 +24,9 @@
 
 PFFFT does 1D Fast Fourier Transforms, of single precision real and
 complex vectors. It tries do it fast, it tries to be correct, and it
-tries to be small. Computations do take advantage of SSE1 instructions
-on x86 cpus, Altivec on powerpc cpus, and NEON on ARM cpus. The
-license is BSD-like.
+tries to be small. Computations do take advantage of SSE1/AVX/AVX2 instructions
+on x86 cpus, Altivec on powerpc cpus, and NEON on ARM cpus
+(including Apple Silicon). The license is BSD-like.
 
 PFFFT is a fork of [Julien Pommier's library on bitbucket](https://bitbucket.org/jpommier/pffft/)
 with some changes and additions.
@@ -119,9 +120,9 @@ But you can compile and link **pffft** as a static library.
 
 
 ## CMake:
-There's now CMake support to build the static libraries `libPFFFT.a` 
-and `libPFFASTCONV.a` from the source files, plus the additional 
-`libFFTPACK.a` library. Later one's sources are there anyway for the benchmark.
+There's now CMake support to build the static libraries `libPFFFT.a`
+and `libPFFASTCONV.a` from the source files. The additional
+`libFFTPACK.a` library is built only when tests or benchmarks are enabled.
 
 There are several CMake options to modify library size and optimization.
 You can explore all available options with `cmake-gui` or `ccmake`,
@@ -168,6 +169,51 @@ ctest -C Release
 see [https://cmake.org/cmake/help/v3.15/manual/cmake-generators.7.html#visual-studio-generators](https://cmake.org/cmake/help/v3.15/manual/cmake-generators.7.html#visual-studio-generators)
 
 
+## Using pffft in your CMake project
+
+pffft can be included as a dependency in your CMake project via `FetchContent` or `add_subdirectory()`. When used this way, tests, benchmarks, and examples are automatically disabled, so pffft won't pollute your build or ctest runner with unnecessary targets.
+
+### FetchContent (CMake 3.11+)
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(pffft
+    GIT_REPOSITORY https://github.com/marton78/pffft.git
+    GIT_TAG master
+)
+FetchContent_MakeAvailable(pffft)
+
+target_link_libraries(my_app PRIVATE PFFFT::PFFFT)
+```
+
+### add_subdirectory
+
+If you have pffft checked out as a subdirectory or git submodule:
+
+```cmake
+add_subdirectory(pffft)
+
+target_link_libraries(my_app PRIVATE PFFFT::PFFFT)
+```
+
+### Available targets
+
+| Target | Description |
+|---|---|
+| `PFFFT::PFFFT` (or `PFFFT`) | FFT library (float and/or double, depending on options) |
+| `PFFASTCONV` | Fast convolution library |
+| `PFDSP` | DSP utilities (mixer, carrier generation) |
+
+### Build control options
+
+When pffft is the top-level project, these default to `ON`. When included as a subdirectory, they default to `OFF`:
+
+* `PFFFT_BUILD_TESTS` — Build test executables and register CTest tests
+* `PFFFT_BUILD_BENCHMARKS` — Build benchmark executables
+* `PFFFT_BUILD_EXAMPLES` — Build example programs
+
+
 ## History / Origin / Changes:
 Origin for this code/fork is Julien Pommier's pffft on bitbucket:
 [https://bitbucket.org/jpommier/pffft/](https://bitbucket.org/jpommier/pffft/)
@@ -177,6 +223,10 @@ Git history shows following first commits of the major contributors:
 * Marton Danoczy: September 30, 2015
 * Hayati Ayguen: December 22, 2019
 * Dario Mambro: March 24, 2020
+* George Hilliard: March 15, 2025
+* Gunj Joshi: April 1, 2025
+* Aleksey Vaneev: December 20, 2025
+* Sergi Granell (xerpi): February 26, 2026
 
 There are a few other contributors not listed here.
 
