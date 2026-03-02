@@ -1,18 +1,27 @@
+# Allow old cmake_minimum_required() in vendored submodules
+if (NOT CMAKE_POLICY_VERSION_MINIMUM)
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+endif()
+
 if (PFFFT_USE_BENCH_GREEN)
   if (EXISTS "${PFFFT_SOURCE_DIR}/greenffts/CMakeLists.txt")
     message(STATUS "found subdir greenffts")
     set(PATH_GREEN "${PFFFT_SOURCE_DIR}/greenffts")
-    add_subdirectory( "${PATH_GREEN}" "${CMAKE_CURRENT_BINARY_DIR}/greenffts" )
+    add_subdirectory( "${PATH_GREEN}" "${CMAKE_CURRENT_BINARY_DIR}/greenffts" EXCLUDE_FROM_ALL )
   else()
     message(WARNING "GreenFFT not found in subdir greenffts")
   endif()
 endif()
 
 if (PFFFT_USE_BENCH_KISS)
-  # git submodule add https://github.com/hayguen/kissfft.git
+  # git submodule add https://github.com/mborgerding/kissfft.git
   if (EXISTS "${PFFFT_SOURCE_DIR}/kissfft/CMakeLists.txt")
     message(STATUS "found subdir kissfft")
     set(PATH_KISS "${PFFFT_SOURCE_DIR}/kissfft")
+    set(KISSFFT_STATIC ON CACHE BOOL "" FORCE)
+    set(KISSFFT_TEST OFF CACHE BOOL "" FORCE)
+    set(KISSFFT_TOOLS OFF CACHE BOOL "" FORCE)
+    set(KISSFFT_PKGCONFIG OFF CACHE BOOL "" FORCE)
     add_subdirectory( "${PATH_KISS}" "${CMAKE_CURRENT_BINARY_DIR}/kissfft" )
   else()
     message(WARNING "KissFFT not found in subdir kissfft")
@@ -20,7 +29,7 @@ if (PFFFT_USE_BENCH_KISS)
 endif()
 
 if (PFFFT_USE_BENCH_POCKET)
-  # git submodule add https://github.com/hayguen/pocketfft.git
+  # git submodule add https://github.com/hayguen/pocketfft.git  (C port with single+double precision)
   if (EXISTS "${PFFFT_SOURCE_DIR}/pocketfft/pocketfft_double.c")
     message(STATUS "found subdir pocketfft")
     set(PATH_POCKET "${PFFFT_SOURCE_DIR}/pocketfft")
@@ -59,7 +68,7 @@ if (PFFFT_USE_TYPE_FLOAT)
 
   if (PATH_KISS AND PFFFT_USE_BENCH_KISS)
     target_compile_definitions(bench_pffft_float PRIVATE HAVE_KISS_FFT=1)
-    target_link_libraries(bench_pffft_float  KissFFT)
+    target_link_libraries(bench_pffft_float  kissfft)
   endif()
 
   if (PATH_POCKET AND PFFFT_USE_BENCH_POCKET)
