@@ -122,14 +122,9 @@ FORCE_INLINE __m256d _mm256_permute2f128_pd_0x31(__m256d a, __m256d b)
 FORCE_INLINE __m256d _mm256_reverse(__m256d x)
 {
     __m256d res;
-    float64x2_t low = x.vect_f64[0];
-    float64x2_t high = x.vect_f64[1];
-    float64x1_t a = vget_low_f64(low);
-    float64x1_t b = vget_high_f64(low);
-    float64x1_t c = vget_low_f64(high);
-    float64x1_t d = vget_high_f64(high);
-    res.vect_f64[0] =  vcombine_f64(d, c);
-    res.vect_f64[1] =  vcombine_f64(b, a);
+    /* vextq_f64(v,v,1) swaps the two f64 lanes in a single EXT instruction */
+    res.vect_f64[0] = vextq_f64(x.vect_f64[1], x.vect_f64[1], 1);
+    res.vect_f64[1] = vextq_f64(x.vect_f64[0], x.vect_f64[0], 1);
     return res;
 }
 
