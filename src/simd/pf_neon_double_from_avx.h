@@ -79,6 +79,14 @@ FORCE_INLINE __m256d _mm256_sub_pd(__m256d a, __m256d b)
     return res_m256d;
 }
 
+FORCE_INLINE __m256d _mm256_fmadd_pd(__m256d a, __m256d b, __m256d c)
+{
+    __m256d res_m256d;
+    res_m256d.vect_f64[0] = vfmaq_f64(c.vect_f64[0], a.vect_f64[0], b.vect_f64[0]);
+    res_m256d.vect_f64[1] = vfmaq_f64(c.vect_f64[1], a.vect_f64[1], b.vect_f64[1]);
+    return res_m256d;
+}
+
 FORCE_INLINE __m256d _mm256_set1_pd(double a)
 {
     __m256d ret;
