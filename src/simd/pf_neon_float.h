@@ -54,7 +54,12 @@ typedef union v4sf_union {
 #  define VZERO() vdupq_n_f32(0)
 #  define VMUL(a,b) vmulq_f32(a,b)
 #  define VADD(a,b) vaddq_f32(a,b)
+/* Use true fused multiply-add when available (AArch64 always, ARMv7 with VFPv4+) */
+#if defined(__aarch64__) || defined(__arm64__) || defined(__ARM_FEATURE_FMA)
+#  define VMADD(a,b,c) vfmaq_f32(c,a,b)
+#else
 #  define VMADD(a,b,c) vmlaq_f32(c,a,b)
+#endif
 #  define VSUB(a,b) vsubq_f32(a,b)
 #  define LD_PS1(p) vld1q_dup_f32(&(p))
 #  define VLOAD_UNALIGNED(ptr)  (*((v4sf*)(ptr)))
