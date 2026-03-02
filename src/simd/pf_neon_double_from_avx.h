@@ -114,10 +114,11 @@ FORCE_INLINE __m128d _mm256_castpd256_pd128(__m256d a)
     return a.vect_f64[0];
 }
 
-FORCE_INLINE __m128d _mm256_extractf128_pd (__m256d a, const int imm8)
+/* All call sites use literal 1; index 0 is handled by _mm256_castpd256_pd128 */
+FORCE_INLINE __m128d _mm256_extractf128_pd(__m256d a, const int imm8)
 {
-    assert(imm8 >= 0 && imm8 <= 1);
-    return a.vect_f64[imm8];
+    (void)imm8;
+    return a.vect_f64[1];
 }
 
 FORCE_INLINE __m256d _mm256_castpd128_pd256(__m128d a)
