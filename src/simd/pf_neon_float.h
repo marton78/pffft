@@ -62,8 +62,8 @@ typedef union v4sf_union {
 #endif
 #  define VSUB(a,b) vsubq_f32(a,b)
 #  define LD_PS1(p) vld1q_dup_f32(&(p))
-#  define VLOAD_UNALIGNED(ptr)  (*((v4sf*)(ptr)))
-#  define VLOAD_ALIGNED(ptr)    (*((v4sf*)(ptr)))
+#  define VLOAD_UNALIGNED(ptr)  vld1q_f32((const float*)(ptr))
+#  define VLOAD_ALIGNED(ptr)    vld1q_f32((const float*)(ptr))
 #  define INTERLEAVE2(in1, in2, out1, out2) { float32x4x2_t tmp__ = vzipq_f32(in1,in2); out1=tmp__.val[0]; out2=tmp__.val[1]; }
 #  define UNINTERLEAVE2(in1, in2, out1, out2) { float32x4x2_t tmp__ = vuzpq_f32(in1,in2); out1=tmp__.val[0]; out2=tmp__.val[1]; }
 #  define VTRANSPOSE4(x0,x1,x2,x3) {                                    \
