@@ -56,12 +56,22 @@ FFTW_URL = f"https://www.fftw.org/fftw-{FFTW_VERSION}.tar.gz"
 #   userspace (CNTVCT_EL0 register) for high-resolution plan timing.
 #   Without this FFTW falls back to ESTIMATE mode (no measurement at all)
 #   or a slow gettimeofday timer. Accessible on Android since Linux 4.x.
+#   Discovered by andrej5elin: https://github.com/andrej5elin/howto_fftw_apple_silicon
 # --enable-neon: enable NEON SIMD codelets (float and double).
+# Tuple: (host_triple, float_extra_flags, double_extra_flags)
+# FFTW NEON codelets are single-precision only — --enable-neon must not be
+# passed to the double-precision build or configure will error out.
 ABI_CONFIGURE = {
-    "arm64-v8a":   ("aarch64-linux-android",   ["--enable-armv8-cntvct-el0", "--enable-neon"]),
-    "armeabi-v7a": ("armv7a-linux-androideabi", ["--with-slow-timer",          "--enable-neon"]),
-    "x86_64":      ("x86_64-linux-android",     ["--with-slow-timer"]),
-    "x86":         ("i686-linux-android",        ["--with-slow-timer"]),
+    "arm64-v8a":   ("aarch64-linux-android",
+                    ["--enable-armv8-cntvct-el0", "--enable-neon"],  # float
+                    ["--enable-armv8-cntvct-el0"]),                   # double
+    "armeabi-v7a": ("armv7a-linux-androideabi",
+                    ["--with-slow-timer", "--enable-neon"],
+                    ["--with-slow-timer"]),
+    "x86_64":      ("x86_64-linux-android",
+                    ["--with-slow-timer"], ["--with-slow-timer"]),
+    "x86":         ("i686-linux-android",
+                    ["--with-slow-timer"], ["--with-slow-timer"]),
 }
 
 
@@ -189,10 +199,11 @@ def build_fftw(ndk_root, abi, api, march, build_dir, cpu_count):
         print("  Use WSL or a Linux/macOS host instead.", file=sys.stderr)
         sys.exit(1)
 
-    host_triple, extra_flags = ABI_CONFIGURE.get(abi, (None, None))
-    if host_triple is None:
+    abi_cfg = ABI_CONFIGURE.get(abi)
+    if abi_cfg is None:
         print(f"ERROR: --fftw: no autoconf host triple known for ABI '{abi}'", file=sys.stderr)
         sys.exit(1)
+    host_triple, float_flags, double_flags = abi_cfg
 
     toolbin = ndk_root / "toolchains" / "llvm" / "prebuilt" / ndk_host_tag() / "bin"
     cc      = str(toolbin / f"{host_triple}{api}-clang")
@@ -230,7 +241,7 @@ def build_fftw(ndk_root, abi, api, march, build_dir, cpu_count):
         "--disable-shared",
         "--enable-static",
         f"--prefix={fftw_prefix}",
-    ] + extra_flags
+    ]
 
     env = os.environ.copy()
     # Override FFTW's default CFLAGS which include -mtune=native; that flag
@@ -244,12 +255,16 @@ def build_fftw(ndk_root, abi, api, march, build_dir, cpu_count):
         "CFLAGS": f"-O3 -fomit-frame-pointer -fstrict-aliasing {march_flag}".strip(),
     })
 
-    # Build float (fftw3f) and double (fftw3) from separate build dirs
-    for label, extra in [("float", ["--enable-float"]), ("double", [])]:
+    # Build float (fftw3f) and double (fftw3) from separate build dirs.
+    # NEON codelets are float-only — float_flags and double_flags differ.
+    for label, prec_flags, extra in [
+        ("float",  float_flags,  ["--enable-float"]),
+        ("double", double_flags, []),
+    ]:
         banner([f"Building FFTW {FFTW_VERSION} — {label} precision"])
         bdir = build_dir / f"fftw_build_{label}"
         bdir.mkdir(parents=True, exist_ok=True)
-        run(base_configure_args + extra, cwd=bdir, env=env)
+        run(base_configure_args + prec_flags + extra, cwd=bdir, env=env)
         run(["make", "-j", str(cpu_count)], cwd=bdir)
         run(["make", "install"], cwd=bdir)
 
