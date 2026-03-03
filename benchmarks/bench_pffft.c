@@ -1540,7 +1540,7 @@ int main(int argc, char **argv) {
       }
     }
     fprintf(stdout, " (numbers are given in MFlops)\n");
-    if (outputTable2File) {
+    if (tableFile) {
       fclose(tableFile);
     }
   }
