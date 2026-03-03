@@ -218,7 +218,7 @@ const char * algoTableHeader[NUM_FFT_ALGOS][2] = {
 { "| real PFFFT-U ", "| cplx PFFFT-U " },
 { "|  real  PFFFT ", "|  cplx  PFFFT " } };
 
-const char * typeText[NUM_TYPES] = {
+const char * measureTypeText[NUM_TYPES] = {
   "preparation in ms",
   "time per fft in ns",
   "relative to fastest",

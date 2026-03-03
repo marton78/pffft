@@ -56,6 +56,11 @@ if (PFFFT_USE_TYPE_FLOAT)
     target_link_libraries(bench_pffft_float  FFTPACK_FLOAT)
   endif()
 
+  if (APPLE)
+    target_compile_definitions(bench_pffft_float PRIVATE HAVE_VECLIB=1)
+    target_link_libraries(bench_pffft_float "-framework Accelerate")
+  endif()
+
   if (PFFFT_USE_BENCH_FFTW)
     target_compile_definitions(bench_pffft_float PRIVATE HAVE_FFTW=1)
     target_link_libraries(bench_pffft_float  fftw3f)
@@ -102,6 +107,11 @@ if (PFFFT_USE_TYPE_DOUBLE)
   if (PFFFT_USE_FFTPACK)
     target_compile_definitions(bench_pffft_double PRIVATE HAVE_FFTPACK=1)
     target_link_libraries(bench_pffft_double  FFTPACK_DOUBLE)
+  endif()
+
+  if (APPLE)
+    target_compile_definitions(bench_pffft_double PRIVATE HAVE_VECLIB=1)
+    target_link_libraries(bench_pffft_double "-framework Accelerate")
   endif()
 
   if (PFFFT_USE_BENCH_FFTW)
