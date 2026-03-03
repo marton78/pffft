@@ -11,8 +11,11 @@ Options:
     --abi <ABI>     Android ABI to build for (default: arm64-v8a)
                     Other options: armeabi-v7a, x86_64, x86
     --api <level>   Android API level (default: 21)
-    --arch <march>  -march value passed to TARGET_C_ARCH / TARGET_CXX_ARCH
-                    (default: armv8-a for arm64-v8a, armv7-a for armeabi-v7a, none for x86*)
+    --arch <march>  -march value passed to TARGET_C_ARCH / TARGET_CXX_ARCH.
+                    If omitted and a device is connected, auto-detected from
+                    /proc/cpuinfo (e.g. armv8.2-a+dotprod+fp16).
+                    Falls back to armv8-a / armv7-a for arm ABIs when no
+                    device is available.
     --fftw          Cross-compile FFTW 3.3.10 and include it in the benchmark
                     (requires autoconf/make; not supported on Windows)
     --no-run        Build only; do not push or run on device
@@ -82,6 +85,49 @@ def adb_output(adb_cmd, shell_cmd):
     return result.stdout.strip().replace("\r", "")
 
 
+# ── device capability detection ───────────────────────────────────────────────
+
+def detect_device_march(adb_cmd, abi):
+    """Inspect /proc/cpuinfo on the connected device and return a -march string
+    that uses every ISA extension the device actually supports.
+
+    Only meaningful for ARM ABIs; returns None for x86*.
+    """
+    if not abi.startswith("arm"):
+        return None
+
+    result = subprocess.run(
+        adb_cmd + ["shell", "grep -m1 Features /proc/cpuinfo"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return None
+
+    feats = result.stdout.lower()
+
+    # Feature flag → clang -march extension name
+    # Listed roughly in ARMv8.x generation order.
+    ext_map = [
+        ("asimdrdm", "rdm"),        # ARMv8.1 NEON rounding-doubles
+        ("asimddp",  "dotprod"),    # ARMv8.2 NEON 8-bit dot product
+        ("asimdhp",  "fp16"),       # ARMv8.2 NEON half-precision arithmetic
+        ("lrcpc",    "rcpc"),       # ARMv8.3 RCpc load-acquire
+    ]
+
+    # Determine base march from highest confirmed generation
+    if "asimddp" in feats or "asimdhp" in feats:
+        base = "armv8.2-a"
+    elif "asimdrdm" in feats:
+        base = "armv8.1-a"
+    else:
+        base = "armv8-a"
+
+    extras = [ext for flag, ext in ext_map if flag in feats]
+    march = base + "".join(f"+{e}" for e in extras)
+    print(f"  Detected device march: {march}  (features: {feats.split('features')[1].strip().lstrip(': ')})")
+    return march
+
+
 # ── NDK detection ─────────────────────────────────────────────────────────────
 
 def find_ndk():
@@ -127,7 +173,7 @@ def ndk_host_tag():
 
 # ── FFTW cross-compilation ────────────────────────────────────────────────────
 
-def build_fftw(ndk_root, abi, api, build_dir, cpu_count):
+def build_fftw(ndk_root, abi, api, march, build_dir, cpu_count):
     """Download and cross-compile FFTW (float + double) for the given ABI.
 
     Returns the path to the install prefix containing include/ and lib/.
@@ -183,7 +229,16 @@ def build_fftw(ndk_root, abi, api, build_dir, cpu_count):
     ] + extra_flags
 
     env = os.environ.copy()
-    env.update({"CC": cc, "AR": ar, "RANLIB": ranlib})
+    # Override FFTW's default CFLAGS which include -mtune=native; that flag
+    # targets the *host* machine when cross-compiling, not the Android device.
+    # We use -march instead, which controls both code generation and scheduling.
+    march_flag = f"-march={march}" if march and march != "none" else ""
+    env.update({
+        "CC":     cc,
+        "AR":     ar,
+        "RANLIB": ranlib,
+        "CFLAGS": f"-O3 -fomit-frame-pointer -fstrict-aliasing {march_flag}".strip(),
+    })
 
     # Build float (fftw3f) and double (fftw3) from separate build dirs
     for label, extra in [("float", ["--enable-float"]), ("double", [])]:
@@ -244,11 +299,30 @@ def main():
     toolchain = ndk_root / "build" / "cmake" / "android.toolchain.cmake"
     print(f"Using NDK: {ndk_root}")
 
-    # ── resolve march default ─────────────────────────────────────────────────
+    # ── resolve adb command ───────────────────────────────────────────────────
+    # (needed early for march auto-detection)
+
+    adb_base = ["adb"]
+    if args.serial:
+        adb_base = ["adb", "-s", args.serial]
+
+    # ── resolve march ─────────────────────────────────────────────────────────
 
     march = args.arch
+    if march is None and not args.no_run:
+        # Try to auto-detect from the connected device before building
+        result = subprocess.run(adb_base + ["devices"], capture_output=True, text=True)
+        device_available = any(
+            line.endswith("device")
+            for line in result.stdout.splitlines()[1:]
+            if line.strip()
+        )
+        if device_available:
+            print("\nAuto-detecting device CPU capabilities...")
+            march = detect_device_march(adb_base, args.abi)
     if march is None:
         march = {"arm64-v8a": "armv8-a", "armeabi-v7a": "armv7-a"}.get(args.abi, "none")
+        print(f"  Using fallback march: {march}")
 
     # ── directories ───────────────────────────────────────────────────────────
 
@@ -263,7 +337,7 @@ def main():
 
     fftw_cmake_args = []
     if args.fftw:
-        fftw_prefix = build_fftw(ndk_root, args.abi, args.api, build_dir, cpu_count)
+        fftw_prefix = build_fftw(ndk_root, args.abi, args.api, march, build_dir, cpu_count)
         fftw_cmake_args = [
             "-DPFFFT_USE_BENCH_FFTW=ON",
             f"-DFFTW3_ROOT={fftw_prefix}",
@@ -313,10 +387,6 @@ def main():
         return
 
     # ── check device ──────────────────────────────────────────────────────────
-
-    adb_base = ["adb"]
-    if args.serial:
-        adb_base = ["adb", "-s", args.serial]
 
     result = subprocess.run(adb_base + ["devices"], capture_output=True, text=True)
     connected = any(
