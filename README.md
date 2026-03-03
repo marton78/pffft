@@ -409,6 +409,57 @@ For running with different compiler version(s):
 * delete the build directory: `rm -rf *`
 * then continue with the cmake step
 
+#### Running individual benchmarks
+
+The benchmark executables (`bench_pffft_float`, `bench_pffft_double`) support running
+individual FFT libraries independently. This allows adding new benchmarks or re-running
+specific libraries without re-benchmarking everything.
+
+**Per-library output:** Each library produces its own CSV file following the naming pattern
+`<product>-<variant>-<flt|dbl>-<real|cplx>.csv`. For example: `pffft-simd-flt-real.csv`,
+`fftw-estim-dbl-cplx.csv`, `vdsp-default-flt-real.csv`.
+
+**CLI flags:**
+
+* `--algo <name>` select which algorithm(s) to benchmark (repeatable).
+  Available: `fftpack`, `vdsp`, `fftw-estim`, `fftw-auto`, `green`, `kiss`,
+  `pocket`, `mkl`, `ffts`, `pffftu`, `pffft`, `all`. Default: `all`.
+* `--output-dir <path>` directory for CSV output (created if needed). Default: current directory.
+* `--real` / `--cplx` benchmark only real or complex transforms.
+* `--max-len <N>` maximum FFT size.
+* `--non-pow2` use non-power-of-2 sizes instead of power-of-2.
+
+**Examples:**
+```bash
+# Run only PFFFT and vDSP, single-precision
+./bench_pffft_float --algo pffft --algo vdsp --output-dir results/darwin-arm64-clang
+
+# Run FFTW separately (can be added to existing results directory)
+./bench_pffft_float --algo fftw-estim --algo fftw-auto --output-dir results/darwin-arm64-clang
+
+# Run all algorithms, double-precision
+./bench_pffft_double --algo all --output-dir results/darwin-arm64-clang
+```
+
+#### Generating benchmark charts
+
+The `bench/make_charts.py` script generates charts from the per-library CSV files.
+It requires Python 3 with `matplotlib` and `numpy`.
+
+```bash
+# Generate system info
+./bench/make_info.sh results/darwin-arm64-clang
+
+# Generate charts
+python3 bench/make_charts.py results/darwin-arm64-clang
+
+# Compare two benchmark runs (e.g. different versions or compilers)
+python3 bench/make_charts.py results/darwin-arm64-clang-v1.0 results/darwin-arm64-clang-v1.2
+```
+
+The script produces individual charts per precision/transform combination and a
+combined 2x2 overview chart, all as `.webp` files in the first directory argument.
+
 
 #### Benchmark results and contribution
 You might contribute by providing us the results of your computer(s).
