@@ -29,6 +29,8 @@ option(PFFFT_USE_BENCH_GREEN  "use Green FFT in fft benchmark? - if exists in su
 option(PFFFT_USE_BENCH_KISS   "use KissFFT in fft benchmark? - if exists in subdir" ON)
 option(PFFFT_USE_BENCH_POCKET "use PocketFFT in fft benchmark? - if exists in subdir" ON)
 option(PFFFT_USE_BENCH_MKL    "use Intel MKL in fft benchmark? needs to be installed" OFF)
+option(PFFFT_USE_BENCH_FFTS      "use FFTS in fft benchmark? - if exists in subdir" ON)
+option(PFFFT_FFTS_NO_CODEGEN     "build FFTS without dynamic code generation (x86_64 only)?" OFF)
 option(PFFFT_USE_FFTPACK      "compile and use FFTPACK in fft benchmark & validation?" ON)
 
 option(PFFFT_USE_DEBUG_ASAN  "use GCC's address sanitizer?" OFF)

@@ -39,6 +39,27 @@ if (PFFFT_USE_BENCH_POCKET)
   endif()
 endif()
 
+if (PFFFT_USE_BENCH_FFTS)
+  # git submodule add https://github.com/ValveSoftware/ffts.git
+  if (EXISTS "${PFFFT_SOURCE_DIR}/ffts/include/ffts.h")
+    message(STATUS "found subdir ffts")
+    set(PATH_FFTS "${PFFFT_SOURCE_DIR}/ffts")
+    if (PFFFT_FFTS_NO_CODEGEN)
+      set(DISABLE_DYNAMIC_CODE ON CACHE BOOL "" FORCE)
+    endif()
+    set(ENABLE_SHARED OFF CACHE BOOL "" FORCE)
+    set(ENABLE_STATIC ON  CACHE BOOL "" FORCE)
+    add_subdirectory( "${PATH_FFTS}" "${CMAKE_CURRENT_BINARY_DIR}/ffts" EXCLUDE_FROM_ALL )
+    if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+      # FFTS ffts_real.c contains ARMv7 32-bit NEON inline asm that AArch64 rejects;
+      # undefine __ARM_NEON__ for the FFTS target to take the non-NEON code path.
+      target_compile_options(ffts_static PRIVATE "-U__ARM_NEON__")
+    endif()
+  else()
+    message(WARNING "FFTS not found in subdir ffts")
+  endif()
+endif()
+
 ######################################################
 
 if (PFFFT_USE_TYPE_FLOAT)
@@ -79,6 +100,12 @@ if (PFFFT_USE_TYPE_FLOAT)
   if (PATH_POCKET AND PFFFT_USE_BENCH_POCKET)
     target_compile_definitions(bench_pffft_float PRIVATE HAVE_POCKET_FFT=1)
     target_link_libraries(bench_pffft_float  PocketFFT)
+  endif()
+
+  if (PATH_FFTS AND PFFFT_USE_BENCH_FFTS)
+    target_compile_definitions(bench_pffft_float PRIVATE HAVE_FFTS=1)
+    target_include_directories(bench_pffft_float PRIVATE "${PATH_FFTS}/include")
+    target_link_libraries(bench_pffft_float  ffts_static)
   endif()
 
   if (PFFFT_USE_BENCH_MKL)
@@ -122,6 +149,12 @@ if (PFFFT_USE_TYPE_DOUBLE)
   if (PATH_POCKET AND PFFFT_USE_BENCH_POCKET)
     target_compile_definitions(bench_pffft_double PRIVATE HAVE_POCKET_FFT=1)
     target_link_libraries(bench_pffft_double  PocketFFT)
+  endif()
+
+  if (PATH_FFTS AND PFFFT_USE_BENCH_FFTS)
+    target_compile_definitions(bench_pffft_double PRIVATE HAVE_FFTS=1)
+    target_include_directories(bench_pffft_double PRIVATE "${PATH_FFTS}/include")
+    target_link_libraries(bench_pffft_double  ffts_static)
   endif()
 
   if (PFFFT_USE_BENCH_MKL)
