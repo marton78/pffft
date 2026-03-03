@@ -7,3 +7,6 @@
 [submodule "pocketfft"]
 	path = pocketfft
 	url = https://github.com/hayguen/pocketfft.git
+[submodule "ffts"]
+	path = ffts
+	url = https://github.com/ValveSoftware/ffts.git
