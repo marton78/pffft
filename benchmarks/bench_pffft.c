@@ -71,6 +71,10 @@ typedef PFFFTD_Setup PFFFT_SETUP;
 #include <pocketfft_single.h>
 #endif
 
+#ifdef HAVE_FFTS
+#include <ffts.h>
+#endif
+
 #ifdef PFFFT_ENABLE_FLOAT
   #define POCKFFTR_PRE(R)   CONCAT_TOKENS(rffts, R)
   #define POCKFFTC_PRE(R)   CONCAT_TOKENS(cffts, R)
@@ -125,7 +129,7 @@ typedef fftw_complex FFTW_COMPLEX;
 #endif
 
 
-#define NUM_FFT_ALGOS  10
+#define NUM_FFT_ALGOS  11
 enum {
   ALGO_FFTPACK = 0,
   ALGO_VECLIB,
@@ -135,8 +139,9 @@ enum {
   ALGO_KISS,
   ALGO_POCKET,
   ALGO_MKL,
-  ALGO_PFFFT_U, /* = 8 */
-  ALGO_PFFFT_O  /* = 9 */
+  ALGO_FFTS,    /* = 8 */
+  ALGO_PFFFT_U, /* = 9 */
+  ALGO_PFFFT_O  /* = 10 */
 };
 
 #define NUM_TYPES      7
@@ -160,6 +165,7 @@ const char * algoName[NUM_FFT_ALGOS] = {
   "Kiss         ",
   "Pocket       ",
   "Intel MKL    ",
+  "FFTS         ",
   "PFFFT-U(simd)",  /* unordered */
   "PFFFT (simd) "   /* ordered */
 };
@@ -202,6 +208,11 @@ int compiledInAlgo[NUM_FFT_ALGOS] = {
 #else
   0,
 #endif
+#if defined(HAVE_FFTS)
+  1, /* "FFTS         " */
+#else
+  0,
+#endif
   1, /* "PFFFT_U    " */
   1  /* "PFFFT_O    " */
 };
@@ -215,6 +226,7 @@ const char * algoTableHeader[NUM_FFT_ALGOS][2] = {
 { "|  real   Kiss ", "|  cplx   Kiss " },
 { "|  real Pocket ", "|  cplx Pocket " },
 { "|  real   MKL  ", "|  cplx   MKL  " },
+{ "|  real  FFTS ", "|  cplx  FFTS " },
 { "| real PFFFT-U ", "| cplx PFFFT-U " },
 { "|  real  PFFFT ", "|  cplx  PFFFT " } };
 
@@ -1039,6 +1051,64 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
     }
   }
 #endif
+
+  Nmax = (cplx ? nextPow2N*2 : nextPow2N);
+  X[Nmax] = checkVal;
+#if defined(HAVE_FFTS)
+  if ( 1 || PFFFT_FUNC(is_power_of_two)(N) )
+  {
+    ffts_plan_t *stf = NULL, *sti = NULL;
+
+    te = uclock_sec();
+    if (cplx) {
+#ifdef PFFFT_ENABLE_FLOAT
+      stf = ffts_init_1d(nextPow2N, FFTS_FORWARD);
+      sti = ffts_init_1d(nextPow2N, FFTS_BACKWARD);
+#else
+      stf = ffts_init_1d_64f(nextPow2N, FFTS_FORWARD);
+      sti = ffts_init_1d_64f(nextPow2N, FFTS_BACKWARD);
+#endif
+    } else {
+#ifdef PFFFT_ENABLE_FLOAT
+      stf = ffts_init_1d_real(nextPow2N, FFTS_FORWARD);
+      sti = ffts_init_1d_real(nextPow2N, FFTS_BACKWARD);
+#endif
+      /* no ffts_init_1d_real_64f exists; skip real double */
+    }
+
+    if (stf && sti) {
+      t0 = uclock_sec();
+      tstop = t0 + max_test_duration;
+      max_iter = 0;
+      do {
+        for ( k = 0; k < step_iter; ++k ) {
+          assert( X[Nmax] == checkVal );
+          ffts_execute(stf, X, Y);
+          assert( X[Nmax] == checkVal );
+          ffts_execute(sti, Y, X);
+          assert( X[Nmax] == checkVal );
+          ++max_iter;
+        }
+        t1 = uclock_sec();
+      } while ( t1 < tstop );
+
+      ffts_free(stf);
+      ffts_free(sti);
+
+      flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); /* see http://www.fftw.org/speed/method.html */
+      tmeas[TYPE_ITER][ALGO_FFTS]    = max_iter;
+      tmeas[TYPE_MFLOPS][ALGO_FFTS]  = flops/1e6/(t1 - t0 + 1e-16);
+      tmeas[TYPE_DUR_TOT][ALGO_FFTS] = t1 - t0;
+      tmeas[TYPE_DUR_NS][ALGO_FFTS]  = show_output("FFTS", N, cplx, flops, t0, t1, max_iter, tableFile);
+      tmeas[TYPE_PREP][ALGO_FFTS]    = (t0 - te) * 1e3;
+      haveAlgo[ALGO_FFTS] = 1;
+    } else {
+      show_output("FFTS", N, cplx, -1, -1, -1, -1, tableFile);
+    }
+  } else {
+    show_output("FFTS", N, cplx, -1, -1, -1, -1, tableFile);
+  }
+#endif /* HAVE_FFTS */
 
   /* PFFFT-U (unordered) benchmark */
   Nmax = (cplx ? pffftPow2N*2 : pffftPow2N);
