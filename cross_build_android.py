@@ -51,12 +51,17 @@ from pathlib import Path
 FFTW_VERSION = "3.3.10"
 FFTW_URL = f"https://www.fftw.org/fftw-{FFTW_VERSION}.tar.gz"
 
-# autoconf --host triple and extra configure flags per ABI
+# autoconf --host triple and extra configure flags per ABI.
+# --enable-armv8-cntvct-el0: read the ARM virtual counter directly from
+#   userspace (CNTVCT_EL0 register) for high-resolution plan timing.
+#   Without this FFTW falls back to ESTIMATE mode (no measurement at all)
+#   or a slow gettimeofday timer. Accessible on Android since Linux 4.x.
+# --enable-neon: enable NEON SIMD codelets (float and double).
 ABI_CONFIGURE = {
-    "arm64-v8a":   ("aarch64-linux-android",   ["--enable-neon"]),
-    "armeabi-v7a": ("armv7a-linux-androideabi", ["--enable-neon"]),
-    "x86_64":      ("x86_64-linux-android",     []),
-    "x86":         ("i686-linux-android",        []),
+    "arm64-v8a":   ("aarch64-linux-android",   ["--enable-armv8-cntvct-el0", "--enable-neon"]),
+    "armeabi-v7a": ("armv7a-linux-androideabi", ["--with-slow-timer",          "--enable-neon"]),
+    "x86_64":      ("x86_64-linux-android",     ["--with-slow-timer"]),
+    "x86":         ("i686-linux-android",        ["--with-slow-timer"]),
 }
 
 
@@ -224,7 +229,6 @@ def build_fftw(ndk_root, abi, api, march, build_dir, cpu_count):
         f"--host={host_triple}",
         "--disable-shared",
         "--enable-static",
-        "--with-slow-timer",   # use gettimeofday; avoids cycle-counter issues on Android
         f"--prefix={fftw_prefix}",
     ] + extra_flags
 
