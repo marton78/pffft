@@ -327,10 +327,22 @@ git submodule update --init
 #### Fastest Fourier Transform in the West: FFTW
 To allow comparison with FFTW [http://www.fftw.org/](http://www.fftw.org/),
 cmake option `-DPFFFT_USE_BENCH_FFTW=ON` has to be used with following commands.
-The cmake option requires previous setup of following (debian/ubuntu) package:
+
+System-installed FFTW packages (apt, brew, etc.) are often compiled for a
+generic baseline. `build_fftw.py` builds FFTW 3 from source with flags tuned
+for the host CPU — NEON + `--enable-armv8-cntvct-el0` on ARM64, SSE2/AVX/AVX2
+on x86-64. The cycle-counter flag was discovered by
+[andrej5elin](https://github.com/andrej5elin/howto_fftw_apple_silicon).
+
+```bash
+python3 build_fftw.py                   # installs to ./fftw_build/prefix
+python3 build_fftw.py --prefix ~/fftw   # custom prefix
+
+# then point the benchmark build at it:
+cmake ... -DPFFFT_USE_BENCH_FFTW=ON -DFFTW3_ROOT=./fftw_build/prefix
 ```
-sudo apt-get install libfftw3-dev
-```
+
+Not needed for Android (see below) — `cross_build_android.py --fftw` handles that.
 
 #### Intel Math Kernel Library: MKL
 Intel's MKL [https://software.intel.com/content/www/us/en/develop/tools/oneapi/components/onemkl.html](https://software.intel.com/content/www/us/en/develop/tools/oneapi/components/onemkl.html)
@@ -523,4 +535,3 @@ an explanation of why the change was not ported.
 | 2025-02-12 | `0d7449a` | Dan Raviv | Fix MSVC `/fp:strict` C2099 errors | `4d1c78d` | cherry-picked |
 | 2025-12-19 | `c306b13` | Julien Pommier | Fix implicit double-to-float conversions | `31be131` | cherry-picked (fftpack.c portion) |
 | 2026-01-05 | `0979688` | Julien Pommier | Fix alignment for small `size_t` platforms | `a9786ad` | already uses `uintptr_t` |
-
