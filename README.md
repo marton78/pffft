@@ -441,6 +441,9 @@ from the default SDK location; override with `--ndk` or `ANDROID_NDK`).
 # Build for arm64-v8a, run on connected device, collect results
 python3 cross_build_android.py arm64
 
+# Include FFTW (cross-compiled automatically from source; requires make/autoconf)
+python3 cross_build_android.py arm64 --fftw
+
 # Build only (no device required)
 python3 cross_build_android.py arm64 --no-run
 
@@ -449,7 +452,9 @@ python3 cross_build_android.py arm64 --serial <serial> --output-dir results/andr
 ```
 
 Notes:
-* FFTW, MKL, and FFTS are disabled automatically (not available / not compatible with the NDK).
+* MKL and FFTS are disabled automatically (not available / not compatible with the NDK).
+* `--fftw` downloads FFTW 3.3.10, cross-compiles it with the NDK clang (float + double), and
+  links it into the benchmark. Requires `make` and autoconf; not supported on Windows.
 * Results land in `bench_results_android_<id>/` and are compatible with `bench/make_charts.py`.
 
 #### Generating benchmark charts

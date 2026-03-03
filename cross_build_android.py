@@ -13,6 +13,8 @@ Options:
     --api <level>   Android API level (default: 21)
     --arch <march>  -march value passed to TARGET_C_ARCH / TARGET_CXX_ARCH
                     (default: armv8-a for arm64-v8a, armv7-a for armeabi-v7a, none for x86*)
+    --fftw          Cross-compile FFTW 3.3.10 and include it in the benchmark
+                    (requires autoconf/make; not supported on Windows)
     --no-run        Build only; do not push or run on device
     --output-dir    Local directory to store pulled benchmark CSVs
                     (default: bench_results_android_<id>)
@@ -25,6 +27,7 @@ Environment variables:
 
 Examples:
     python cross_build_android.py arm64
+    python cross_build_android.py arm64 --fftw
     python cross_build_android.py arm64 --no-run
     python cross_build_android.py arm64 --output-dir my_results -DPFFFT_USE_BENCH_GREEN=OFF
 """
@@ -32,11 +35,26 @@ Examples:
 import argparse
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
+import tarfile
+import urllib.request
 from datetime import date
 from pathlib import Path
+
+
+FFTW_VERSION = "3.3.10"
+FFTW_URL = f"https://www.fftw.org/fftw-{FFTW_VERSION}.tar.gz"
+
+# autoconf --host triple and extra configure flags per ABI
+ABI_CONFIGURE = {
+    "arm64-v8a":   ("aarch64-linux-android",   ["--enable-neon"]),
+    "armeabi-v7a": ("armv7a-linux-androideabi", ["--enable-neon"]),
+    "x86_64":      ("x86_64-linux-android",     []),
+    "x86":         ("i686-linux-android",        []),
+}
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -68,11 +86,9 @@ def adb_output(adb_cmd, shell_cmd):
 
 def find_ndk():
     """Return the path to the newest NDK installation, or None."""
-    # 1. Explicit env var
     if os.environ.get("ANDROID_NDK"):
         return Path(os.environ["ANDROID_NDK"])
 
-    # 2. Well-known SDK locations
     home = Path.home()
     sdk_candidates = [
         Path(os.environ["ANDROID_SDK"]) if os.environ.get("ANDROID_SDK") else None,
@@ -97,14 +113,96 @@ def find_ndk():
     return None
 
 
+def ndk_host_tag():
+    """Return the NDK prebuilt host directory name for the current OS."""
+    system = platform.system()
+    if system == "Darwin":
+        return "darwin-x86_64"   # NDK ships x86_64 binaries even on Apple Silicon
+    if system == "Linux":
+        return "linux-x86_64"
+    if system == "Windows":
+        return "windows-x86_64"
+    raise RuntimeError(f"Unsupported host OS: {system}")
+
+
+# ── FFTW cross-compilation ────────────────────────────────────────────────────
+
+def build_fftw(ndk_root, abi, api, build_dir, cpu_count):
+    """Download and cross-compile FFTW (float + double) for the given ABI.
+
+    Returns the path to the install prefix containing include/ and lib/.
+    Not supported on Windows (requires autoconf/make).
+    """
+    if platform.system() == "Windows":
+        print("ERROR: --fftw cross-compilation requires autoconf/make and is not supported on Windows.", file=sys.stderr)
+        print("  Use WSL or a Linux/macOS host instead.", file=sys.stderr)
+        sys.exit(1)
+
+    host_triple, extra_flags = ABI_CONFIGURE.get(abi, (None, None))
+    if host_triple is None:
+        print(f"ERROR: --fftw: no autoconf host triple known for ABI '{abi}'", file=sys.stderr)
+        sys.exit(1)
+
+    toolbin = ndk_root / "toolchains" / "llvm" / "prebuilt" / ndk_host_tag() / "bin"
+    cc      = str(toolbin / f"{host_triple}{api}-clang")
+    ar      = str(toolbin / "llvm-ar")
+    ranlib  = str(toolbin / "llvm-ranlib")
+
+    if not Path(cc).is_file():
+        print(f"ERROR: NDK clang not found: {cc}", file=sys.stderr)
+        print(f"  Try a higher --api value or a newer NDK.", file=sys.stderr)
+        sys.exit(1)
+
+    fftw_src_dir  = build_dir / "fftw_src"
+    fftw_prefix   = build_dir / "fftw_prefix"
+    tarball       = fftw_src_dir / f"fftw-{FFTW_VERSION}.tar.gz"
+    fftw_src_dir.mkdir(parents=True, exist_ok=True)
+    fftw_prefix.mkdir(parents=True, exist_ok=True)
+
+    # Download
+    if not tarball.is_file():
+        banner([f"Downloading FFTW {FFTW_VERSION}"])
+        print(f"  {FFTW_URL}")
+        urllib.request.urlretrieve(FFTW_URL, tarball)
+        print(f"  Saved to {tarball}")
+
+    # Extract (idempotent)
+    fftw_tree = fftw_src_dir / f"fftw-{FFTW_VERSION}"
+    if not fftw_tree.is_dir():
+        print(f"Extracting {tarball.name} ...")
+        with tarfile.open(tarball, "r:gz") as tf:
+            tf.extractall(fftw_src_dir)
+
+    base_configure_args = [
+        str(fftw_tree / "configure"),
+        f"--host={host_triple}",
+        "--disable-shared",
+        "--enable-static",
+        "--with-slow-timer",   # use gettimeofday; avoids cycle-counter issues on Android
+        f"--prefix={fftw_prefix}",
+    ] + extra_flags
+
+    env = os.environ.copy()
+    env.update({"CC": cc, "AR": ar, "RANLIB": ranlib})
+
+    # Build float (fftw3f) and double (fftw3) from separate build dirs
+    for label, extra in [("float", ["--enable-float"]), ("double", [])]:
+        banner([f"Building FFTW {FFTW_VERSION} — {label} precision"])
+        bdir = build_dir / f"fftw_build_{label}"
+        bdir.mkdir(parents=True, exist_ok=True)
+        run(base_configure_args + extra, cwd=bdir, env=env)
+        run(["make", "-j", str(cpu_count)], cwd=bdir)
+        run(["make", "install"], cwd=bdir)
+
+    return fftw_prefix
+
+
 # ── argument parsing ──────────────────────────────────────────────────────────
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        # Let unknown args pass through as extra cmake flags
-        add_help=True,
     )
     parser.add_argument("id", help="Short build identifier (used in directory names)")
     parser.add_argument("--abi", default="arm64-v8a",
@@ -113,6 +211,8 @@ def parse_args():
                         help="Android API level (default: 21)")
     parser.add_argument("--arch", default=None,
                         help="-march value for TARGET_C/CXX_ARCH (auto-detected from ABI if omitted)")
+    parser.add_argument("--fftw", action="store_true",
+                        help="Cross-compile FFTW and include it in the benchmark")
     parser.add_argument("--no-run", action="store_true",
                         help="Build only; skip push and run on device")
     parser.add_argument("--output-dir", default=None,
@@ -157,21 +257,36 @@ def main():
     device_dir = f"/data/local/tmp/pffft_bench_{args.id}"
     device_out = f"{device_dir}/results"
 
-    # ── build ─────────────────────────────────────────────────────────────────
+    cpu_count = os.cpu_count() or 4
+
+    # ── optionally cross-compile FFTW ─────────────────────────────────────────
+
+    fftw_cmake_args = []
+    if args.fftw:
+        fftw_prefix = build_fftw(ndk_root, args.abi, args.api, build_dir, cpu_count)
+        fftw_cmake_args = [
+            "-DPFFFT_USE_BENCH_FFTW=ON",
+            f"-DFFTW3_ROOT={fftw_prefix}",
+        ]
+    else:
+        fftw_cmake_args = ["-DPFFFT_USE_BENCH_FFTW=OFF"]
+
+    # ── build pffft + benchmarks ──────────────────────────────────────────────
 
     banner([
         "Building pffft for Android",
         f"ABI={args.abi}  API={args.api}  march={march}  id={args.id}",
+        f"FFTW={'yes' if args.fftw else 'no'}",
     ])
 
-    if build_dir.exists():
-        shutil.rmtree(build_dir)
-    build_dir.mkdir(parents=True)
-
-    cpu_count = os.cpu_count() or 4
+    # Preserve the FFTW build dirs; wipe only the pffft cmake build dir
+    pffft_build_dir = build_dir / "pffft"
+    if pffft_build_dir.exists():
+        shutil.rmtree(pffft_build_dir)
+    pffft_build_dir.mkdir(parents=True)
 
     run([
-        "cmake", "-S", str(script_dir), "-B", str(build_dir),
+        "cmake", "-S", str(script_dir), "-B", str(pffft_build_dir),
         f"-DCMAKE_TOOLCHAIN_FILE={toolchain}",
         f"-DANDROID_ABI={args.abi}",
         f"-DANDROID_PLATFORM=android-{args.api}",
@@ -181,18 +296,17 @@ def main():
         "-DPFFFT_BUILD_TESTS=OFF",
         "-DPFFFT_BUILD_BENCHMARKS=ON",
         "-DPFFFT_BUILD_EXAMPLES=OFF",
-        "-DPFFFT_USE_BENCH_FFTW=OFF",
         "-DPFFFT_USE_BENCH_MKL=OFF",
         "-DPFFFT_USE_BENCH_FFTS=OFF",
-    ] + extra_cmake)
+    ] + fftw_cmake_args + extra_cmake)
 
     run([
-        "cmake", "--build", str(build_dir),
+        "cmake", "--build", str(pffft_build_dir),
         "--config", "Release",
         "--", f"-j{cpu_count}",
     ])
 
-    print(f"\nBuild complete: {build_dir}")
+    print(f"\nBuild complete: {pffft_build_dir}")
 
     if args.no_run:
         print("Skipping device run (--no-run).")
@@ -205,10 +319,9 @@ def main():
         adb_base = ["adb", "-s", args.serial]
 
     result = subprocess.run(adb_base + ["devices"], capture_output=True, text=True)
-    # "device" at end of a line (not "offline", not just the header)
     connected = any(
         line.endswith("device")
-        for line in result.stdout.splitlines()[1:]  # skip "List of devices attached"
+        for line in result.stdout.splitlines()[1:]
         if line.strip()
     )
     if not connected:
@@ -224,7 +337,7 @@ def main():
 
     pushed = []
     for exe in ("bench_pffft_float", "bench_pffft_double"):
-        exe_path = build_dir / "benchmarks" / exe
+        exe_path = pffft_build_dir / "benchmarks" / exe
         if not exe_path.is_file():
             print(f"WARNING: {exe} not found (was it built?)", file=sys.stderr)
             continue
@@ -252,6 +365,7 @@ def main():
         f"SOC: {soc}",
         f"Arch: {args.abi}  march={march}",
         f"NDK: {ndk_ver}",
+        f"FFTW: {FFTW_VERSION if args.fftw else 'no'}",
         f"Date: {date.today().isoformat()}",
     ]
     for line in device_info_lines:
