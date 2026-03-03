@@ -170,6 +170,21 @@ const char * algoName[NUM_FFT_ALGOS] = {
   "PFFFT (simd) "   /* ordered */
 };
 
+/* CLI name -> algo enum mapping for --algo flag */
+const char * algoCLIName[NUM_FFT_ALGOS] = {
+  "fftpack", "vdsp", "fftw-estim", "fftw-auto",
+  "green", "kiss", "pocket", "mkl", "ffts",
+  "pffftu", "pffft"
+};
+
+/* File ID for per-algo CSV output: <product>-<variant> */
+const char * algoFileId[NUM_FFT_ALGOS] = {
+  "fftpack-default", "vdsp-default", "fftw-estim", "fftw-auto",
+  "green-default", "kiss-default", "pocket-default", "mkl-default", "ffts-default",
+  "pffftu-simd", "pffft-simd"
+};
+
+int runAlgo[NUM_FFT_ALGOS];
 
 int compiledInAlgo[NUM_FFT_ALGOS] = {
 #ifdef HAVE_FFTPACK
@@ -543,7 +558,7 @@ double cal_benchmark(int N, int cplx) {
 
 
 
-void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, double tmeas[NUM_TYPES][NUM_FFT_ALGOS], int haveAlgo[NUM_FFT_ALGOS], FILE *tableFile ) {
+void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, double tmeas[NUM_TYPES][NUM_FFT_ALGOS], int haveAlgo[NUM_FFT_ALGOS], const int runAlgo_[NUM_FFT_ALGOS], FILE *tableFile ) {
   const int log2N = Log2(N);
   int nextPow2N = PFFFT_FUNC(next_power_of_two)(N);
   int log2NextN = Log2(nextPow2N);
@@ -585,7 +600,7 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   Nmax = (cplx ? N*2 : N);
   X[Nmax] = checkVal;
 #ifdef HAVE_FFTPACK
-  {
+  if (runAlgo_[ALGO_FFTPACK]) {
     fftpack_real *wrk = malloc(2*Nbytes + 15*sizeof(pffft_scalar));
     te = uclock_sec();
     if (cplx) cffti(N, wrk);
@@ -626,6 +641,7 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
 #endif
 
 #if defined(HAVE_VECLIB) && defined(PFFFT_ENABLE_FLOAT)
+  if (runAlgo_[ALGO_VECLIB]) {
   Nmax = (cplx ? nextPow2N*2 : nextPow2N);
   X[Nmax] = checkVal;
   te = uclock_sec();
@@ -670,9 +686,11 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   } else {
     show_output("vDSP", N, cplx, -1, -1, -1, -1, tableFile);
   }
+  } /* runAlgo VECLIB float */
 #endif
 
 #if defined(HAVE_VECLIB) && defined(PFFFT_ENABLE_DOUBLE)
+  if (runAlgo_[ALGO_VECLIB]) {
   Nmax = (cplx ? nextPow2N*2 : nextPow2N);
   X[Nmax] = checkVal;
   te = uclock_sec();
@@ -717,9 +735,11 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   } else {
     show_output("vDSP", N, cplx, -1, -1, -1, -1, tableFile);
   }
+  } /* runAlgo VECLIB double */
 #endif
 
 #if defined(HAVE_FFTW)
+  if (runAlgo_[ALGO_FFTW_ESTIM]) {
   Nmax = (cplx ? N*2 : N);
   X[Nmax] = checkVal;
   {
@@ -766,6 +786,8 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
     tmeas[TYPE_PREP][ALGO_FFTW_ESTIM] = (t0 - te) * 1e3;
     haveAlgo[ALGO_FFTW_ESTIM] = 1;
   }
+  } /* runAlgo FFTW_ESTIM */
+  if (runAlgo_[ALGO_FFTW_AUTO]) {
   Nmax = (cplx ? N*2 : N);
   X[Nmax] = checkVal;
   do {
@@ -827,11 +849,13 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
       haveAlgo[ALGO_FFTW_AUTO] = 1;
     }
   } while (0);
+  } /* runAlgo FFTW_AUTO */
 #else
   (void)withFFTWfullMeas;
 #endif
 
 #if defined(HAVE_GREEN_FFTS) && defined(PFFFT_ENABLE_FLOAT)
+  if (runAlgo_[ALGO_GREEN]) {
   Nmax = (cplx ? nextPow2N*2 : nextPow2N);
   X[Nmax] = checkVal;
   if ( 1 || PFFFT_FUNC(is_power_of_two)(N) )
@@ -872,9 +896,11 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   } else {
     show_output("Green", N, cplx, -1, -1, -1, -1, tableFile);
   }
+  } /* runAlgo GREEN */
 #endif
 
 #if defined(HAVE_KISS_FFT) && defined(PFFFT_ENABLE_FLOAT)
+  if (runAlgo_[ALGO_KISS]) {
   Nmax = (cplx ? nextPow2N*2 : nextPow2N);
   X[Nmax] = checkVal;
   if ( 1 || PFFFT_FUNC(is_power_of_two)(N) )
@@ -928,10 +954,11 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   } else {
     show_output("Kiss", N, cplx, -1, -1, -1, -1, tableFile);
   }
+  } /* runAlgo KISS */
 #endif
 
 #if defined(HAVE_POCKET_FFT)
-
+  if (runAlgo_[ALGO_POCKET]) {
   Nmax = (cplx ? nextPow2N*2 : nextPow2N);
   X[Nmax] = checkVal;
   if ( 1 || PFFFT_FUNC(is_power_of_two)(N) )
@@ -989,11 +1016,12 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   } else {
     show_output("Pocket", N, cplx, -1, -1, -1, -1, tableFile);
   }
+  } /* runAlgo POCKET */
 #endif
 
 
 #if defined(HAVE_MKL)
-  {
+  if (runAlgo_[ALGO_MKL]) {
     DFTI_DESCRIPTOR_HANDLE fft_handle;
     MKL_LONG mkl_status, mkl_ret;
     te = uclock_sec();
@@ -1049,12 +1077,13 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
     } else {
       show_output("MKL", N, cplx, -1, -1, -1, -1, tableFile);
     }
-  }
+  } /* runAlgo MKL */
 #endif
 
   Nmax = (cplx ? nextPow2N*2 : nextPow2N);
   X[Nmax] = checkVal;
 #if defined(HAVE_FFTS)
+  if (runAlgo_[ALGO_FFTS]) {
   if ( 1 || PFFFT_FUNC(is_power_of_two)(N) )
   {
     ffts_plan_t *stf = NULL, *sti = NULL;
@@ -1108,9 +1137,11 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   } else {
     show_output("FFTS", N, cplx, -1, -1, -1, -1, tableFile);
   }
+  } /* runAlgo FFTS */
 #endif /* HAVE_FFTS */
 
   /* PFFFT-U (unordered) benchmark */
+  if (runAlgo_[ALGO_PFFFT_U]) {
   Nmax = (cplx ? pffftPow2N*2 : pffftPow2N);
   X[Nmax] = checkVal;
   if ( pffftPow2N >= PFFFT_FUNC(min_fft_size)(cplx ? PFFFT_COMPLEX : PFFFT_REAL) )
@@ -1146,8 +1177,9 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   } else {
     show_output("PFFFT-U", N, cplx, -1, -1, -1, -1, tableFile);
   }
+  } /* runAlgo PFFFT_U */
 
-
+  if (runAlgo_[ALGO_PFFFT_O]) {
   if ( pffftPow2N >= PFFFT_FUNC(min_fft_size)(cplx ? PFFFT_COMPLEX : PFFFT_REAL) )
   {
     te = uclock_sec();
@@ -1181,6 +1213,7 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   } else {
     show_output("PFFFT", N, cplx, -1, -1, -1, -1, tableFile);
   }
+  } /* runAlgo PFFFT_O */
 
   if (!array_output_format)
   {
@@ -1281,6 +1314,8 @@ int main(int argc, char **argv) {
   FILE *tableFile = NULL;
 
   int haveAlgo[NUM_FFT_ALGOS];
+  char outputDir[512] = ".";
+  int algoExplicit = 0;
   char acCsvFilename[64];
 
   for ( k = 1; k <= NUMPOW2FFTLENS; ++k )
@@ -1289,6 +1324,9 @@ int main(int argc, char **argv) {
 
   for ( i = 0; i < NUM_FFT_ALGOS; ++i )
     haveAlgo[i] = 0;
+
+  for ( i = 0; i < NUM_FFT_ALGOS; ++i )
+    runAlgo[i] = 1;
 
   printf("pffft architecture:    '%s'\n", PFFFT_FUNC(simd_arch)());
   printf("pffft SIMD size:       %d\n", PFFFT_FUNC(simd_size)());
@@ -1336,8 +1374,28 @@ int main(int argc, char **argv) {
 #endif
       return 0;
     }
+    else if (!strcmp(argv[i], "--algo") && i+1 < argc) {
+      if (!algoExplicit) {
+        for (int j = 0; j < NUM_FFT_ALGOS; ++j) runAlgo[j] = 0;
+        algoExplicit = 1;
+      }
+      ++i;
+      if (!strcmp(argv[i], "all")) {
+        for (int j = 0; j < NUM_FFT_ALGOS; ++j) runAlgo[j] = 1;
+      } else {
+        int found = 0;
+        for (int j = 0; j < NUM_FFT_ALGOS; ++j) {
+          if (!strcmp(argv[i], algoCLIName[j])) { runAlgo[j] = 1; found = 1; break; }
+        }
+        if (!found) { fprintf(stderr, "unknown algo: %s\n", argv[i]); exit(1); }
+      }
+    }
+    else if (!strcmp(argv[i], "--output-dir") && i+1 < argc) {
+      strncpy(outputDir, argv[++i], sizeof(outputDir)-1);
+      outputDir[sizeof(outputDir)-1] = 0;
+    }
     else /* if (!strcmp(argv[i], "--help")) */ {
-      printf("usage: %s [--array-format|--table] [--no-tab] [--real|--cplx] [--validate] [--fftw-full-measure] [--non-pow2] [--max-len <N>] [--quick]\n", argv[0]);
+      printf("usage: %s [--array-format|--table] [--no-tab] [--real|--cplx] [--validate] [--fftw-full-measure] [--non-pow2] [--max-len <N>] [--quick] [--algo <name|all>] [--output-dir <dir>]\n", argv[0]);
       exit(0);
     }
   }
@@ -1357,6 +1415,17 @@ int main(int argc, char **argv) {
 #endif
     algoTableHeader[ALGO_FFTW_AUTO][0] = "|real FFTWmeas "; /* "|real FFTWauto " */
     algoTableHeader[ALGO_FFTW_AUTO][1] = "|cplx FFTWmeas "; /* "|cplx FFTWauto " */
+    algoFileId[ALGO_FFTW_AUTO] = "fftw-meas";
+  }
+#endif
+
+#ifdef PFFFT_SIMD_DISABLE
+  algoFileId[ALGO_PFFFT_U] = "pffftu-scalar";
+  algoFileId[ALGO_PFFFT_O] = "pffft-scalar";
+#else
+  if ( PFFFT_FUNC(simd_size)() == 1 || !strcmp(PFFFT_FUNC(simd_arch)(), "4xScalar") ) {
+    algoFileId[ALGO_PFFFT_U] = "pffftu-scalar";
+    algoFileId[ALGO_PFFFT_O] = "pffft-scalar";
   }
 #endif
 
@@ -1399,11 +1468,11 @@ int main(int argc, char **argv) {
   if (!array_output_format) {
     if (benchReal) {
       for (i=0; Nvalues[i] > 0 && Nvalues[i] <= max_N; ++i)
-        benchmark_ffts(Nvalues[i], 0 /* real fft */, withFFTWfullMeas, iterCalReal, tmeas[0][i], haveAlgo, NULL);
+        benchmark_ffts(Nvalues[i], 0 /* real fft */, withFFTWfullMeas, iterCalReal, tmeas[0][i], haveAlgo, runAlgo, NULL);
     }
     if (benchCplx) {
       for (i=0; Nvalues[i] > 0 && Nvalues[i] <= max_N; ++i)
-        benchmark_ffts(Nvalues[i], 1 /* cplx fft */, withFFTWfullMeas, iterCalCplx, tmeas[1][i], haveAlgo, NULL);
+        benchmark_ffts(Nvalues[i], 1 /* cplx fft */, withFFTWfullMeas, iterCalCplx, tmeas[1][i], haveAlgo, runAlgo, NULL);
     }
 
   } else {
@@ -1422,7 +1491,7 @@ int main(int argc, char **argv) {
           continue;
         for (k=0; k < NUM_FFT_ALGOS; ++k)
         {
-          if ( compiledInAlgo[k] )
+          if ( compiledInAlgo[k] && runAlgo[k] )
             print_table(algoTableHeader[k][realCplxIdx], tableFile);
         }
       }
@@ -1437,7 +1506,7 @@ int main(int argc, char **argv) {
           continue;
         for (k=0; k < NUM_FFT_ALGOS; ++k)
         {
-          if ( compiledInAlgo[k] )
+          if ( compiledInAlgo[k] && runAlgo[k] )
             print_table(":|-------------", tableFile);
         }
       }
@@ -1450,9 +1519,9 @@ int main(int argc, char **argv) {
         print_table_fftsize(Nvalues[i], tableFile);
         t0 = uclock_sec();
         if (benchReal)
-          benchmark_ffts(Nvalues[i], 0, withFFTWfullMeas, iterCalReal, tmeas[0][i], haveAlgo, tableFile);
+          benchmark_ffts(Nvalues[i], 0, withFFTWfullMeas, iterCalReal, tmeas[0][i], haveAlgo, runAlgo, tableFile);
         if (benchCplx)
-          benchmark_ffts(Nvalues[i], 1, withFFTWfullMeas, iterCalCplx, tmeas[1][i], haveAlgo, tableFile);
+          benchmark_ffts(Nvalues[i], 1, withFFTWfullMeas, iterCalCplx, tmeas[1][i], haveAlgo, runAlgo, tableFile);
         t1 = uclock_sec();
         print_table("|\n", tableFile);
         /* printf("all ffts for size %d took %f sec\n", Nvalues[i], t1-t0); */
@@ -1467,6 +1536,7 @@ int main(int argc, char **argv) {
   }
 
   printf("\n");
+  (void)outputDir; /* will be used for per-algo CSV output */
   printf("now writing .csv files ..\n");
 
   for (realCplxIdx = 0; realCplxIdx < 2; ++realCplxIdx)
