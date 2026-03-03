@@ -95,6 +95,16 @@ typedef PFFFTD_Setup PFFFT_SETUP;
 #include <time.h>
 #include <assert.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <errno.h>
+
+static void ensure_directory(const char *path) {
+#ifdef _WIN32
+  _mkdir(path);
+#else
+  mkdir(path, 0755);
+#endif
+}
 
 #ifdef HAVE_SYS_TIMES
 #  include <sys/times.h>
@@ -1536,50 +1546,54 @@ int main(int argc, char **argv) {
   }
 
   printf("\n");
-  (void)outputDir; /* will be used for per-algo CSV output */
-  printf("now writing .csv files ..\n");
+  printf("now writing per-algo .csv files to '%s' ..\n", outputDir);
+  ensure_directory(outputDir);
 
-  for (realCplxIdx = 0; realCplxIdx < 2; ++realCplxIdx)
   {
-    if ( (benchReal && realCplxIdx == 0) || (benchCplx && realCplxIdx == 1) )
-    {
-      for (typeIdx = 0; typeIdx < NUM_TYPES; ++typeIdx)
-      {
-        FILE *f = NULL;
-        if ( !(SAVE_ALL_TYPES || saveType[typeIdx]) )
-          continue;
-        acCsvFilename[0] = 0;
-#ifdef PFFFT_SIMD_DISABLE
-        strcat(acCsvFilename, "scal-");
+    const char *precStr;
+#ifdef PFFFT_ENABLE_FLOAT
+    precStr = "flt";
 #else
-        strcat(acCsvFilename, "simd-");
+    precStr = "dbl";
 #endif
-        strcat(acCsvFilename, (realCplxIdx == 0 ? "real-" : "cplx-"));
-        strcat(acCsvFilename, ( usePow2 ? "pow2-" : "non2-"));
-        assert( strlen(acCsvFilename) + strlen(typeFilenamePart[typeIdx]) + 5 < (sizeof(acCsvFilename) / sizeof(acCsvFilename[0])) );
-        strcat(acCsvFilename, typeFilenamePart[typeIdx]);
-        strcat(acCsvFilename, ".csv");
-        f = fopen(acCsvFilename, "w");
-        if (!f)
+
+    for (realCplxIdx = 0; realCplxIdx < 2; ++realCplxIdx)
+    {
+      const char *rcStr = (realCplxIdx == 0) ? "real" : "cplx";
+      if ( (realCplxIdx == 0 && !benchReal) || (realCplxIdx == 1 && !benchCplx) )
+        continue;
+
+      for (k = 0; k < NUM_FFT_ALGOS; ++k)
+      {
+        FILE *f;
+        char path[1024];
+
+        if ( !haveAlgo[k] )
           continue;
-        {
-          fprintf(f, "size, log2, ");
-          for (k=0; k < NUM_FFT_ALGOS; ++k)
-            if ( haveAlgo[k] )
-              fprintf(f, "%s, ", algoName[k]);
-          fprintf(f, "\n");
+
+        snprintf(path, sizeof(path), "%s/%s-%s-%s.csv",
+                 outputDir, algoFileId[k], precStr, rcStr);
+        f = fopen(path, "w");
+        if (!f) {
+          fprintf(stderr, "failed to open %s: %s\n", path, strerror(errno));
+          continue;
         }
-        for (i=0; Nvalues[i] > 0 && Nvalues[i] <= max_N; ++i)
+
+        fprintf(f, "size,prep_ms,num_iter,mflops,duration_sec\n");
+        for (i = 0; Nvalues[i] > 0 && Nvalues[i] <= max_N; ++i)
         {
+          if (tmeas[realCplxIdx][i][TYPE_MFLOPS][k] > 0.0)
           {
-            fprintf(f, "%d, %.3f, ", Nvalues[i], log10((double)Nvalues[i])/log10(2.0) );
-            for (k=0; k < NUM_FFT_ALGOS; ++k)
-              if ( haveAlgo[k] )
-                fprintf(f, "%f, ", tmeas[realCplxIdx][i][typeIdx][k]);
-            fprintf(f, "\n");
+            fprintf(f, "%d,%.6f,%.0f,%.6f,%.6f\n",
+                    Nvalues[i],
+                    tmeas[realCplxIdx][i][TYPE_PREP][k],
+                    tmeas[realCplxIdx][i][TYPE_ITER][k],
+                    tmeas[realCplxIdx][i][TYPE_MFLOPS][k],
+                    tmeas[realCplxIdx][i][TYPE_DUR_TOT][k]);
           }
         }
         fclose(f);
+        printf("  wrote %s\n", path);
       }
     }
   }
