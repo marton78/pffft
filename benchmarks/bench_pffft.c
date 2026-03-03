@@ -171,7 +171,7 @@ int compiledInAlgo[NUM_FFT_ALGOS] = {
 #else
   0, /* "FFTPack    " */
 #endif
-#if defined(HAVE_VECLIB) && defined(PFFFT_ENABLE_FLOAT)
+#if defined(HAVE_VECLIB)
   1, /* "vDSP (vec) " */
 #else
   0,
@@ -648,6 +648,53 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
     } while ( t1 < tstop );
 
     vDSP_destroy_fftsetup(setup);
+    flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); /* see http://www.fftw.org/speed/method.html */
+    tmeas[TYPE_ITER][ALGO_VECLIB] = max_iter;
+    tmeas[TYPE_MFLOPS][ALGO_VECLIB] = flops/1e6/(t1 - t0 + 1e-16);
+    tmeas[TYPE_DUR_TOT][ALGO_VECLIB] = t1 - t0;
+    tmeas[TYPE_DUR_NS][ALGO_VECLIB] = show_output("vDSP", N, cplx, flops, t0, t1, max_iter, tableFile);
+    tmeas[TYPE_PREP][ALGO_VECLIB] = (t0 - te) * 1e3;
+    haveAlgo[ALGO_VECLIB] = 1;
+  } else {
+    show_output("vDSP", N, cplx, -1, -1, -1, -1, tableFile);
+  }
+#endif
+
+#if defined(HAVE_VECLIB) && defined(PFFFT_ENABLE_DOUBLE)
+  Nmax = (cplx ? nextPow2N*2 : nextPow2N);
+  X[Nmax] = checkVal;
+  te = uclock_sec();
+  if ( 1 || PFFFT_FUNC(is_power_of_two)(N) ) {
+    FFTSetupD setup;
+
+    setup = vDSP_create_fftsetupD(log2NextN, FFT_RADIX2);
+    DSPDoubleSplitComplex zsamples;
+    zsamples.realp = &X[0];
+    zsamples.imagp = &X[Nfloat/2];
+    t0 = uclock_sec();
+    tstop = t0 + max_test_duration;
+    max_iter = 0;
+    do {
+      for ( k = 0; k < step_iter; ++k ) {
+        if (cplx) {
+          assert( X[Nmax] == checkVal );
+          vDSP_fft_zipD(setup, &zsamples, 1, log2NextN, kFFTDirection_Forward);
+          assert( X[Nmax] == checkVal );
+          vDSP_fft_zipD(setup, &zsamples, 1, log2NextN, kFFTDirection_Inverse);
+          assert( X[Nmax] == checkVal );
+        } else {
+          assert( X[Nmax] == checkVal );
+          vDSP_fft_zripD(setup, &zsamples, 1, log2NextN, kFFTDirection_Forward);
+          assert( X[Nmax] == checkVal );
+          vDSP_fft_zripD(setup, &zsamples, 1, log2NextN, kFFTDirection_Inverse);
+          assert( X[Nmax] == checkVal );
+        }
+        ++max_iter;
+      }
+      t1 = uclock_sec();
+    } while ( t1 < tstop );
+
+    vDSP_destroy_fftsetupD(setup);
     flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); /* see http://www.fftw.org/speed/method.html */
     tmeas[TYPE_ITER][ALGO_VECLIB] = max_iter;
     tmeas[TYPE_MFLOPS][ALGO_VECLIB] = flops/1e6/(t1 - t0 + 1e-16);
