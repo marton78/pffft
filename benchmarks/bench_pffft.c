@@ -803,10 +803,12 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   do {
     /* int flags = (N <= (256*1024) ? FFTW_MEASURE : FFTW_ESTIMATE);  measure takes a lot of time on largest ffts */
     /* int flags = FFTW_MEASURE; */
-#if ( defined(__arm__) || defined(__aarch64__) || defined(__arm64__) )
-    int limitFFTsize = 31;  /* takes over a second on Raspberry Pi 3 B+ -- and much much more on higher ffts sizes! */
+#if defined(__aarch64__) || defined(__arm64__)
+    int limitFFTsize = 2400;  /* arm64: N=2048 plans in ~400 ms on Cortex-A78 */
+#elif defined(__arm__)
+    int limitFFTsize = 31;    /* arm32: takes over a second on Raspberry Pi 3 B+ */
 #else
-    int limitFFTsize = 2400;  /* take over a second on i7 for fft size 2400 */
+    int limitFFTsize = 2400;  /* x86: takes over a second on i7 for fft size 2400 */
 #endif
     int flags = (N < limitFFTsize ? FFTW_MEASURE : (withFFTWfullMeas ? FFTW_MEASURE : FFTW_ESTIMATE));
 
