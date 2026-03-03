@@ -279,8 +279,34 @@ sudo apt-get install build-essential gcc g++ cmake
 
 ## Benchmarks and results
 
-#### Quicklink
-Find results at [https://github.com/hayguen/pffft_benchmarks](https://github.com/hayguen/pffft_benchmarks).
+#### ARM results
+
+Benchmarks on two ARM platforms — an Android phone (Motorola Edge 50 Neo,
+Cortex-A78/A55, mt6878) and an Apple M2 — show PFFFT to be highly
+competitive against every open-source alternative, and in most cases the
+fastest of the group:
+
+| Platform | Winner |
+|---|---|
+| Android, all except one case | **PFFFT** |
+| Android, float complex, small N (≤256) | FFTW-measured edges ahead |
+| Apple M2, float real | vDSP (closed-source, Apple-only) |
+| Apple M2, float complex, small N | FFTW-measured edges ahead; vDSP at large N |
+| Apple M2, double | **PFFFT** and FFTW-measured are neck-and-neck |
+
+The same pattern — FFTW-measured faster than PFFFT for single-precision
+complex at short lengths — appears on both ARM platforms.
+
+FFTW's edge comes at a significant cost: it is a large library requiring
+autoconf, separate builds per precision and SIMD variant, and careful flag
+tuning to perform well (e.g. `--enable-armv8-cntvct-el0` on ARM to avoid
+falling back to estimate-only planning). Also, it's licensed as GPL.
+PFFFT is a few source files with no dependencies and a liberal license.
+
+![Android benchmark](bench_results/motorola_edge50_neo.webp)
+![Apple M2 benchmark](bench_results/macbook_air_m2.webp)
+
+Find older results at [https://github.com/hayguen/pffft_benchmarks](https://github.com/hayguen/pffft_benchmarks).
 
 #### General
 My (Hayati Ayguen) first look at FFT-benchmarks was with [benchFFT](http://www.fftw.org/benchfft/)
