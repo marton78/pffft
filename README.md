@@ -430,6 +430,28 @@ specific libraries without re-benchmarking everything.
 ./bench_pffft_double --algo all --output-dir results/darwin-arm64-clang
 ```
 
+#### Benchmarking on Android
+
+`cross_build_android.py` cross-compiles the benchmarks with the Android NDK,
+pushes them to a connected device via ADB, runs them, and pulls the CSV results
+back — in one step. Requires Python 3, CMake, and an Android NDK (auto-detected
+from the default SDK location; override with `--ndk` or `ANDROID_NDK`).
+
+```bash
+# Build for arm64-v8a, run on connected device, collect results
+python3 cross_build_android.py arm64
+
+# Build only (no device required)
+python3 cross_build_android.py arm64 --no-run
+
+# Specific device, custom output directory
+python3 cross_build_android.py arm64 --serial <serial> --output-dir results/android-arm64
+```
+
+Notes:
+* FFTW, MKL, and FFTS are disabled automatically (not available / not compatible with the NDK).
+* Results land in `bench_results_android_<id>/` and are compatible with `bench/make_charts.py`.
+
 #### Generating benchmark charts
 
 The `bench/make_charts.py` script generates charts from the per-library CSV files.
