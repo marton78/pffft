@@ -239,6 +239,7 @@ if ((PFFFT_BUILD_TESTS OR PFFFT_BUILD_BENCHMARKS) AND PFFFT_USE_FFTPACK)
   add_library(FFTPACK_FLOAT STATIC src/fftpack.c src/fftpack.h)
   target_compile_definitions(FFTPACK_FLOAT PRIVATE _USE_MATH_DEFINES)
   target_activate_c_compiler_warnings(FFTPACK_FLOAT)
+  target_set_c_arch_flags(FFTPACK_FLOAT)
   target_link_libraries( FFTPACK_FLOAT ${MATHLIB} )
   target_include_directories(FFTPACK_FLOAT
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
@@ -249,6 +250,7 @@ if ((PFFFT_BUILD_TESTS OR PFFFT_BUILD_BENCHMARKS) AND PFFFT_USE_FFTPACK)
   target_compile_definitions(FFTPACK_DOUBLE PRIVATE _USE_MATH_DEFINES)
   target_compile_definitions(FFTPACK_DOUBLE PUBLIC FFTPACK_DOUBLE_PRECISION)
   target_activate_c_compiler_warnings(FFTPACK_DOUBLE)
+  target_set_c_arch_flags(FFTPACK_DOUBLE)
   target_link_libraries( FFTPACK_DOUBLE ${MATHLIB} )
   target_include_directories(FFTPACK_DOUBLE
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
