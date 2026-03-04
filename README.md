@@ -495,6 +495,35 @@ Notes:
   links it into the benchmark. Requires `make` and autoconf; not supported on Windows.
 * Results land in `bench_results_android_<id>/` and are compatible with `bench/make_charts.py`.
 
+#### Benchmarking on iOS
+
+`cross_build_ios.py` cross-compiles the benchmarks for iOS arm64 and optionally
+deploys them to a connected device via `ios-deploy`. Requires macOS with Xcode
+(iOS SDK auto-detected; override with `--sdk` or `IOS_SDK`).
+
+```bash
+# Build for iOS arm64, deploy to connected device
+python3 cross_build_ios.py arm64
+
+# Include FFTW (cross-compiled automatically; requires make/autoconf)
+python3 cross_build_ios.py arm64 --fftw
+
+# Build only (no device required)
+python3 cross_build_ios.py arm64 --no-run
+```
+
+Notes:
+* Requires `ios-deploy` (`brew install ios-deploy`) for device deployment.
+* Optional: `libimobiledevice` (`brew install libimobiledevice`) for automatic device info collection.
+* **Device registration:** The target device must be registered in the
+  [Apple Developer portal](https://developer.apple.com/account/resources/devices)
+  under the same team as the signing identity. The script auto-detects the signing
+  identity and team ID, but if `ios-deploy` fails with error `0xe8000067`, the device
+  UDID is not in the provisioning profile. Use `--no-run` to build without a device.
+* Due to iOS app sandbox restrictions, benchmark results are not automatically pulled
+  (unlike Android). Retrieve CSVs via Xcode's Devices window or SSH on jailbroken devices.
+* Results land in `bench_results_ios_<id>/` and are compatible with `bench/make_charts.py`.
+
 #### Generating benchmark charts
 
 The `bench/make_charts.py` script generates charts from the per-library CSV files.
