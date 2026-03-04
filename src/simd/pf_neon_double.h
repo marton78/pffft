@@ -100,31 +100,23 @@ typedef union v4sf_union {
   }
 
 /* VTRANSPOSE4 pseudo code: 4x4 matrix transpose
-   Uses uzp/zip-style lane selections across the two halves.
+   Uses trn1/trn2.2d to select low/high 64-bit lanes from each pair,
+   avoiding vcombine_f64(vget_low/high_f64(...)) verbose patterns.
 */
 #  define VTRANSPOSE4(row0, row1, row2, row3) {                                \
     float64x2_t r0lo__ = (row0).lo, r0hi__ = (row0).hi;                       \
     float64x2_t r1lo__ = (row1).lo, r1hi__ = (row1).hi;                       \
     float64x2_t r2lo__ = (row2).lo, r2hi__ = (row2).hi;                       \
     float64x2_t r3lo__ = (row3).lo, r3hi__ = (row3).hi;                       \
-    /* shuffle_pd_00: pick low lanes; shuffle_pd_11: pick high lanes */        \
-    float64x2_t t0lo__ = vcombine_f64(vget_low_f64(r0lo__),                   \
-                                      vget_low_f64(r1lo__));                   \
-    float64x2_t t2lo__ = vcombine_f64(vget_high_f64(r0lo__),                  \
-                                      vget_high_f64(r1lo__));                  \
-    float64x2_t t0hi__ = vcombine_f64(vget_low_f64(r0hi__),                   \
-                                      vget_low_f64(r1hi__));                   \
-    float64x2_t t2hi__ = vcombine_f64(vget_high_f64(r0hi__),                  \
-                                      vget_high_f64(r1hi__));                  \
-    float64x2_t t1lo__ = vcombine_f64(vget_low_f64(r2lo__),                   \
-                                      vget_low_f64(r3lo__));                   \
-    float64x2_t t3lo__ = vcombine_f64(vget_high_f64(r2lo__),                  \
-                                      vget_high_f64(r3lo__));                  \
-    float64x2_t t1hi__ = vcombine_f64(vget_low_f64(r2hi__),                   \
-                                      vget_low_f64(r3hi__));                   \
-    float64x2_t t3hi__ = vcombine_f64(vget_high_f64(r2hi__),                  \
-                                      vget_high_f64(r3hi__));                  \
-    /* permute2f128_0x20: lo halves; permute2f128_0x31: hi halves */           \
+    /* trn1.2d picks low lanes, trn2.2d picks high lanes */                    \
+    float64x2_t t0lo__ = vtrn1q_f64(r0lo__, r1lo__);                          \
+    float64x2_t t2lo__ = vtrn2q_f64(r0lo__, r1lo__);                          \
+    float64x2_t t0hi__ = vtrn1q_f64(r0hi__, r1hi__);                          \
+    float64x2_t t2hi__ = vtrn2q_f64(r0hi__, r1hi__);                          \
+    float64x2_t t1lo__ = vtrn1q_f64(r2lo__, r3lo__);                          \
+    float64x2_t t3lo__ = vtrn2q_f64(r2lo__, r3lo__);                          \
+    float64x2_t t1hi__ = vtrn1q_f64(r2hi__, r3hi__);                          \
+    float64x2_t t3hi__ = vtrn2q_f64(r2hi__, r3hi__);                          \
     (row0) = (v4sf){ t0lo__, t1lo__ };                                         \
     (row1) = (v4sf){ t2lo__, t3lo__ };                                         \
     (row2) = (v4sf){ t0hi__, t1hi__ };                                         \

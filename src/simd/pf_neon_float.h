@@ -93,6 +93,7 @@ typedef union v4sf_union {
                                            vreinterpretq_f64_f32(t3_)));       \
   }
 #else
+/* WASM SIMD or other: fallback using vzipq_f32 struct pairs */
 #  define VTRANSPOSE4(x0,x1,x2,x3) {                                    \
     float32x4x2_t t0_ = vzipq_f32(x0, x2);                              \
     float32x4x2_t t1_ = vzipq_f32(x1, x3);                              \
