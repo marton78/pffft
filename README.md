@@ -281,10 +281,10 @@ sudo apt-get install build-essential gcc g++ cmake
 
 #### ARM results
 
-Benchmarks on two ARM platforms — an Android phone (Motorola Edge 50 Neo,
-Cortex-A78/A55, mt6878) and an Apple M2 — show PFFFT to be highly
-competitive against every open-source alternative, and in most cases the
-fastest of the group:
+Benchmarks on three ARM platforms — an Android phone (Motorola Edge 50 Neo,
+Cortex-A78/A55, mt6878), an Apple M2, and an iPhone 11 Pro (A13 Bionic) —
+show PFFFT to be highly competitive against every open-source alternative,
+and in most cases the fastest of the group:
 
 | Platform | Winner |
 |---|---|
@@ -293,9 +293,13 @@ fastest of the group:
 | Apple M2, float real | vDSP (closed-source, Apple-only) |
 | Apple M2, float complex, small N | FFTW-measured edges ahead; vDSP at large N |
 | Apple M2, double | **PFFFT** and FFTW-measured are neck-and-neck |
+| iPhone 11 Pro, float real | **PFFFT** best up to 1024; vDSP best above, PFFFT second |
+| iPhone 11 Pro, float complex | vDSP best; **PFFFT** second, neck-and-neck with FFTW |
+| iPhone 11 Pro, double real | **PFFFT** best by a wide margin |
+| iPhone 11 Pro, double complex | vDSP at small N; **PFFFT** best at large N |
 
 The same pattern — FFTW-measured faster than PFFFT for single-precision
-complex at short lengths — appears on both ARM platforms.
+complex at short lengths — appears on all three ARM platforms.
 
 FFTW's edge comes at a significant cost: it is a large library requiring
 autoconf, separate builds per precision and SIMD variant, and careful flag
@@ -305,6 +309,7 @@ PFFFT is a few source files with no dependencies and a liberal license.
 
 ![Android benchmark](bench_results/motorola_edge50_neo.webp)
 ![Apple M2 benchmark](bench_results/macbook_air_m2.webp)
+![iPhone 11 Pro benchmark](bench_results/iphone11_pro.webp)
 
 Find older results at [https://github.com/hayguen/pffft_benchmarks](https://github.com/hayguen/pffft_benchmarks).
 
