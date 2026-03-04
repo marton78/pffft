@@ -45,6 +45,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -237,8 +238,8 @@ def build_fftw_ios(sdk_root, deployment_target, build_dir, cpu_count):
     cflags = f"-O3 -fomit-frame-pointer -fstrict-aliasing {deployment_flag} -isysroot {sysroot} -arch arm64"
     env.update({
         "CC":      clang,
-        "AR":      "libtool",
-        "ARFLAGS": "-static -o",
+        "AR":      "ar",
+        "ARFLAGS": "cr",
         "RANLIB":  "ranlib",
         "CFLAGS":  cflags,
         "LDFLAGS": f"{deployment_flag} -isysroot {sysroot} -arch arm64",
@@ -262,12 +263,15 @@ def build_fftw_ios(sdk_root, deployment_target, build_dir, cpu_count):
 
 def build_pffft_ios(script_dir, build_dir, deployment_target,
                     fftw_cmake_args, extra_cmake, cpu_count,
-                    signing_identity=None, team_id=None, bundle_id=None):
+                    signing_identity=None, team_id=None, bundle_id=None,
+                    provisioning_profile=None):
     """Build pffft benchmarks for iOS using CMake + Xcode.
 
     When signing_identity and team_id are provided, builds signed .app bundles
-    via the Xcode generator and xcodebuild (which manages provisioning profiles
-    automatically).  Otherwise falls back to Unix Makefiles (unsigned, --no-run).
+    via the Xcode generator and xcodebuild.  If provisioning_profile is given,
+    uses manual signing with that specific profile; otherwise uses automatic
+    provisioning.  Falls back to Unix Makefiles (unsigned, --no-run) when
+    signing info is not available.
 
     Returns path to the pffft build directory.
     """
@@ -301,12 +305,17 @@ def build_pffft_ios(script_dir, build_dir, deployment_target,
     ] + fftw_cmake_args + extra_cmake
 
     if use_xcode:
+        sign_style = "Manual" if provisioning_profile else "Automatic"
         cmake_args += [
             "-G", "Xcode",
             f"-DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM={team_id}",
             "-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY=Apple Development",
-            "-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_STYLE=Automatic",
+            f"-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_STYLE={sign_style}",
         ]
+        if provisioning_profile:
+            cmake_args += [
+                f"-DCMAKE_XCODE_ATTRIBUTE_PROVISIONING_PROFILE_SPECIFIER={provisioning_profile}",
+            ]
         if bundle_id:
             cmake_args += [
                 f"-DCMAKE_XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER={bundle_id}",
@@ -315,6 +324,33 @@ def build_pffft_ios(script_dir, build_dir, deployment_target,
         cmake_args += ["-DCMAKE_BUILD_TYPE=Release"]
 
     run(cmake_args)
+
+    # CMake's Info.plist template leaves CFBundleIdentifier empty.  Xcode
+    # needs $(PRODUCT_BUNDLE_IDENTIFIER) there so the build setting (set via
+    # CMAKE_XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER) is substituted into
+    # the final plist.  Without it, the .app has no bundle ID and the
+    # provisioning profile can't match → ios-deploy error 0xe8000067.
+    if use_xcode:
+        for plist in pffft_build_dir.rglob("Info.plist"):
+            if "CMakeFiles" not in str(plist):
+                continue
+            try:
+                raw = plist.read_bytes()
+                if raw[:5] == b"bplis":
+                    continue  # skip binary plists
+                text = raw.decode("utf-8")
+                if ("<key>CFBundleIdentifier</key>\n"
+                        "\t<string></string>") in text:
+                    text = text.replace(
+                        "<key>CFBundleIdentifier</key>\n"
+                        "\t<string></string>",
+                        "<key>CFBundleIdentifier</key>\n"
+                        "\t<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>",
+                    )
+                    plist.write_text(text)
+                    print(f"  Patched {plist.name}: set CFBundleIdentifier")
+            except (OSError, UnicodeDecodeError):
+                pass
 
     build_cmd = [
         "cmake", "--build", str(pffft_build_dir),
@@ -325,11 +361,15 @@ def build_pffft_ios(script_dir, build_dir, deployment_target,
         build_cmd += [
             "--",
             "-jobs", str(cpu_count),
-            "-allowProvisioningUpdates",
             f"DEVELOPMENT_TEAM={team_id}",
             "CODE_SIGN_IDENTITY=Apple Development",
-            "CODE_SIGN_STYLE=Automatic",
+            f"CODE_SIGN_STYLE={sign_style}",
         ]
+        if provisioning_profile:
+            build_cmd.append(
+                f"PROVISIONING_PROFILE_SPECIFIER={provisioning_profile}")
+        else:
+            build_cmd.append("-allowProvisioningUpdates")
     else:
         build_cmd += ["--", f"-j{cpu_count}"]
 
@@ -386,27 +426,116 @@ def find_team_id(signing_identity):
     return None
 
 
+def find_provisioning_profile(device_udid, team_id=None):
+    """Find a provisioning profile that includes the given device UDID.
+
+    Prefers wildcard profiles.  If team_id is given, only returns profiles
+    matching that team.
+
+    Returns (profile_uuid, profile_name, profile_team) or (None, None, None).
+    """
+    profiles_dir = Path.home() / "Library/Developer/Xcode/UserData/Provisioning Profiles"
+    if not profiles_dir.is_dir():
+        return None, None, None
+
+    best = None
+    for profile_path in profiles_dir.glob("*.mobileprovision"):
+        try:
+            result = subprocess.run(
+                ["security", "cms", "-D", "-i", str(profile_path)],
+                capture_output=True, text=True, check=True,
+            )
+            plist_data = result.stdout
+            if device_udid not in plist_data:
+                continue
+
+            # Extract fields via PlistBuddy
+            def plist_val(key):
+                r = subprocess.run(
+                    ["/usr/libexec/PlistBuddy", "-c", f"Print {key}", "/dev/stdin"],
+                    input=plist_data, capture_output=True, text=True,
+                )
+                return r.stdout.strip() if r.returncode == 0 else None
+
+            p_uuid = plist_val("UUID")
+            p_name = plist_val("Name")
+            p_team = plist_val("TeamIdentifier:0")
+            p_app_id = plist_val("Entitlements:application-identifier")
+
+            if team_id and p_team != team_id:
+                continue
+
+            is_wildcard = p_app_id and p_app_id.endswith(".*")
+
+            # Prefer wildcard profiles
+            if is_wildcard:
+                return p_uuid, p_name, p_team
+            if best is None:
+                best = (p_uuid, p_name, p_team)
+
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            continue
+
+    if best:
+        return best
+    return None, None, None
+
+
 # ── deployment via ios-deploy ─────────────────────────────────────────────────
 
 def deploy_and_run(app_bundle, device_id):
     """Deploy app bundle to device via ios-deploy and run it.
 
-    Returns True on success.
+    Returns the captured stdout as a string, or None on failure.
     """
     banner([f"Deploying {app_bundle.name} to device"])
 
-    result = run(
-        ["ios-deploy", "--bundle", str(app_bundle), "--id", device_id,
-         "--noninteractive", "--justlaunch"],
-        check=False,
-    )
+    cmd = [
+        "ios-deploy", "--bundle", str(app_bundle), "--id", device_id,
+        "--noninteractive",
+    ]
+    print("$", " ".join(str(c) for c in cmd))
+    print("  This will take a few minutes. You'll see a black screen on")
+    print("  your phone — stay put until the benchmark finishes.")
+
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    stdout = result.stdout + result.stderr
+
     if result.returncode != 0:
         print(f"WARNING: ios-deploy failed for {app_bundle.name}", file=sys.stderr)
-        print("  If error 0xe8000067: device UDID not in provisioning profile.", file=sys.stderr)
-        print("  Register at https://developer.apple.com/account/resources/devices", file=sys.stderr)
-        return False
+        print("  If error 0xe8000067: device UDID not in provisioning profile.",
+              file=sys.stderr)
+        lines = stdout.splitlines()
+        for ln in lines[-10:]:
+            print(f"  {ln}", file=sys.stderr)
+        return None
 
-    return True
+    return stdout
+
+
+def extract_csvs_from_output(stdout, output_dir):
+    """Extract CSV files from stdout marker blocks.
+
+    Looks for:
+        === start <filename>.csv ===
+        <csv data>
+        === end <filename>.csv ===
+
+    Returns list of written file paths.
+    """
+    written = []
+    pattern = re.compile(
+        r"^=== start (.+\.csv) ===$\n(.*?)^=== end \1 ===$",
+        re.MULTILINE | re.DOTALL,
+    )
+    for match in pattern.finditer(stdout):
+        filename = match.group(1)
+        csv_data = match.group(2)
+        out_path = Path(output_dir) / filename
+        out_path.write_text(csv_data)
+        written.append(out_path)
+        print(f"  Extracted {filename}")
+    return written
 
 
 # ── argument parsing ──────────────────────────────────────────────────────────
@@ -481,6 +610,7 @@ def main():
 
     signing_identity = None
     team_id = None
+    profile_uuid = None
     if not args.no_run:
         signing_identity = args.sign or find_signing_identity()
         if signing_identity is None:
@@ -499,6 +629,33 @@ def main():
             print("  Pass --team-id <TEAM_ID> explicitly.", file=sys.stderr)
             sys.exit(1)
         print(f"Development team: {team_id}")
+
+        # Find a provisioning profile that includes the target device.
+        # First try with the detected/requested team; if that fails and the
+        # team was auto-detected, search across ALL teams — a different team
+        # may have this device registered.
+        profile_uuid, profile_name, profile_team = find_provisioning_profile(
+            device["id"], team_id=team_id)
+        if profile_uuid is None and args.team_id is None:
+            # Auto-detected team doesn't have a profile for this device;
+            # try any team that does.
+            profile_uuid, profile_name, profile_team = find_provisioning_profile(
+                device["id"], team_id=None)
+            if profile_uuid and profile_team and profile_team != team_id:
+                print(f"No profile for team {team_id}; "
+                      f"found one under team {profile_team}")
+                team_id = profile_team
+
+        if profile_uuid:
+            print(f"Provisioning profile: {profile_name} ({profile_uuid})")
+        else:
+            print("WARNING: No provisioning profile found for this device.",
+                  file=sys.stderr)
+            print("  Falling back to automatic provisioning (may fail).",
+                  file=sys.stderr)
+            print("  Register device at "
+                  "https://developer.apple.com/account/resources/devices",
+                  file=sys.stderr)
 
     banner([
         "iOS pffft benchmark cross-compiler",
@@ -531,6 +688,7 @@ def main():
         fftw_cmake_args, extra_cmake, cpu_count,
         signing_identity=signing_identity, team_id=team_id,
         bundle_id=args.bundle_id,
+        provisioning_profile=profile_uuid,
     )
 
     if args.no_run:
@@ -572,6 +730,7 @@ def main():
 
     banner(["Running benchmarks on device"])
 
+    all_csvs = []
     for exe_name in ("bench_pffft_float", "bench_pffft_double"):
         # Xcode puts signed .app bundles under Release-iphoneos/
         app_bundle = pffft_build_dir / "benchmarks" / "Release-iphoneos" / f"{exe_name}.app"
@@ -582,19 +741,21 @@ def main():
             print(f"WARNING: {exe_name}.app not found (was it built?)", file=sys.stderr)
             continue
 
-        deploy_and_run(app_bundle, device["id"])
+        stdout = deploy_and_run(app_bundle, device["id"])
+        if stdout:
+            csvs = extract_csvs_from_output(stdout, str(output_dir))
+            all_csvs.extend(csvs)
 
-    # ── result collection notes ───────────────────────────────────────────────
-
-    banner(["Result Collection"])
-
-    print("iOS app sandbox prevents direct file pull (unlike Android's adb pull).")
-    print("\nOptions to retrieve benchmark CSV results:")
-    print("  1. Xcode > Window > Devices and Simulators > download app container")
-    print("  2. ideviceinstaller: ideviceinstaller -o copy -u <device-id> ...")
-    print("  3. SSH on jailbroken device: scp root@<ip>:/.../Documents/*.csv .")
-    print(f"\nOnce CSVs are in {output_dir}/, generate charts:")
-    print(f'  python3 bench/make_charts.py "{output_dir}"')
+    banner(["Done"])
+    print(f"Output directory: {output_dir}")
+    print(f"Device info:      {output_dir / 'device_info.txt'}")
+    existing_csvs = list(output_dir.glob("*.csv"))
+    if all_csvs:
+        print(f"CSV files:        {len(all_csvs)} extracted")
+    elif existing_csvs:
+        print(f"CSV files:        {len(existing_csvs)} present (from previous run)")
+    else:
+        print("WARNING: No CSV files were extracted from benchmark output.")
 
 
 if __name__ == "__main__":

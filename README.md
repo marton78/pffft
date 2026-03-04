@@ -518,10 +518,11 @@ Notes:
 * **Device registration:** The target device must be registered in the
   [Apple Developer portal](https://developer.apple.com/account/resources/devices)
   under the same team as the signing identity. The script auto-detects the signing
-  identity and team ID, but if `ios-deploy` fails with error `0xe8000067`, the device
-  UDID is not in the provisioning profile. Use `--no-run` to build without a device.
-* Due to iOS app sandbox restrictions, benchmark results are not automatically pulled
-  (unlike Android). Retrieve CSVs via Xcode's Devices window or SSH on jailbroken devices.
+  identity, team ID, and a provisioning profile that includes the target device
+  (preferring wildcard profiles). If no matching profile is found it falls back to
+  automatic provisioning. Use `--no-run` to build without a device.
+* CSV results are captured automatically: the iOS app emits CSV data to stdout
+  with markers, and the host-side script extracts the files into the output directory.
 * Results land in `bench_results_ios_<id>/` and are compatible with `bench/make_charts.py`.
 
 #### Generating benchmark charts
