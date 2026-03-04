@@ -98,6 +98,10 @@ typedef PFFFTD_Setup PFFFT_SETUP;
 #include <sys/stat.h>
 #include <errno.h>
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+
 static void ensure_directory(const char *path) {
 #ifdef _WIN32
   _mkdir(path);
@@ -1548,15 +1552,24 @@ int main(int argc, char **argv) {
   }
 
   printf("\n");
-  printf("now writing per-algo .csv files to '%s' ..\n", outputDir);
-  ensure_directory(outputDir);
 
   {
     const char *precStr;
+    int csvToStdout = 0;
 #ifdef PFFFT_ENABLE_FLOAT
     precStr = "flt";
 #else
     precStr = "dbl";
+#endif
+
+#if TARGET_OS_IOS
+    /* On iOS the app sandbox blocks file writes.  Emit CSV data to stdout
+       with markers so a host-side script can extract individual files. */
+    csvToStdout = 1;
+    printf("writing per-algo .csv data to stdout ..\n");
+#else
+    printf("now writing per-algo .csv files to '%s' ..\n", outputDir);
+    ensure_directory(outputDir);
 #endif
 
     for (realCplxIdx = 0; realCplxIdx < 2; ++realCplxIdx)
@@ -1568,17 +1581,25 @@ int main(int argc, char **argv) {
       for (k = 0; k < NUM_FFT_ALGOS; ++k)
       {
         FILE *f;
-        char path[1024];
+        char filename[256];
 
         if ( !haveAlgo[k] )
           continue;
 
-        snprintf(path, sizeof(path), "%s/%s-%s-%s.csv",
-                 outputDir, algoFileId[k], precStr, rcStr);
-        f = fopen(path, "w");
-        if (!f) {
-          fprintf(stderr, "failed to open %s: %s\n", path, strerror(errno));
-          continue;
+        snprintf(filename, sizeof(filename), "%s-%s-%s.csv",
+                 algoFileId[k], precStr, rcStr);
+
+        if (csvToStdout) {
+          printf("=== start %s ===\n", filename);
+          f = stdout;
+        } else {
+          char path[1024];
+          snprintf(path, sizeof(path), "%s/%s", outputDir, filename);
+          f = fopen(path, "w");
+          if (!f) {
+            fprintf(stderr, "failed to open %s: %s\n", path, strerror(errno));
+            continue;
+          }
         }
 
         fprintf(f, "size,prep_ms,num_iter,mflops,duration_sec\n");
@@ -1594,8 +1615,13 @@ int main(int argc, char **argv) {
                     tmeas[realCplxIdx][i][TYPE_DUR_TOT][k]);
           }
         }
-        fclose(f);
-        printf("  wrote %s\n", path);
+
+        if (csvToStdout) {
+          printf("=== end %s ===\n", filename);
+        } else {
+          fclose(f);
+          printf("  wrote %s\n", filename);
+        }
       }
     }
   }
