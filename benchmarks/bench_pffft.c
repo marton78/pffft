@@ -1302,18 +1302,14 @@ int main(int argc, char **argv) {
      and 32 for real FFTs -- a lot of stuff would need to be rewritten to
      handle other cases (or maybe just switch to a scalar fft, I don't know..) */
 
-#if 0  /* include powers of 2 ? */
-#define NUMNONPOW2LENS  23
+  /* Non-power-of-2 sizes: N = 2^a * 3^b * 5^c (a >= 5 for real FFTs).
+     Covers small mixed-radix through ~1M for real-world workloads. */
+#define NUMNONPOW2LENS  27
   int NnonPow2[NUMNONPOW2LENS] = {
-    64, 96, 128, 160, 192,   256, 384, 5*96, 512, 5*128,
-    3*256, 800, 1024, 2048, 2400,   4096, 8192, 9*1024, 16384, 32768,
-    256*1024, 1024*1024, -1 };
-#else
-#define NUMNONPOW2LENS  11
-  int NnonPow2[NUMNONPOW2LENS] = {
-    96, 160, 192, 384, 5*96,   5*128,3*256, 800, 2400, 9*1024,
+    96, 160, 192, 320, 480,   640, 768, 960, 1280, 1440,
+    1600, 1920, 2400, 2560, 3200,   4000, 4800, 7200, 9216, 15360,
+    32000, 48000, 72000, 100000, 300000,   1000000,
     -1 };
-#endif
 
 #define NUMPOW2FFTLENS  22
 #define MAXNUMFFTLENS MAX( NUMPOW2FFTLENS, NUMNONPOW2LENS )

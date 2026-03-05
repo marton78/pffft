@@ -295,6 +295,8 @@ def parse_args():
                         help="Override NDK root directory")
     parser.add_argument("--serial", default=None,
                         help="ADB device serial number")
+    parser.add_argument("--bench-args", default="",
+                        help="Extra arguments passed to benchmark executables on device")
 
     args, extra_cmake = parser.parse_known_args()
     return args, extra_cmake
@@ -481,7 +483,7 @@ def main():
     for exe in pushed:
         print(f"\n── Running {exe} ──")
         result = run(
-            adb_base + ["shell", f"cd {device_dir} && ./{exe} --output-dir {device_out}"],
+            adb_base + ["shell", f"cd {device_dir} && ./{exe} --output-dir {device_out} {args.bench_args}"],
             check=False,
         )
         if result.returncode != 0:
