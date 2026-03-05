@@ -60,9 +60,11 @@
    - 1D transforms only, with 32-bit single precision.
 
    - supports only transforms for inputs of length N of the form
-   N=(2^a)*(3^b)*(5^c), a >= 5, b >=0, c >= 0 (32, 48, 64, 96, 128,
-   144, 160, etc are all acceptable lengths). Performance is best for
-   128<=N<=8192.
+   N=(2^a)*(3^b)*(5^c) with b >= 0, c >= 0.
+   For real transforms a >= 5 (minimum N is 32).
+   For complex transforms a >= 4 (minimum N is 16).
+   Use pffft_is_valid_size() or pffft_min_fft_size() to check at runtime.
+   Performance is best for 128<=N<=8192.
 
    - all (float*) pointers in the functions below are expected to
    have an "simd-compatible" alignment, that is 16 bytes on x86 and
