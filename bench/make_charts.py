@@ -112,11 +112,47 @@ def read_per_library_csv(path):
     return rows
 
 
-def get_color(product, variant):
-    """Return color for a product-variant combination."""
+def get_color(product, variant, dir_index=None, num_dirs=1):
+    """Return color for a product-variant combination.
+
+    When num_dirs > 1, generates a gradient for each product across
+    directories so that successive versions are visually distinct.
+    """
+    if num_dirs > 1 and dir_index is not None:
+        return _gradient_color(product, dir_index, num_dirs)
     if product == 'fftw' and variant in FFTW_VARIANT_COLORS:
         return FFTW_VARIANT_COLORS[variant]
     return PRODUCT_COLORS.get(product, '#888888')
+
+
+# Per-product gradient endpoints: (start_rgb, end_rgb)
+# Light/cool -> dark/warm so early = faint, latest = bold
+_PRODUCT_GRADIENTS = {
+    'pffft':  ((0.68, 0.85, 0.96), (0.08, 0.20, 0.70)),   # light sky -> dark blue
+    'pffftu': ((0.82, 0.70, 0.96), (0.45, 0.08, 0.70)),   # light lavender -> deep purple
+    'fftpack': ((0.85, 0.85, 0.85), (0.35, 0.38, 0.42)),
+    'fftw':    ((0.99, 0.82, 0.55), (0.76, 0.25, 0.05)),
+    'vdsp':    ((0.96, 0.70, 0.85), (0.76, 0.08, 0.40)),
+    'green':   ((0.70, 0.92, 0.70), (0.05, 0.50, 0.18)),
+    'kiss':    ((0.95, 0.88, 0.60), (0.60, 0.42, 0.02)),
+    'pocket':  ((0.95, 0.70, 0.70), (0.70, 0.10, 0.10)),
+    'mkl':     ((0.82, 0.70, 0.96), (0.50, 0.15, 0.80)),
+}
+
+
+def _gradient_color(product, dir_index, num_dirs):
+    """Interpolate between gradient endpoints for a product."""
+    grad = _PRODUCT_GRADIENTS.get(product)
+    if grad is None:
+        t = dir_index / max(num_dirs - 1, 1)
+        grey = 0.75 - 0.4 * t
+        return (grey, grey, grey)
+    start, end = grad
+    t = dir_index / max(num_dirs - 1, 1)
+    r = start[0] + t * (end[0] - start[0])
+    g = start[1] + t * (end[1] - start[1])
+    b = start[2] + t * (end[2] - start[2])
+    return (r, g, b)
 
 
 def make_label(product, variant, dir_suffix=None):
@@ -151,16 +187,16 @@ def plot_series(ax, sizes, mflops, label, color, linewidth=1.5,
             linestyle=linestyle)
 
 
-def make_chart(ax, series_list, title):
+def make_chart(ax, series_list, title, num_dirs=1):
     """Draw a single chart panel.
 
-    series_list: [(product, variant, label, sizes, mflops), ...]
+    series_list: [(product, variant, label, sizes, mflops, dir_index), ...]
     """
     # Sort so competitors are drawn first, PFFFT on top
     ordered = sorted(series_list, key=lambda s: draw_order_key(s[0]))
 
-    for product, variant, label, sizes, mflops in ordered:
-        color = get_color(product, variant)
+    for product, variant, label, sizes, mflops, dir_index in ordered:
+        color = get_color(product, variant, dir_index, num_dirs)
         is_pffft = product in ('pffft', 'pffftu')
         lw = 2.2 if is_pffft else 1.2
         ms = 4 if is_pffft else 3
@@ -264,7 +300,7 @@ def main():
     all_panels = {}
     info_list = []
 
-    for dirpath in dirs:
+    for dir_index, dirpath in enumerate(dirs):
         dirpath = os.path.abspath(dirpath)
         info = load_info(dirpath)
         info_list.append(info)
@@ -275,7 +311,7 @@ def main():
             for product, variant, sizes, mflops in series:
                 label = make_label(product, variant, dir_suffix)
                 all_panels.setdefault(key, []).append(
-                    (product, variant, label, sizes, mflops))
+                    (product, variant, label, sizes, mflops, dir_index))
 
     if not all_panels:
         print('No CSV data found in the given directories!', file=sys.stderr)
@@ -299,10 +335,11 @@ def main():
         ('dbl', 'real'):  'double_real',
         ('dbl', 'cplx'):  'double_cplx',
     }
+    num_dirs = len(dirs)
     for (prec, xform), series_list in active_panels:
         title = panel_title(prec, xform, info_list)
         fig, ax = plt.subplots(figsize=(11, 6.5))
-        make_chart(ax, series_list, title)
+        make_chart(ax, series_list, title, num_dirs)
         fig.tight_layout()
         name = panel_names.get((prec, xform), f'{prec}_{xform}')
         outpath = os.path.join(output_dir, f'bench_{name}.webp')
@@ -324,7 +361,7 @@ def main():
         for i, ((prec, xform), series_list) in enumerate(active_panels):
             if i < len(flat):
                 title = panel_title(prec, xform, info_list)
-                make_chart(flat[i], series_list, title)
+                make_chart(flat[i], series_list, title, num_dirs)
 
         for j in range(n, len(flat)):
             flat[j].set_visible(False)
