@@ -400,6 +400,30 @@ static void radf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT 
     ch[ido-1 + (3*k + 1)*ido] = VADD(cc[k*ido], SVMUL(taur, cr2));
   }
   if (ido == 1) return;
+  if (ido == 3) {
+    /* Fast path: inner loop executes exactly once with i=2, ic=1 */
+    wr1 = LD_PS1(wa1[0]); wi1 = LD_PS1(wa1[1]);
+    wr2 = LD_PS1(wa2[0]); wi2 = LD_PS1(wa2[1]);
+    for (k=0; k<l1; k++) {
+      dr2 = cc[1 + (k + l1)*ido]; di2 = cc[2 + (k + l1)*ido];
+      VCPLXMULCONJ(dr2, di2, wr1, wi1);
+      dr3 = cc[1 + (k + l1*2)*ido]; di3 = cc[2 + (k + l1*2)*ido];
+      VCPLXMULCONJ(dr3, di3, wr2, wi2);
+      cr2 = VADD(dr2, dr3);
+      ci2 = VADD(di2, di3);
+      ch[1 + 3*k*ido] = VADD(cc[1 + k*ido], cr2);
+      ch[2 + 3*k*ido] = VADD(cc[2 + k*ido], ci2);
+      tr2 = VADD(cc[1 + k*ido], SVMUL(taur, cr2));
+      ti2 = VADD(cc[2 + k*ido], SVMUL(taur, ci2));
+      tr3 = SVMUL(taui, VSUB(di2, di3));
+      ti3 = SVMUL(taui, VSUB(dr3, dr2));
+      ch[1 + (3*k + 2)*ido] = VADD(tr2, tr3);
+      ch[0 + (3*k + 1)*ido] = VSUB(tr2, tr3);
+      ch[2 + (3*k + 2)*ido] = VADD(ti2, ti3);
+      ch[1 + (3*k + 1)*ido] = VSUB(ti3, ti2);
+    }
+    return;
+  }
   for (k=0; k<l1; k++) {
     for (i=2; i<ido; i+=2) {
       ic = ido - i;
@@ -445,6 +469,32 @@ static void radb3_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch
     ch[(k + 2*l1)*ido] = VADD(cr2, ci3);
   }
   if (ido == 1) return;
+  if (ido == 3) {
+    /* Fast path: inner loop executes exactly once with i=2, ic=1 */
+    v4sf wa1_r = LD_PS1(wa1[0]), wa1_i = LD_PS1(wa1[1]);
+    v4sf wa2_r = LD_PS1(wa2[0]), wa2_i = LD_PS1(wa2[1]);
+    for (k=0; k<l1; k++) {
+      tr2 = VADD(cc[1 + (3*k + 2)*ido], cc[0 + (3*k + 1)*ido]);
+      cr2 = VMADD(LD_PS1(taur), tr2, cc[1 + 3*k*ido]);
+      ch[1 + k*ido] = VADD(cc[1 + 3*k*ido], tr2);
+      ti2 = VSUB(cc[2 + (3*k + 2)*ido], cc[1 + (3*k + 1)*ido]);
+      ci2 = VMADD(LD_PS1(taur), ti2, cc[2 + 3*k*ido]);
+      ch[2 + k*ido] = VADD(cc[2 + 3*k*ido], ti2);
+      cr3 = SVMUL(taui, VSUB(cc[1 + (3*k + 2)*ido], cc[0 + (3*k + 1)*ido]));
+      ci3 = SVMUL(taui, VADD(cc[2 + (3*k + 2)*ido], cc[1 + (3*k + 1)*ido]));
+      dr2 = VSUB(cr2, ci3);
+      dr3 = VADD(cr2, ci3);
+      di2 = VADD(ci2, cr3);
+      di3 = VSUB(ci2, cr3);
+      VCPLXMUL(dr2, di2, wa1_r, wa1_i);
+      ch[1 + (k + l1)*ido] = dr2;
+      ch[2 + (k + l1)*ido] = di2;
+      VCPLXMUL(dr3, di3, wa2_r, wa2_i);
+      ch[1 + (k + 2*l1)*ido] = dr3;
+      ch[2 + (k + 2*l1)*ido] = di3;
+    }
+    return;
+  }
   for (k=0; k<l1; k++) {
     for (i=2; i<ido; i+=2) {
       ic = ido - i;
