@@ -30,6 +30,10 @@ tries to be small. Computations do take advantage of SSE1/AVX/AVX2 instructions
 on x86 cpus, Altivec on powerpc cpus, NEON on ARM cpus
 (including Apple Silicon), and WASM SIMD on WebAssembly. The license is BSD-like.
 
+Supported transform sizes are N = 2^a · 3^b · 5^c with b ≥ 0, c ≥ 0.
+For real transforms a ≥ 5 (minimum N = 32); for complex transforms a ≥ 4
+(minimum N = 16).
+
 PFFFT is a fork of [Julien Pommier's library on bitbucket](https://bitbucket.org/jpommier/pffft/)
 with some changes and additions.
 
