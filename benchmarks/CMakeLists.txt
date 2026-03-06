@@ -52,7 +52,16 @@ if (PFFFT_USE_BENCH_FFTS)
     endif()
     set(ENABLE_SHARED OFF CACHE BOOL "" FORCE)
     set(ENABLE_STATIC ON  CACHE BOOL "" FORCE)
+    # FFTS only has ARMv7 32-bit NEON assembly; force ENABLE_NEON OFF for AArch64
+    # so cmake doesn't error out trying to use ARMv7 asm on arm64.
+    # Unset from cache immediately after so it doesn't leak to other libs.
+    if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+      set(ENABLE_NEON OFF CACHE BOOL "" FORCE)
+    endif()
     add_subdirectory( "${PATH_FFTS}" "${CMAKE_CURRENT_BINARY_DIR}/ffts" EXCLUDE_FROM_ALL )
+    if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+      unset(ENABLE_NEON CACHE)
+    endif()
     target_set_c_arch_flags(ffts_static)
     if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
       # FFTS ffts_real.c contains ARMv7 32-bit NEON inline asm that AArch64 rejects;
