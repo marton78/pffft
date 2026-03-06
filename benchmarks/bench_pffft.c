@@ -534,7 +534,7 @@ double show_output(const char *name, int N, int cplx, float flops, float t0, flo
 }
 
 double cal_benchmark(int N, int cplx) {
-  const int log2N = Log2(N);
+  const double log2N = log((double)N) / M_LN2;
   int Nfloat = (cplx ? N*2 : N);
   int Nbytes = Nfloat * sizeof(pffft_scalar);
   pffft_scalar *X = PFFFT_FUNC(aligned_malloc)(Nbytes), *Y = PFFFT_FUNC(aligned_malloc)(Nbytes), *Z = PFFFT_FUNC(aligned_malloc)(Nbytes);
@@ -573,10 +573,10 @@ double cal_benchmark(int N, int cplx) {
 
 
 void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, double tmeas[NUM_TYPES][NUM_FFT_ALGOS], int haveAlgo[NUM_FFT_ALGOS], const int runAlgo_[NUM_FFT_ALGOS], FILE *tableFile ) {
-  const int log2N = Log2(N);
+  const double log2N = log((double)N) / M_LN2;
   int nextPow2N = PFFFT_FUNC(next_power_of_two)(N);
   int log2NextN = Log2(nextPow2N);
-  int pffftPow2N = nextPow2N;
+  int pffftPow2N = N;  /* pffft supports arbitrary mixed-radix sizes; use N directly */
 
   int Nfloat = (cplx ? MAX(nextPow2N, pffftPow2N)*2 : MAX(nextPow2N, pffftPow2N));
   int Nmax, k, iter;
@@ -690,7 +690,7 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
     } while ( t1 < tstop );
 
     vDSP_destroy_fftsetup(setup);
-    flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); /* see http://www.fftw.org/speed/method.html */
+    flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); /* use requested N for useful throughput; see http://www.fftw.org/speed/method.html */
     tmeas[TYPE_ITER][ALGO_VECLIB] = max_iter;
     tmeas[TYPE_MFLOPS][ALGO_VECLIB] = flops/1e6/(t1 - t0 + 1e-16);
     tmeas[TYPE_DUR_TOT][ALGO_VECLIB] = t1 - t0;
@@ -739,7 +739,7 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
     } while ( t1 < tstop );
 
     vDSP_destroy_fftsetupD(setup);
-    flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); /* see http://www.fftw.org/speed/method.html */
+    flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); /* use requested N for useful throughput; see http://www.fftw.org/speed/method.html */
     tmeas[TYPE_ITER][ALGO_VECLIB] = max_iter;
     tmeas[TYPE_MFLOPS][ALGO_VECLIB] = flops/1e6/(t1 - t0 + 1e-16);
     tmeas[TYPE_DUR_TOT][ALGO_VECLIB] = t1 - t0;
@@ -902,7 +902,7 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
 
     fftFree();
 
-    flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); /* see http://www.fftw.org/speed/method.html */
+    flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); /* use requested N for useful throughput; see http://www.fftw.org/speed/method.html */
     tmeas[TYPE_ITER][ALGO_GREEN] = max_iter;
     tmeas[TYPE_MFLOPS][ALGO_GREEN] = flops/1e6/(t1 - t0 + 1e-16);
     tmeas[TYPE_DUR_TOT][ALGO_GREEN] = t1 - t0;
@@ -917,7 +917,7 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
 
 #if defined(HAVE_KISS_FFT) && defined(PFFFT_ENABLE_FLOAT)
   if (runAlgo_[ALGO_KISS]) {
-  Nmax = (cplx ? nextPow2N*2 : nextPow2N);
+  Nmax = (cplx ? N*2 : N);  /* KissFFT supports arbitrary N */
   X[Nmax] = checkVal;
   if ( 1 || PFFFT_FUNC(is_power_of_two)(N) )
   {
@@ -928,11 +928,11 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
 
     te = uclock_sec();
     if (cplx) {
-      stf = kiss_fft_alloc(nextPow2N, 0, 0, 0);
-      sti = kiss_fft_alloc(nextPow2N, 1, 0, 0);
+      stf = kiss_fft_alloc(N, 0, 0, 0);
+      sti = kiss_fft_alloc(N, 1, 0, 0);
     } else {
-      stfr = kiss_fftr_alloc(nextPow2N, 0, 0, 0);
-      stir = kiss_fftr_alloc(nextPow2N, 1, 0, 0);
+      stfr = kiss_fftr_alloc(N, 0, 0, 0);
+      stir = kiss_fftr_alloc(N, 1, 0, 0);
     }
 
     t0 = uclock_sec();
@@ -975,7 +975,7 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
 
 #if defined(HAVE_POCKET_FFT)
   if (runAlgo_[ALGO_POCKET]) {
-  Nmax = (cplx ? nextPow2N*2 : nextPow2N);
+  Nmax = (cplx ? N*2 : N);  /* PocketFFT supports arbitrary N */
   X[Nmax] = checkVal;
   if ( 1 || PFFFT_FUNC(is_power_of_two)(N) )
   {
@@ -984,9 +984,9 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
 
     te = uclock_sec();
     if (cplx) {
-      planc = POCKFFTC_MID(make_,_plan)(nextPow2N);
+      planc = POCKFFTC_MID(make_,_plan)(N);
     } else {
-      planr = POCKFFTR_MID(make_,_plan)(nextPow2N);
+      planr = POCKFFTR_MID(make_,_plan)(N);
     }
 
     t0 = uclock_sec();
@@ -996,19 +996,19 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
       for ( k = 0; k < step_iter; ++k ) {
         if (cplx) {
           assert( X[Nmax] == checkVal );
-          memcpy(Y, X, 2*nextPow2N * sizeof(pffft_scalar) );
+          memcpy(Y, X, 2*N * sizeof(pffft_scalar) );
           POCKFFTC_PRE(_forward)(planc, Y, 1.);
           assert( X[Nmax] == checkVal );
-          memcpy(X, Y, 2*nextPow2N * sizeof(pffft_scalar) );
-          POCKFFTC_PRE(_backward)(planc, X, 1./nextPow2N);
+          memcpy(X, Y, 2*N * sizeof(pffft_scalar) );
+          POCKFFTC_PRE(_backward)(planc, X, 1./(double)N);
           assert( X[Nmax] == checkVal );
         } else {
           assert( X[Nmax] == checkVal );
-          memcpy(Y, X, nextPow2N * sizeof(pffft_scalar) );
+          memcpy(Y, X, N * sizeof(pffft_scalar) );
           POCKFFTR_PRE(_forward)(planr, Y, 1.);
           assert( X[Nmax] == checkVal );
-          memcpy(X, Y, nextPow2N * sizeof(pffft_scalar) );
-          POCKFFTR_PRE(_backward)(planr, X, 1./nextPow2N);
+          memcpy(X, Y, N * sizeof(pffft_scalar) );
+          POCKFFTR_PRE(_backward)(planr, X, 1./(double)N);
           assert( X[Nmax] == checkVal );
         }
         ++max_iter;
@@ -1140,7 +1140,7 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
       ffts_free(stf);
       ffts_free(sti);
 
-      flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); /* see http://www.fftw.org/speed/method.html */
+      flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2); /* use requested N for useful throughput; see http://www.fftw.org/speed/method.html */
       tmeas[TYPE_ITER][ALGO_FFTS]    = max_iter;
       tmeas[TYPE_MFLOPS][ALGO_FFTS]  = flops/1e6/(t1 - t0 + 1e-16);
       tmeas[TYPE_DUR_TOT][ALGO_FFTS] = t1 - t0;
