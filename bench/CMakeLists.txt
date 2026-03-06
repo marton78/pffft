@@ -21,7 +21,14 @@ option(DISABLE_SIMD_AVX "disable AVX CPU features? - " OFF)
 option(PFFFT_USE_SIMD_NEON   "force using NEON on ARM? (requires PFFFT_USE_SIMD)" OFF)
 option(PFFFT_USE_SCALAR_VECT "use 4-element vector scalar operations (if no other SIMD)" ON)
 
-option(PFFFT_USE_BENCH_FFTW   "use (system-installed) FFTW3 in fft benchmark?" OFF)
+set(FFTW3_ROOT "${CMAKE_SOURCE_DIR}/../fftw_build/prefix" CACHE PATH "Path to FFTW3 install prefix (built by build_fftw.py)")
+if (EXISTS "${FFTW3_ROOT}/lib/libfftw3f.a")
+  set(_fftw_default ON)
+else()
+  set(_fftw_default OFF)
+endif()
+option(PFFFT_USE_BENCH_FFTW   "use FFTW3 in fft benchmark?" ${_fftw_default})
+unset(_fftw_default)
 option(PFFFT_USE_BENCH_GREEN  "use Green FFT in fft benchmark? - if exists in subdir" ON)
 option(PFFFT_USE_BENCH_KISS   "use KissFFT in fft benchmark? - if exists in subdir" ON)
 option(PFFFT_USE_BENCH_POCKET "use PocketFFT in fft benchmark? - if exists in subdir" ON)
@@ -137,6 +144,7 @@ add_custom_target(build_float
                         -DPFFFT_USE_SIMD_NEON=${PFFFT_USE_SIMD_NEON}
                         -DPFFFT_USE_SCALAR_VECT=${PFFFT_USE_SCALAR_VECT}
                         -DPFFFT_USE_BENCH_FFTW=${PFFFT_USE_BENCH_FFTW}
+                        -DFFTW3_ROOT=${FFTW3_ROOT}
                         -DPFFFT_USE_BENCH_GREEN=${PFFFT_USE_BENCH_GREEN}
                         -DPFFFT_USE_BENCH_KISS=${PFFFT_USE_BENCH_KISS}
                         -DPFFFT_USE_BENCH_POCKET=${PFFFT_USE_BENCH_POCKET}
@@ -163,6 +171,7 @@ add_custom_target(build_double
                         -DPFFFT_USE_SIMD_NEON=${PFFFT_USE_SIMD_NEON}
                         -DPFFFT_USE_SCALAR_VECT=${PFFFT_USE_SCALAR_VECT}
                         -DPFFFT_USE_BENCH_FFTW=${PFFFT_USE_BENCH_FFTW}
+                        -DFFTW3_ROOT=${FFTW3_ROOT}
                         -DPFFFT_USE_BENCH_GREEN=${PFFFT_USE_BENCH_GREEN}
                         -DPFFFT_USE_BENCH_KISS=${PFFFT_USE_BENCH_KISS}
                         -DPFFFT_USE_BENCH_POCKET=${PFFFT_USE_BENCH_POCKET}
