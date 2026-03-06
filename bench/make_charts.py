@@ -20,6 +20,7 @@ import os
 import re
 import sys
 
+import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -74,6 +75,12 @@ DRAW_ORDER_PRIORITY = {
 def is_pow2(n):
     """Check if n is a power of two."""
     return n > 0 and (n & (n - 1)) == 0
+
+
+def pow2_mask(sizes):
+    """Return a boolean numpy array indicating which sizes are powers of two."""
+    arr = np.array(sizes, dtype=np.int64)
+    return (arr > 0) & ((arr & (arr - 1)) == 0)
 
 
 def parse_csv_filename(fname):
@@ -173,8 +180,11 @@ def draw_order_key(product):
 
 
 def plot_series(ax, sizes, mflops, label, color, linewidth=1.5,
-                marker='o', markersize=3, alpha=0.8, linestyle='-'):
-    """Plot one series, filtering to sizes >= 32 with positive mflops."""
+                markersize=3, alpha=0.8, linestyle='-'):
+    """Plot one series, filtering to sizes >= 32 with positive mflops.
+
+    Marker shape is determined per point: circle for pow2, triangle for non-pow2.
+    """
     xs, ys = [], []
     for s, m in zip(sizes, mflops):
         if m > 0 and s >= 32:
@@ -182,27 +192,42 @@ def plot_series(ax, sizes, mflops, label, color, linewidth=1.5,
             ys.append(m)
     if not xs:
         return
-    ax.plot(xs, ys, marker=marker, color=color, label=label,
-            markersize=markersize, linewidth=linewidth, alpha=alpha,
-            linestyle=linestyle)
+    xs_arr = np.array(xs)
+    ys_arr = np.array(ys)
+    mask = pow2_mask(xs)
+    # Draw the connecting line without markers, carrying the legend label
+    ax.plot(xs_arr, ys_arr, color=color, linewidth=linewidth, alpha=alpha,
+            linestyle=linestyle, label=label)
+    # Overlay pow2 points as circles
+    if mask.any():
+        ax.plot(xs_arr[mask], ys_arr[mask], 'o', color=color,
+                markersize=markersize, alpha=alpha)
+    # Overlay non-pow2 points as triangles
+    if (~mask).any():
+        ax.plot(xs_arr[~mask], ys_arr[~mask], 'x', color=color,
+                markersize=markersize, alpha=alpha)
 
 
-def make_chart(ax, series_list, title, num_dirs=1):
+def make_chart(ax, series_list, title, num_variants=1):
     """Draw a single chart panel.
 
-    series_list: [(product, variant, label, sizes, mflops, dir_index), ...]
+    series_list: [(product, variant, label, sizes, mflops, var_index), ...]
     """
     # Sort so competitors are drawn first, PFFFT on top
     ordered = sorted(series_list, key=lambda s: draw_order_key(s[0]))
 
-    for product, variant, label, sizes, mflops, dir_index in ordered:
-        color = get_color(product, variant, dir_index, num_dirs)
+    has_np2 = False
+    for product, variant, label, sizes, mflops, var_index in ordered:
+        color = get_color(product, variant, var_index, num_variants)
         is_pffft = product in ('pffft', 'pffftu')
         lw = 2.2 if is_pffft else 1.2
-        ms = 4 if is_pffft else 3
+        ms = 6 if is_pffft else 5
         al = 1.0 if is_pffft else 0.85
         plot_series(ax, sizes, mflops, label, color,
                     linewidth=lw, markersize=ms, alpha=al)
+        if not has_np2:
+            mask = pow2_mask([s for s, m in zip(sizes, mflops) if m > 0 and s >= 32])
+            has_np2 = (~mask).any()
 
     ax.set_xscale('log', base=2)
     ax.set_yscale('log', base=10)
@@ -212,7 +237,18 @@ def make_chart(ax, series_list, title, num_dirs=1):
     ax.grid(True, alpha=0.3, which='both')
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(
         lambda x, _: f'{int(x):,}' if x >= 1 else ''))
-    ax.legend(fontsize=8, loc='best', framealpha=0.9)
+
+    # Add marker-type legend entries when non-pow2 data is present
+    handles, labels = ax.get_legend_handles_labels()
+    if has_np2:
+        from matplotlib.lines import Line2D
+        handles += [
+            Line2D([0], [0], marker='o', color='gray', linestyle='none',
+                   markersize=5, label='pow2'),
+            Line2D([0], [0], marker='x', color='gray', linestyle='none',
+                   markersize=5, label='non-pow2'),
+        ]
+    ax.legend(handles=handles, fontsize=8, loc='best', framealpha=0.9)
 
 
 def load_info(dirpath):
@@ -286,32 +322,61 @@ def scan_directory(dirpath):
     return panels
 
 
+def merge_dirs(dirpaths):
+    """Merge scan results from multiple colon-chained directories.
+
+    For each (precision, transform, product, variant) combination, concatenate
+    all (size, mflops) pairs from every directory and sort by size.
+    Returns the same structure as scan_directory.
+    """
+    merged = {}  # (prec, xform) -> {(product, variant) -> list of (size, mflops)}
+    for dirpath in dirpaths:
+        for key, series in scan_directory(dirpath).items():
+            for product, variant, sizes, mflops in series:
+                merged.setdefault(key, {}).setdefault(
+                    (product, variant), []).extend(zip(sizes, mflops))
+
+    result = {}
+    for key, pv_dict in merged.items():
+        result[key] = []
+        for (product, variant), pairs in pv_dict.items():
+            pairs_sorted = sorted(set(pairs), key=lambda x: x[0])
+            result[key].append((
+                product, variant,
+                [p[0] for p in pairs_sorted],
+                [p[1] for p in pairs_sorted],
+            ))
+    return result
+
+
 def main():
     if len(sys.argv) < 2:
-        print('Usage: make_charts.py <dir1> [dir2 ...]', file=sys.stderr)
+        print('Usage: make_charts.py <dir1[:dir2:...]> [dir2[:...] ...]',
+              file=sys.stderr)
         sys.exit(1)
 
-    dirs = sys.argv[1:]
-    multi = len(dirs) > 1
-    output_dir = dirs[0]
+    # Each argument may be colon-separated paths forming one variant group
+    groups = [arg.split(':') for arg in sys.argv[1:]]
+    groups = [[os.path.abspath(d) for d in g] for g in groups]
+    multi = len(groups) > 1
+    output_dir = groups[0][0]
 
-    # Collect data from all directories
-    # all_panels: (prec, xform) -> [(product, variant, label, sizes, mflops)]
+    # Collect data from all variant groups
+    # all_panels: (prec, xform) -> [(product, variant, label, sizes, mflops, var_index)]
     all_panels = {}
     info_list = []
 
-    for dir_index, dirpath in enumerate(dirs):
-        dirpath = os.path.abspath(dirpath)
-        info = load_info(dirpath)
+    for var_index, dirpaths in enumerate(groups):
+        info = load_info(dirpaths[0])
         info_list.append(info)
-        dir_suffix = os.path.basename(dirpath) if multi else None
+        dir_suffix = '+'.join(os.path.basename(d) for d in dirpaths) if multi else None
 
-        panels = scan_directory(dirpath)
+        panels = merge_dirs(dirpaths)
         for key, series in panels.items():
             for product, variant, sizes, mflops in series:
                 label = make_label(product, variant, dir_suffix)
                 all_panels.setdefault(key, []).append(
-                    (product, variant, label, sizes, mflops, dir_index))
+                    (product, variant, label, sizes, mflops, var_index))
 
     if not all_panels:
         print('No CSV data found in the given directories!', file=sys.stderr)
@@ -335,11 +400,11 @@ def main():
         ('dbl', 'real'):  'double_real',
         ('dbl', 'cplx'):  'double_cplx',
     }
-    num_dirs = len(dirs)
+    num_variants = len(groups)
     for (prec, xform), series_list in active_panels:
         title = panel_title(prec, xform, info_list)
         fig, ax = plt.subplots(figsize=(11, 6.5))
-        make_chart(ax, series_list, title, num_dirs)
+        make_chart(ax, series_list, title, num_variants)
         fig.tight_layout()
         name = panel_names.get((prec, xform), f'{prec}_{xform}')
         outpath = os.path.join(output_dir, f'bench_{name}.webp')
@@ -361,7 +426,7 @@ def main():
         for i, ((prec, xform), series_list) in enumerate(active_panels):
             if i < len(flat):
                 title = panel_title(prec, xform, info_list)
-                make_chart(flat[i], series_list, title, num_dirs)
+                make_chart(flat[i], series_list, title, num_variants)
 
         for j in range(n, len(flat)):
             flat[j].set_visible(False)
