@@ -289,14 +289,14 @@ endif()
 
 ######################################################
 
-install( TARGETS ${INSTALL_TARGETS}
-  EXPORT pffft-targets
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-)
-install( FILES  ${INSTALL_HEADERS}  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pffft)
+if (INSTALL_TARGETS)
+  install( TARGETS ${INSTALL_TARGETS}
+    EXPORT pffft-targets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+  install( FILES  ${INSTALL_HEADERS}  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pffft)
 
-if (INSTALL_PFFFT)
   # If ${INSTALL_TARGETS} is empty, then the export "pffft-targets" will
   # not exist and the following command will fail so we must make it conditional
   install(EXPORT pffft-targets
@@ -304,27 +304,27 @@ if (INSTALL_PFFFT)
     NAMESPACE PFFFT::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pffft
   )
+
+  include(CMakePackageConfigHelpers)
+
+  configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/pffft-config.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/pffft-config.cmake"
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pffft
+  )
+
+  write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/pffft-config-version.cmake"
+    VERSION 1.0
+    COMPATIBILITY SameMajorVersion
+  )
+
+  install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/pffft-config.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/pffft-config-version.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pffft
+  )
 endif()
-
-include(CMakePackageConfigHelpers)
-
-configure_package_config_file(
-  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/pffft-config.cmake.in"
-  "${CMAKE_CURRENT_BINARY_DIR}/pffft-config.cmake"
-  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pffft
-)
-
-write_basic_package_version_file(
-  "${CMAKE_CURRENT_BINARY_DIR}/pffft-config-version.cmake"
-  VERSION 1.0
-  COMPATIBILITY SameMajorVersion
-)
-
-install(FILES
-  "${CMAKE_CURRENT_BINARY_DIR}/pffft-config.cmake"
-  "${CMAKE_CURRENT_BINARY_DIR}/pffft-config-version.cmake"
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pffft
-)
 
 add_custom_target(uninstall
     "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/uninstall.cmake"
