@@ -296,11 +296,15 @@ install( TARGETS ${INSTALL_TARGETS}
 )
 install( FILES  ${INSTALL_HEADERS}  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pffft)
 
-install(EXPORT pffft-targets
-  FILE pffft-targets.cmake
-  NAMESPACE PFFFT::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pffft
-)
+if (INSTALL_PFFFT)
+  # If ${INSTALL_TARGETS} is empty, then the export "pffft-targets" will
+  # not exist and the following command will fail so we must make it conditional
+  install(EXPORT pffft-targets
+    FILE pffft-targets.cmake
+    NAMESPACE PFFFT::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pffft
+  )
+endif()
 
 include(CMakePackageConfigHelpers)
 
