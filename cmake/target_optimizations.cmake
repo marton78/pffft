@@ -43,7 +43,10 @@ set(GCC_EXTRA_OPT_neon_rpi4_a72 "-mfloat-abi=hard" "-mfpu=neon-fp-armv8" "-mtune
 set(GCC_EXTRA_OPT_apple_m1      "-mcpu=apple-m1")
 set(GCC_EXTRA_OPT_ios_arm64     "-arch arm64")
 
-if ( (CMAKE_SYSTEM_PROCESSOR STREQUAL "i686") OR (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64") )
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" CMAKE_SYSTEM_PROCESSOR_LOWER)
+if ( (CMAKE_SYSTEM_PROCESSOR_LOWER STREQUAL "i686") OR (CMAKE_SYSTEM_PROCESSOR_LOWER STREQUAL "x86_64")
+    # On Windows CMake emits "AMD64" (64-bit) or "x86" (32-bit) rather than the above
+    OR (CMAKE_SYSTEM_PROCESSOR_LOWER STREQUAL "amd64") OR (CMAKE_SYSTEM_PROCESSOR_LOWER STREQUAL "x86") )
     set(GCC_MARCH_DESC "native/SSE2:pentium4/SSE3:core2/SSE4:nehalem/AVX:sandybridge/AVX2:haswell")
     set(GCC_MARCH_VALUES "none;native;pentium4;core2;nehalem;sandybridge;haswell" CACHE INTERNAL "List of possible architectures")
     set(GCC_EXTRA_VALUES "" CACHE INTERNAL "List of possible EXTRA options")
