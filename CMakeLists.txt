@@ -107,21 +107,24 @@ endif(NOT CMAKE_BUILD_TYPE)
 
 if ( CMAKE_C_COMPILER_ID MATCHES "MSVC" )
   # using Visual Studio C++
-  message(STATUS "INFO: detected MSVC: will not link math lib m")
-  set(MATHLIB "")
-
   add_definitions("/D_CRT_SECURE_NO_WARNINGS")
 
   set(MSVC_DISABLED_WARNINGS_LIST
       "C4996"
   )
+endif()
 
-else()
+# The math library is only required on Unix
+find_library(MATH_LIBRARY m)
+if(MATH_LIBRARY AND NOT WIN32 AND NOT APPLE)
   if(PFFFT_DISABLE_LINK_WITH_M)
   else()
-    message(STATUS "INFO: detected NO MSVC: ${CMAKE_C_COMPILER_ID}: will link math lib m")
-    set(MATHLIB "m")
+    message(STATUS "INFO: detected Unix and found library: ${CMAKE_C_COMPILER_ID}: will link math lib m")
+    set(MATHLIB ${MATH_LIBRARY})
   endif()
+else()
+  set(MATHLIB "")
+  message(STATUS "INFO: will not link math lib m")
 endif()
 
 set(STDCXXLIB "")
