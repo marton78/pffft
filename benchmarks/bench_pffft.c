@@ -75,6 +75,24 @@ typedef PFFFTD_Setup PFFFT_SETUP;
 #include <ffts.h>
 #endif
 
+#ifdef HAVE_AVFFT
+#include <libavutil/tx.h>
+#include <libavutil/mem.h>
+#ifdef PFFFT_ENABLE_FLOAT
+#  define AVFFT_TX_CPLX  AV_TX_FLOAT_FFT
+#  define AVFFT_TX_REAL  AV_TX_FLOAT_RDFT
+#  define AVFFT_CPLX     AVComplexFloat
+#  define AVFFT_STRIDE_C ((ptrdiff_t)sizeof(AVComplexFloat))
+#  define AVFFT_STRIDE_R ((ptrdiff_t)sizeof(float))
+#else
+#  define AVFFT_TX_CPLX  AV_TX_DOUBLE_FFT
+#  define AVFFT_TX_REAL  AV_TX_DOUBLE_RDFT
+#  define AVFFT_CPLX     AVComplexDouble
+#  define AVFFT_STRIDE_C ((ptrdiff_t)sizeof(AVComplexDouble))
+#  define AVFFT_STRIDE_R ((ptrdiff_t)sizeof(double))
+#endif
+#endif /* HAVE_AVFFT */
+
 #ifdef PFFFT_ENABLE_FLOAT
   #define POCKFFTR_PRE(R)   CONCAT_TOKENS(rffts, R)
   #define POCKFFTC_PRE(R)   CONCAT_TOKENS(cffts, R)
@@ -143,7 +161,7 @@ typedef fftw_complex FFTW_COMPLEX;
 #endif
 
 
-#define NUM_FFT_ALGOS  11
+#define NUM_FFT_ALGOS  12
 enum {
   ALGO_FFTPACK = 0,
   ALGO_VECLIB,
@@ -154,8 +172,9 @@ enum {
   ALGO_POCKET,
   ALGO_MKL,
   ALGO_FFTS,    /* = 8 */
-  ALGO_PFFFT_U, /* = 9 */
-  ALGO_PFFFT_O  /* = 10 */
+  ALGO_AVFFT,   /* = 9 */
+  ALGO_PFFFT_U, /* = 10 */
+  ALGO_PFFFT_O  /* = 11 */
 };
 
 #define NUM_TYPES      7
@@ -180,6 +199,7 @@ const char * algoName[NUM_FFT_ALGOS] = {
   "Pocket       ",
   "Intel MKL    ",
   "FFTS         ",
+  "FFmpeg AVTx  ",
   "PFFFT-U(simd)",  /* unordered */
   "PFFFT (simd) "   /* ordered */
 };
@@ -188,6 +208,7 @@ const char * algoName[NUM_FFT_ALGOS] = {
 const char * algoCLIName[NUM_FFT_ALGOS] = {
   "fftpack", "vdsp", "fftw-estim", "fftw-auto",
   "green", "kiss", "pocket", "mkl", "ffts",
+  "avfft",
   "pffftu", "pffft"
 };
 
@@ -195,6 +216,7 @@ const char * algoCLIName[NUM_FFT_ALGOS] = {
 const char * algoFileId[NUM_FFT_ALGOS] = {
   "fftpack-default", "vdsp-default", "fftw-estim", "fftw-auto",
   "green-default", "kiss-default", "pocket-default", "mkl-default", "ffts-default",
+  "avfft-default",
   "pffftu-simd", "pffft-simd"
 };
 
@@ -242,6 +264,11 @@ int compiledInAlgo[NUM_FFT_ALGOS] = {
 #else
   0,
 #endif
+#if defined(HAVE_AVFFT)
+  1, /* "FFmpeg AVTx  " */
+#else
+  0,
+#endif
   1, /* "PFFFT_U    " */
   1  /* "PFFFT_O    " */
 };
@@ -256,6 +283,7 @@ const char * algoTableHeader[NUM_FFT_ALGOS][2] = {
 { "|  real Pocket ", "|  cplx Pocket " },
 { "|  real   MKL  ", "|  cplx   MKL  " },
 { "|  real  FFTS ", "|  cplx  FFTS " },
+{ "| real FFmpegTX", "| cplx FFmpegTX" },
 { "| real PFFFT-U ", "| cplx PFFFT-U " },
 { "|  real  PFFFT ", "|  cplx  PFFFT " } };
 
@@ -1155,6 +1183,85 @@ void benchmark_ffts(int N, int cplx, int withFFTWfullMeas, double iterCal, doubl
   }
   } /* runAlgo FFTS */
 #endif /* HAVE_FFTS */
+
+#if defined(HAVE_AVFFT)
+  if (runAlgo_[ALGO_AVFFT]) {
+    AVTXContext *ctx_f = NULL, *ctx_b = NULL;
+    av_tx_fn tx_f, tx_b;
+    int av_ret;
+
+    Nmax = (cplx ? N*2 : N);
+    X[Nmax] = checkVal;
+
+    te = uclock_sec();
+    if (cplx) {
+      av_ret  = av_tx_init(&ctx_f, &tx_f, AVFFT_TX_CPLX, 0, N, NULL, 0);
+      av_ret |= av_tx_init(&ctx_b, &tx_b, AVFFT_TX_CPLX, 1, N, NULL, 0);
+    } else {
+      av_ret  = av_tx_init(&ctx_f, &tx_f, AVFFT_TX_REAL, 0, N, NULL, 0);
+      av_ret |= av_tx_init(&ctx_b, &tx_b, AVFFT_TX_REAL, 1, N, NULL, 0);
+    }
+
+    if (av_ret == 0) {
+      /* Allocate private aligned buffers.
+       * For complex: in/out are arrays of N AVFFT_CPLX.
+       * For real:    in is N pffft_scalar, out is (N/2+1) AVFFT_CPLX.
+       *              Backward RDFT overwrites its input, so we use the
+       *              same two buffers: avfft_in (real) <-> avfft_out (cplx). */
+      void *avfft_in  = av_malloc(N * sizeof(AVFFT_CPLX) + 64);
+      void *avfft_out = av_malloc(N * sizeof(AVFFT_CPLX));
+      memset(avfft_in,  0, N * sizeof(AVFFT_CPLX));
+      memset(avfft_out, 0, N * sizeof(AVFFT_CPLX));
+
+      /* warm-up: AVTx may compute twiddle tables on first call */
+      if (cplx) {
+        tx_f(ctx_f, avfft_out, avfft_in,  AVFFT_STRIDE_C);
+        tx_b(ctx_b, avfft_in,  avfft_out, AVFFT_STRIDE_C);
+      } else {
+        tx_f(ctx_f, avfft_out, avfft_in,  AVFFT_STRIDE_R);
+        tx_b(ctx_b, avfft_in,  avfft_out, AVFFT_STRIDE_C);
+      }
+
+      t0 = uclock_sec();
+      tstop = t0 + max_test_duration;
+      max_iter = 0;
+      do {
+        for ( k = 0; k < step_iter; ++k ) {
+          assert( X[Nmax] == checkVal );
+          if (cplx) {
+            tx_f(ctx_f, avfft_out, avfft_in,  AVFFT_STRIDE_C);
+            tx_b(ctx_b, avfft_in,  avfft_out, AVFFT_STRIDE_C);
+          } else {
+            /* forward: real → cplx (stride = element size of input = real) */
+            tx_f(ctx_f, avfft_out, avfft_in,  AVFFT_STRIDE_R);
+            /* backward: cplx → real (stride = element size of input = cplx)
+             * NOTE: backward RDFT overwrites avfft_out (its input) */
+            tx_b(ctx_b, avfft_in,  avfft_out, AVFFT_STRIDE_C);
+          }
+          assert( X[Nmax] == checkVal );
+          ++max_iter;
+        }
+        t1 = uclock_sec();
+      } while ( t1 < tstop );
+
+      av_free(avfft_in);
+      av_free(avfft_out);
+
+      flops = (max_iter*2) * ((cplx ? 5 : 2.5)*N*log((double)N)/M_LN2);
+      tmeas[TYPE_ITER][ALGO_AVFFT]    = max_iter;
+      tmeas[TYPE_MFLOPS][ALGO_AVFFT]  = flops/1e6/(t1 - t0 + 1e-16);
+      tmeas[TYPE_DUR_TOT][ALGO_AVFFT] = t1 - t0;
+      tmeas[TYPE_DUR_NS][ALGO_AVFFT]  = show_output("FFmpegTX", N, cplx, flops, t0, t1, max_iter, tableFile);
+      tmeas[TYPE_PREP][ALGO_AVFFT]    = (t0 - te) * 1e3;
+      haveAlgo[ALGO_AVFFT] = 1;
+    } else {
+      show_output("FFmpegTX", N, cplx, -1, -1, -1, -1, tableFile);
+    }
+
+    av_tx_uninit(&ctx_f);
+    av_tx_uninit(&ctx_b);
+  } /* runAlgo AVFFT */
+#endif /* HAVE_AVFFT */
 
   /* PFFFT-U (unordered) benchmark */
   if (runAlgo_[ALGO_PFFFT_U]) {

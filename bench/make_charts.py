@@ -38,6 +38,7 @@ PRODUCT_COLORS = {
     'kiss':     '#ca8a04',   # amber
     'pocket':   '#dc2626',   # red
     'ffts':     '#0891b2',   # teal
+    'avfft':    '#059669',   # emerald green
     'fftw':     '#f59e0b',   # orange (default)
     'mkl':      '#9333ea',   # violet
     'pffft':    '#2563eb',   # bold blue
@@ -59,6 +60,7 @@ DISPLAY_NAMES = {
     'kiss':    'Kiss',
     'pocket':  'Pocket',
     'ffts':    'FFTS',
+    'avfft':   'FFmpeg AVTx',
     'fftw':    'FFTW',
     'mkl':     'MKL',
     'pffft':   'PFFFT',
@@ -143,6 +145,7 @@ _PRODUCT_GRADIENTS = {
     'green':   ((0.70, 0.92, 0.70), (0.05, 0.50, 0.18)),
     'kiss':    ((0.95, 0.88, 0.60), (0.60, 0.42, 0.02)),
     'pocket':  ((0.95, 0.70, 0.70), (0.70, 0.10, 0.10)),
+    'avfft':   ((0.60, 0.95, 0.80), (0.01, 0.50, 0.35)),   # light mint -> deep emerald
     'mkl':     ((0.82, 0.70, 0.96), (0.50, 0.15, 0.80)),
 }
 
