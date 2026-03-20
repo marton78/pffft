@@ -42,6 +42,15 @@ if (PFFFT_USE_BENCH_POCKET)
   endif()
 endif()
 
+if (PFFFT_USE_BENCH_AVFFT)
+  if (EXISTS "${FFMPEG_SOURCE_DIR}/configure")
+    message(STATUS "found FFmpeg source dir: ${FFMPEG_SOURCE_DIR}")
+    add_subdirectory("${PFFFT_SOURCE_DIR}/benchmarks/ffmpeg_tx" "${CMAKE_CURRENT_BINARY_DIR}/ffmpeg_tx")
+  else()
+    message(WARNING "FFmpeg source dir not found; set FFMPEG_SOURCE_DIR to enable AVTx benchmark")
+  endif()
+endif()
+
 if (PFFFT_USE_BENCH_FFTS)
   # git submodule add https://github.com/ValveSoftware/ffts.git
   if (EXISTS "${PFFFT_SOURCE_DIR}/ffts/include/ffts.h")
@@ -128,6 +137,11 @@ if (PFFFT_USE_TYPE_FLOAT)
     target_link_libraries(bench_pffft_float  ffts_static)
   endif()
 
+  if (PFFFT_USE_BENCH_AVFFT AND TARGET ffmpeg_tx::avutil)
+    target_compile_definitions(bench_pffft_float PRIVATE HAVE_AVFFT=1)
+    target_link_libraries(bench_pffft_float ffmpeg_tx::avutil)
+  endif()
+
   if (PFFFT_USE_BENCH_MKL)
     if ( (CMAKE_SYSTEM_PROCESSOR STREQUAL "i686") OR (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64") )
       # has chances to work
@@ -182,6 +196,11 @@ if (PFFFT_USE_TYPE_DOUBLE)
     target_compile_definitions(bench_pffft_double PRIVATE HAVE_FFTS=1)
     target_include_directories(bench_pffft_double PRIVATE "${PATH_FFTS}/include")
     target_link_libraries(bench_pffft_double  ffts_static)
+  endif()
+
+  if (PFFFT_USE_BENCH_AVFFT AND TARGET ffmpeg_tx::avutil)
+    target_compile_definitions(bench_pffft_double PRIVATE HAVE_AVFFT=1)
+    target_link_libraries(bench_pffft_double ffmpeg_tx::avutil)
   endif()
 
   if (PFFFT_USE_BENCH_MKL)
