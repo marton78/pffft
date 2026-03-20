@@ -28,9 +28,6 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-/* gcc requires this for M_PI !? */
-#undef __STRICT_ANSI__
-
 /* include own header first, to see missing includes */
 #include "pf_cic.h"
 #include "fmv.h"
