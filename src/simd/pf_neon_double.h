@@ -39,7 +39,7 @@
 /*
   NEON 64bit support macros
 */
-#if !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_ENABLE_NEON) && (defined(__aarch64__) || defined(__arm64__) || defined(__wasm_simd128__))
+#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_ENABLE_NEON) && (defined(__aarch64__) || defined(__arm64__) || defined(__wasm_simd128__))
 
 #pragma message (__FILE__ ": NEON (from AVX) macros are defined" )
 
