@@ -56,7 +56,7 @@ void ARCHFUNCNAME(conv_float_move_rest)(float * RESTRICT s, conv_buffer_state * 
     if (R > 0)
     {
         // memmove(s, &s[state->offset], R * sizeof(s[0]));   // move them to the begin
-        std::copy(&s[state->offset], &s[state->size], s);
+        ::std::copy(&s[state->offset], &s[state->size], s);
     }
     else
         R = 0;
@@ -71,7 +71,7 @@ void ARCHFUNCNAME(conv_cplx_move_rest)(complexf * RESTRICT s, conv_buffer_state 
     if (R > 0)
     {
         // memmove(s, &s[state->offset], R * sizeof(s[0]));   // move them to the begin
-        std::copy(&s[state->offset], &s[state->size], s);
+        ::std::copy(&s[state->offset], &s[state->size], s);
     }
     else
         R = 0;
