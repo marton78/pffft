@@ -336,9 +336,11 @@ if (INSTALL_TARGETS)
   )
 endif()
 
-add_custom_target(uninstall
-    "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/uninstall.cmake"
-)
+if (PFFFT_IS_TOPLEVEL AND NOT TARGET uninstall)
+  add_custom_target(uninstall
+      "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/uninstall.cmake"
+  )
+endif()
 
 ######################################################
 
