@@ -59,6 +59,7 @@ typedef union v4sf_union {
 #  define VMUL(a,b) _mm_mul_ps(a,b)
 #  define VADD(a,b) _mm_add_ps(a,b)
 #  define VMADD(a,b,c) _mm_add_ps(_mm_mul_ps(a,b), c)
+#  define VMSUB(a,b,c) _mm_sub_ps(c, _mm_mul_ps(a,b))
 #  define VSUB(a,b) _mm_sub_ps(a,b)
 #  define LD_PS1(p) _mm_set1_ps(p)
 #  define VLOAD_UNALIGNED(ptr)  _mm_loadu_ps(ptr)

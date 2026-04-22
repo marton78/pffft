@@ -78,6 +78,11 @@ typedef union v4sf_union {
     return r;
   }
 
+  static ALWAYS_INLINE(v4sf) VMSUB(v4sf A, v4sf B, v4sf C) {
+    v4sf r = { C.a - A.a * B.a, C.b - A.b * B.b, C.c - A.c * B.c, C.d - A.d * B.d };
+    return r;
+  }
+
   static ALWAYS_INLINE(v4sf) VSUB(v4sf A, v4sf B) {
     v4sf r = { A.a - B.a, A.b - B.b, A.c - B.c, A.d - B.d };
     return r;
@@ -170,6 +175,7 @@ typedef union v4sf_union {
 #  define VMUL(a,b) ((a)*(b))
 #  define VADD(a,b) ((a)+(b))
 #  define VMADD(a,b,c) ((a)*(b)+(c))
+#  define VMSUB(a,b,c) ((c)-(a)*(b))
 #  define VSUB(a,b) ((a)-(b))
 #  define LD_PS1(p) (p)
 #  define VLOAD_UNALIGNED(ptr)  (*(ptr))

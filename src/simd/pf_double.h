@@ -73,8 +73,8 @@ typedef double vsfscalar;
 #include "pf_scalar_double.h"
 
 /* shortcuts for complex multiplcations */
-#define VCPLXMUL(ar,ai,br,bi) { v4sf tmp; tmp=VMUL(ar,bi); ar=VMUL(ar,br); ar=VSUB(ar,VMUL(ai,bi)); ai=VMUL(ai,br); ai=VADD(ai,tmp); }
-#define VCPLXMULCONJ(ar,ai,br,bi) { v4sf tmp; tmp=VMUL(ar,bi); ar=VMUL(ar,br); ar=VADD(ar,VMUL(ai,bi)); ai=VMUL(ai,br); ai=VSUB(ai,tmp); }
+#define VCPLXMUL(ar,ai,br,bi) { v4sf tmp; tmp=VMUL(ar,bi); ar=VMSUB(ai,bi,VMUL(ar,br)); ai=VMADD(ai,br,tmp); }
+#define VCPLXMULCONJ(ar,ai,br,bi) { v4sf tmp; tmp=VMUL(ai,bi); ai=VMSUB(ar,bi,VMUL(ai,br)); ar=VMADD(ar,br,tmp); }
 #ifndef SVMUL
 /* multiply a scalar with a vector */
 #define SVMUL(f,v) VMUL(LD_PS1(f),v)
