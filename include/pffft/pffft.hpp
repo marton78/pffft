@@ -1003,18 +1003,18 @@ class PFAlloc {
     /* constructors and destructor
      * - nothing to do because the allocator has no state
      */
-    PFAlloc() throw() {
+    PFAlloc() {
     }
-    PFAlloc(const PFAlloc&) throw() {
+    PFAlloc(const PFAlloc&) {
     }
     template <class U>
-      PFAlloc (const PFAlloc<U>&) throw() {
+      PFAlloc (const PFAlloc<U>&) {
     }
-    ~PFAlloc() throw() {
+    ~PFAlloc() {
     }
 
     // return maximum number of elements that can be allocated
-    size_type max_size () const throw() {
+    size_type max_size () const {
         return ::std::numeric_limits< ::std::size_t>::max() / sizeof(T);
     }
 
@@ -1046,12 +1046,12 @@ class PFAlloc {
 // return that all specializations of this allocator are interchangeable
 template <class T1, class T2>
 bool operator== (const PFAlloc<T1>&,
-                 const PFAlloc<T2>&) throw() {
+                 const PFAlloc<T2>&) {
     return true;
 }
 template <class T1, class T2>
 bool operator!= (const PFAlloc<T1>&,
-                 const PFAlloc<T2>&) throw() {
+                 const PFAlloc<T2>&) {
     return false;
 }
 
