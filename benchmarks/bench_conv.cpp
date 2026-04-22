@@ -17,7 +17,7 @@
 
 #define MIPP_VECTOR  mipp::vector
 #else
-#define MIPP_VECTOR  std::vector
+#define MIPP_VECTOR  ::std::vector
 #endif
 
 #include "pf_conv_dispatcher.h"
@@ -30,7 +30,7 @@
 MIPP_VECTOR<float> generate_rng_vec(int M, int N = -1, int seed_value = 1)
 {
     MIPP_VECTOR<float> v(N < 0 ? M : N);
-    std::mt19937 g;
+    ::std::mt19937 g;
     g.seed(seed_value);
     constexpr float scale = 1.0F / (1.0F + float(INT_FAST32_MAX));
     for (int k = 0; k < M; ++k)
@@ -107,7 +107,7 @@ int bench_oop(
     {
         move_rest(buffer, &state);
         //memcpy(buffer+state.size, &s[off], B * sizeof(s[0]));
-        std::copy(&signal[off], &signal[off+blockLen], buffer+state.size);
+        ::std::copy(&signal[off], &signal[off+blockLen], buffer+state.size);
         state.size += blockLen;
         int n_out = conv_oop(buffer, &state, filter, sz_filter, &y[n_out_sum]);
         n_out_sum += n_out;
@@ -139,7 +139,7 @@ int bench_cx_real_oop(
     {
         move_rest(buffer, &state);
         //memcpy(buffer+state.size, &s[off], B * sizeof(s[0]));
-        std::copy(&signal[off], &signal[off+blockLen], &buffer[state.size]);
+        ::std::copy(&signal[off], &signal[off+blockLen], &buffer[state.size]);
         state.size += blockLen;
         int n_out = conv_oop(buffer, &state, filter, sz_filter, &y[n_out_sum]);
         n_out_sum += n_out;
@@ -234,7 +234,7 @@ int main(int argc, char *argv[])
         //else
         //    float_simd_size[a] = 0;
     }
-    //const int max_simd_size = *std::max_element( &float_simd_size[0], &float_simd_size[num_arch] );
+    //const int max_simd_size = *::std::max_element( &float_simd_size[0], &float_simd_size[num_arch] );
     if (verbose)
         fprintf(stderr, "max float simd size: %d\n", max_simd_size);
 
@@ -315,12 +315,12 @@ int main(int argc, char *argv[])
         fprintf(stderr, "y[%2d] = %g  %+g * i\n", k, y[2*k], y[2*k+1]);
     fprintf(stderr, "\n");
 
-    const std::complex<float> * sc = reinterpret_cast< std::complex<float>* >( s.data() );
+    const ::std::complex<float> * sc = reinterpret_cast< ::std::complex<float>* >( s.data() );
     const int Nc = N /2;
     fprintf(stderr, "reference with std::complex<float>:\n");
     for (int off = 0; off +filterLen <= Nc; ++off )
     {
-        std::complex<float> sum(0.0F, 0.0F);
+        ::std::complex<float> sum(0.0F, 0.0F);
         for (int k=0; k < filterLen; ++k)
             sum += sc[off+k] * filter[k];
         fprintf(stderr, "yv[%2d] = %g  %+g * i\n", off, sum.real(), sum.imag() );

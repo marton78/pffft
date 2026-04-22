@@ -258,13 +258,13 @@ test(int N, bool useComplex, bool useOrdered)
   if (useComplex) {
     return
 #ifdef PFFFT_ENABLE_FLOAT
-           Ttest< std::complex<float> >(N, useOrdered)
+           Ttest< ::std::complex<float> >(N, useOrdered)
 #endif
 #if defined(PFFFT_ENABLE_FLOAT) && defined(PFFFT_ENABLE_DOUBLE)
         &&
 #endif
 #ifdef PFFFT_ENABLE_DOUBLE
-           Ttest< std::complex<double> >(N, useOrdered)
+           Ttest< ::std::complex<double> >(N, useOrdered)
 #endif
            ;
   } else {

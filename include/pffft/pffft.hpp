@@ -57,16 +57,16 @@ template<typename T> struct Types {};
 #if defined(PFFFT_ENABLE_FLOAT) || ( !defined(PFFFT_ENABLE_FLOAT) && !defined(PFFFT_ENABLE_DOUBLE) )
 template<> struct Types<float>  {
   typedef float  Scalar;
-  typedef std::complex<Scalar> Complex;
+  typedef ::std::complex<Scalar> Complex;
   static int simd_size() { return detail::pffft_simd_size(); }
   static const char * simd_arch() { return detail::pffft_simd_arch(); }
   static int minFFtsize() { return pffft_min_fft_size(detail::PFFFT_REAL); }
   static bool isValidSize(int N) { return pffft_is_valid_size(N, detail::PFFFT_REAL); }
   static int nearestTransformSize(int N, bool higher) { return pffft_nearest_transform_size(N, detail::PFFFT_REAL, higher ? 1 : 0); }
 };
-template<> struct Types< std::complex<float> >  {
+template<> struct Types< ::std::complex<float> >  {
   typedef float  Scalar;
-  typedef std::complex<float>  Complex;
+  typedef ::std::complex<float>  Complex;
   static int simd_size() { return detail::pffft_simd_size(); }
   static const char * simd_arch() { return detail::pffft_simd_arch(); }
   static int minFFtsize() { return pffft_min_fft_size(detail::PFFFT_COMPLEX); }
@@ -77,16 +77,16 @@ template<> struct Types< std::complex<float> >  {
 #if defined(PFFFT_ENABLE_DOUBLE)
 template<> struct Types<double> {
   typedef double Scalar;
-  typedef std::complex<Scalar> Complex;
+  typedef ::std::complex<Scalar> Complex;
   static int simd_size() { return detail::pffftd_simd_size(); }
   static const char * simd_arch() { return detail::pffftd_simd_arch(); }
   static int minFFtsize() { return pffftd_min_fft_size(detail::PFFFT_REAL); }
   static bool isValidSize(int N) { return pffftd_is_valid_size(N, detail::PFFFT_REAL); }
   static int nearestTransformSize(int N, bool higher) { return pffftd_nearest_transform_size(N, detail::PFFFT_REAL, higher ? 1 : 0); }
 };
-template<> struct Types< std::complex<double> > {
+template<> struct Types< ::std::complex<double> > {
   typedef double Scalar;
-  typedef std::complex<double> Complex;
+  typedef ::std::complex<double> Complex;
   static int simd_size() { return detail::pffftd_simd_size(); }
   static const char * simd_arch() { return detail::pffftd_simd_arch(); }
   static int minFFtsize() { return pffftd_min_fft_size(detail::PFFFT_COMPLEX); }
@@ -106,15 +106,15 @@ namespace detail {
 
 // define AlignedVector<T> utilizing 'using' in C++11
 template<typename T>
-using AlignedVector = typename std::vector< T, PFAlloc<T> >;
+using AlignedVector = typename ::std::vector< T, PFAlloc<T> >;
 
 #else
 
-// define AlignedVector<T> having to derive std::vector<>
+// define AlignedVector<T> having to derive ::std::vector<>
 template <typename T>
-struct AlignedVector : public std::vector< T, PFAlloc<T> > {
-  AlignedVector() : std::vector< T, PFAlloc<T> >() { }
-  AlignedVector(int N) : std::vector< T, PFAlloc<T> >(N) { }
+struct AlignedVector : public ::std::vector< T, PFAlloc<T> > {
+  AlignedVector() : ::std::vector< T, PFAlloc<T> >() { }
+  AlignedVector(int N) : ::std::vector< T, PFAlloc<T> >(N) { }
 };
 
 #endif
@@ -492,12 +492,12 @@ public:
 
 
 template<>
-class Setup< std::complex<float> >
+class Setup< ::std::complex<float> >
 {
   PFFFT_Setup* self;
 
 public:
-  typedef std::complex<float> value_type;
+  typedef ::std::complex<float> value_type;
   typedef Types< value_type >::Scalar Scalar;
 
   Setup()
@@ -618,12 +618,12 @@ public:
 };
 
 template<>
-class Setup< std::complex<double> >
+class Setup< ::std::complex<double> >
 {
   PFFFTD_Setup* self;
 
 public:
-  typedef std::complex<double> value_type;
+  typedef ::std::complex<double> value_type;
   typedef Types< value_type >::Scalar Scalar;
 
   Setup()
@@ -983,8 +983,8 @@ class PFAlloc {
     typedef const T* const_pointer;
     typedef T&       reference;
     typedef const T& const_reference;
-    typedef std::size_t    size_type;
-    typedef std::ptrdiff_t difference_type;
+    typedef ::std::size_t    size_type;
+    typedef ::std::ptrdiff_t difference_type;
 
     // rebind allocator to type U
     template <class U>
@@ -1003,19 +1003,19 @@ class PFAlloc {
     /* constructors and destructor
      * - nothing to do because the allocator has no state
      */
-    PFAlloc() throw() {
+    PFAlloc() {
     }
-    PFAlloc(const PFAlloc&) throw() {
+    PFAlloc(const PFAlloc&) {
     }
     template <class U>
-      PFAlloc (const PFAlloc<U>&) throw() {
+      PFAlloc (const PFAlloc<U>&) {
     }
-    ~PFAlloc() throw() {
+    ~PFAlloc() {
     }
 
     // return maximum number of elements that can be allocated
-    size_type max_size () const throw() {
-        return std::numeric_limits<std::size_t>::max() / sizeof(T);
+    size_type max_size () const {
+        return ::std::numeric_limits< ::std::size_t>::max() / sizeof(T);
     }
 
     // allocate but don't initialize num elements of type T
@@ -1046,12 +1046,12 @@ class PFAlloc {
 // return that all specializations of this allocator are interchangeable
 template <class T1, class T2>
 bool operator== (const PFAlloc<T1>&,
-                 const PFAlloc<T2>&) throw() {
+                 const PFAlloc<T2>&) {
     return true;
 }
 template <class T1, class T2>
 bool operator!= (const PFAlloc<T1>&,
-                 const PFAlloc<T2>&) throw() {
+                 const PFAlloc<T2>&) {
     return false;
 }
 
