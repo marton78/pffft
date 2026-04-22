@@ -60,6 +60,7 @@
 typedef float vsfscalar;
 
 #include "pf_sse1_float.h"
+#include "pf_wasm_float.h"
 #include "pf_neon_float.h"
 #include "pf_altivec_float.h"
 

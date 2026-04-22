@@ -61,6 +61,7 @@ typedef double vsfscalar;
 
 #include "pf_avx_double.h"
 #include "pf_sse2_double.h"
+#include "pf_wasm_double.h"
 #include "pf_neon_double.h"
 
 #ifndef SIMD_SZ
