@@ -183,7 +183,7 @@ WASM SIMD is enabled automatically. Emscripten provides NEON-to-WASM SIMD transl
 
 ## Using pffft in your CMake project
 
-pffft can be included as a dependency in your CMake project via `FetchContent` or `add_subdirectory()`. When used this way, tests, benchmarks, and examples are automatically disabled, so pffft won't pollute your build or ctest runner with unnecessary targets.
+pffft can be included as a dependency in your CMake project via `FetchContent` or `add_subdirectory()`. When used this way, tests, benchmarks, examples, and the standalone `uninstall` helper target are automatically disabled, so pffft won't pollute your build or ctest runner with unnecessary targets or cause target-name collisions.
 
 ### FetchContent (CMake 3.11+)
 
@@ -456,4 +456,3 @@ an explanation of why the change was not ported.
 | 2025-02-12 | `0d7449a` | Dan Raviv | Fix MSVC `/fp:strict` C2099 errors | `4d1c78d` | cherry-picked |
 | 2025-12-19 | `c306b13` | Julien Pommier | Fix implicit double-to-float conversions | `31be131` | cherry-picked (fftpack.c portion) |
 | 2026-01-05 | `0979688` | Julien Pommier | Fix alignment for small `size_t` platforms | `a9786ad` | already uses `uintptr_t` |
-
