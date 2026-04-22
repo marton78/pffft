@@ -15,6 +15,19 @@ env:
   BUILD_TYPE: Release
 
 jobs:
+  build_emscripten:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: emscripten-core/setup-emsdk@v16
+    - name: cmake configure
+      run: emcmake cmake -S . -B build_wasm -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CROSSCOMPILING_EMULATOR=node -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DPFFFT_BUILD_TESTS=ON -DPFFFT_BUILD_BENCHMARKS=OFF -DPFFFT_BUILD_EXAMPLES=OFF
+    - name: build
+      run: cmake --build build_wasm
+    - name: test
+      run: cd build_wasm && ctest --output-on-failure
+
   build_w_mipp_ubuntu-amd64:
     runs-on: ubuntu-latest
 
