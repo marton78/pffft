@@ -67,6 +67,7 @@ typedef union v4sf_union {
 #  define VMUL(a,b) ((v4sf){ vmulq_f64((a).lo, (b).lo), vmulq_f64((a).hi, (b).hi) })
 #  define VADD(a,b) ((v4sf){ vaddq_f64((a).lo, (b).lo), vaddq_f64((a).hi, (b).hi) })
 #  define VMADD(a,b,c) ((v4sf){ vfmaq_f64((c).lo, (a).lo, (b).lo), vfmaq_f64((c).hi, (a).hi, (b).hi) })
+#  define VMSUB(a,b,c) ((v4sf){ vfmsq_f64((c).lo, (a).lo, (b).lo), vfmsq_f64((c).hi, (a).hi, (b).hi) })
 #  define VSUB(a,b) ((v4sf){ vsubq_f64((a).lo, (b).lo), vsubq_f64((a).hi, (b).hi) })
 #  define LD_PS1(p) ((v4sf){ vdupq_n_f64(p), vdupq_n_f64(p) })
 #  define VLOAD_UNALIGNED(ptr)  ((v4sf){ vld1q_f64((const double*)(ptr)), vld1q_f64((const double*)(ptr) + 2) })
