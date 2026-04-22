@@ -136,7 +136,7 @@ sudo apt-get install cmake-curses-gui
 Some of the options:
 * `PFFFT_USE_TYPE_FLOAT` to activate single precision 'float' (default: ON)
 * `PFFFT_USE_TYPE_DOUBLE` to activate 'double' precision float (default: ON)
-* `PFFFT_USE_SIMD` to use SIMD (SSE/AVX/NEON/ALTIVEC) CPU features? (default: ON)
+* `PFFFT_USE_SIMD` to use SIMD (SSE/AVX/NEON/ALTIVEC/WASM SIMD) CPU features? (default: ON)
 * `DISABLE_SIMD_AVX` to disable AVX CPU features (default: OFF)
 * `PFFFT_USE_SIMD_NEON` to force using NEON on ARM (requires PFFFT_USE_SIMD) (default: OFF)
 * `PFFFT_USE_SCALAR_VECT` to use 4-element vector scalar operations (if no other SIMD) (default: ON)
@@ -169,6 +169,17 @@ ctest -C Release
 
 see [https://cmake.org/cmake/help/v3.15/manual/cmake-generators.7.html#visual-studio-generators](https://cmake.org/cmake/help/v3.15/manual/cmake-generators.7.html#visual-studio-generators)
 
+With [Emscripten](https://emscripten.org/) for WebAssembly (requires the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)):
+
+```sh
+mkdir build
+cd build
+emcmake cmake ..
+cmake --build .
+ctest
+```
+
+WASM SIMD is enabled automatically. Emscripten provides NEON-to-WASM SIMD translation via [SIMDe](https://github.com/simd-everywhere/simde) (SIMD Everywhere) compatibility headers, so pffft's NEON code paths are reused for WebAssembly.
 
 ## Using pffft in your CMake project
 
