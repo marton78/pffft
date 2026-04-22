@@ -172,8 +172,7 @@ see [https://cmake.org/cmake/help/v3.15/manual/cmake-generators.7.html#visual-st
 
 ## Using pffft in your CMake project
 
-pffft can be included as a dependency in your CMake project via `FetchContent` or `add_subdirectory()`. When used this way, tests, benchmarks, and examples are automatically disabled, so pffft won't pollute your build or ctest runner with unnecessary targets.
-The standalone `uninstall` helper target is also only created for top-level builds, which avoids target-name collisions with other dependencies that follow the same convention.
+pffft can be included as a dependency in your CMake project via `FetchContent` or `add_subdirectory()`. When used this way, tests, benchmarks, examples, and the standalone `uninstall` helper target are automatically disabled, so pffft won't pollute your build or ctest runner with unnecessary targets or cause target-name collisions.
 
 ### FetchContent (CMake 3.11+)
 
