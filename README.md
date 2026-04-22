@@ -27,8 +27,8 @@
 PFFFT does 1D Fast Fourier Transforms, of single precision real and
 complex vectors. It tries do it fast, it tries to be correct, and it
 tries to be small. Computations do take advantage of SSE1/AVX/AVX2 instructions
-on x86 cpus, Altivec on powerpc cpus, and NEON on ARM cpus
-(including Apple Silicon). The license is BSD-like.
+on x86 cpus, Altivec on powerpc cpus, NEON on ARM cpus
+(including Apple Silicon), and WASM SIMD on WebAssembly. The license is BSD-like.
 
 PFFFT is a fork of [Julien Pommier's library on bitbucket](https://bitbucket.org/jpommier/pffft/)
 with some changes and additions.
@@ -141,6 +141,7 @@ Some of the options:
 * `DISABLE_SIMD_AVX` to disable AVX CPU features (default: OFF)
 * `PFFFT_USE_SIMD_NEON` to force using NEON on ARM (requires PFFFT_USE_SIMD) (default: OFF)
 * `PFFFT_USE_SCALAR_VECT` to use 4-element vector scalar operations (if no other SIMD) (default: ON)
+* `PFFFT_USE_WASM_RELAXED_SIMD` to use WebAssembly Relaxed SIMD multiply-add instructions, which may be fused when supported by the runtime (default: OFF)
 
 Options can be passed to `cmake` at command line, e.g.
 ```
@@ -180,12 +181,32 @@ cmake --build .
 ctest
 ```
 
-WASM SIMD is enabled automatically. Emscripten provides NEON-to-WASM SIMD translation via [SIMDe](https://github.com/simd-everywhere/simde) (SIMD Everywhere) compatibility headers, so pffft's NEON code paths are reused for WebAssembly.
+WASM SIMD is enabled automatically when building with Emscripten; see
+[Performance and architecture notes](#performance-and-architecture-notes) for
+the Relaxed SIMD option and the non-CMake build flags.
 
 ## Performance and architecture notes
 
 Compiler- and architecture-specific tips for getting the best performance out
 of pffft.
+
+### WebAssembly: SIMD backend and Relaxed SIMD
+
+pffft has a dedicated WASM SIMD backend using native `wasm_simd128.h`
+intrinsics for both float and double precision.
+
+> **Performance tip:** enable [Relaxed SIMD](https://github.com/WebAssembly/relaxed-simd) for a measured **6-11% throughput gain** on FFT sizes of 1024 and up, on [runtimes that support it](https://caniuse.com/mdn-webassembly_relaxed-simd) (e.g. V8/Chrome, Node.js):
+>
+> ```sh
+> emcmake cmake -DPFFFT_USE_WASM_RELAXED_SIMD=ON ..
+> ```
+>
+> This uses relaxed multiply-add instructions, which the runtime may fuse into a single-rounding FMA, or fall back to a two-rounding multiply followed by add/subtract. It is **off by default** because relaxed SIMD results are not guaranteed bit-identical across engines or hardware (unlike the default WASM SIMD path); enable it only if your application tolerates ULP-level differences between runtimes.
+
+If you build for Emscripten without the bundled CMake config (e.g. a raw
+`emcc`/Makefile/Bazel invocation), compile with `-msimd128 -DPFFFT_ENABLE_WASM=1`
+to select the WASM SIMD backend; the previous `PFFFT_ENABLE_NEON` recipe no
+longer enables it and now silently falls back to scalar code.
 
 ## Using pffft in your CMake project
 
