@@ -80,23 +80,26 @@ if (PFFFT_USE_TYPE_FLOAT)
   endif()
   target_include_directories(test_pffastconv PRIVATE ${PFFFT_SOURCE_DIR}/src)
   target_link_libraries( test_pffastconv  PFFASTCONV ${ASANLIB} ${MATHLIB} )
+  if (EMSCRIPTEN)
+    target_link_options(test_pffastconv PRIVATE "-sALLOW_MEMORY_GROWTH=1")
+  endif()
 endif()
 
 ######################################################
 
 add_test(NAME test_fft_factors
-  COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_fft_factors"
+  COMMAND test_fft_factors
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 if (PFFFT_USE_FFTPACK)
   add_test(NAME test_fftpack_float
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_fftpack_float"
+    COMMAND test_fftpack_float
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
 
   add_test(NAME test_fftpack_double
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_fftpack_double"
+    COMMAND test_fftpack_double
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
 endif()
@@ -105,33 +108,33 @@ endif()
 if (PFFFT_USE_TYPE_FLOAT)
 
   add_test(NAME test_pfconv_lens_symetric
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-bench" "--quick" "--sym"
+    COMMAND test_pffastconv "--no-bench" "--quick" "--sym"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
 
   add_test(NAME test_pfconv_lens_non_sym
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-bench" "--quick"
+    COMMAND test_pffastconv "--no-bench" "--quick"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
 
   add_test(NAME bench_pfconv_symetric
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-len" "--quick" "--sym"
+    COMMAND test_pffastconv "--no-len" "--quick" "--sym"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
 
   add_test(NAME bench_pfconv_non_sym
-    COMMAND "${CMAKE_CURRENT_BINARY_DIR}/test_pffastconv" "--no-len" "--quick"
+    COMMAND test_pffastconv "--no-len" "--quick"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
 
   if (PFFFT_BUILD_BENCHMARKS)
     add_test(NAME bench_pffft_pow2
-      COMMAND "$<TARGET_FILE:bench_pffft_float>" "--max-len" "128" "--quick"
+      COMMAND bench_pffft_float "--max-len" "128" "--quick"
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     )
 
     add_test(NAME bench_pffft_non2
-      COMMAND "$<TARGET_FILE:bench_pffft_float>" "--non-pow2" "--max-len" "192" "--quick"
+      COMMAND bench_pffft_float "--non-pow2" "--max-len" "192" "--quick"
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     )
   endif()
