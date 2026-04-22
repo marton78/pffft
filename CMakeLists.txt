@@ -334,12 +334,11 @@ if (INSTALL_TARGETS)
     "${CMAKE_CURRENT_BINARY_DIR}/pffft-config-version.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pffft
   )
-endif()
-
-if (PFFFT_IS_TOPLEVEL AND NOT TARGET uninstall)
-  add_custom_target(uninstall
-      "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/uninstall.cmake"
-  )
+  if (PFFFT_IS_TOPLEVEL AND NOT TARGET uninstall)
+    add_custom_target(uninstall
+        "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/uninstall.cmake"
+    )
+  endif()
 endif()
 
 ######################################################
