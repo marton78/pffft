@@ -87,6 +87,30 @@ endif()
 
 ######################################################
 
+if (PFFFT_USE_TYPE_FLOAT)
+  add_test(NAME test_pffft_float
+    COMMAND test_pffft_float
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )
+endif()
+
+if (PFFFT_USE_TYPE_DOUBLE)
+  add_test(NAME test_pffft_double
+    COMMAND test_pffft_double
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )
+endif()
+
+add_test(NAME test_pffft_cpp
+  COMMAND test_pffft_cpp
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+add_test(NAME test_pffft_cpp_11
+  COMMAND test_pffft_cpp_11
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
 add_test(NAME test_fft_factors
   COMMAND test_fft_factors
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
