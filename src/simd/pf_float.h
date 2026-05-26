@@ -63,6 +63,7 @@ typedef float vsfscalar;
 #include "pf_wasm_float.h"
 #include "pf_neon_float.h"
 #include "pf_altivec_float.h"
+#include "pf_rvv_float.h"
 
 #ifndef SIMD_SZ
 #  if !defined(PFFFT_SIMD_DISABLE)

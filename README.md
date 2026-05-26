@@ -28,7 +28,8 @@ PFFFT does 1D Fast Fourier Transforms, of single precision real and
 complex vectors. It tries do it fast, it tries to be correct, and it
 tries to be small. Computations do take advantage of SSE1/AVX/AVX2 instructions
 on x86 cpus, Altivec on powerpc cpus, NEON on ARM cpus
-(including Apple Silicon), and WASM SIMD on WebAssembly. The license is BSD-like.
+(including Apple Silicon), WASM SIMD on WebAssembly, and the RVV 1.0 vector
+extension on RISC-V cpus. The license is BSD-like.
 
 PFFFT is a fork of [Julien Pommier's library on bitbucket](https://bitbucket.org/jpommier/pffft/)
 with some changes and additions.
@@ -137,7 +138,7 @@ sudo apt-get install cmake-curses-gui
 Some of the options:
 * `PFFFT_USE_TYPE_FLOAT` to activate single precision 'float' (default: ON)
 * `PFFFT_USE_TYPE_DOUBLE` to activate 'double' precision float (default: ON)
-* `PFFFT_USE_SIMD` to use SIMD (SSE/AVX/NEON/ALTIVEC/WASM SIMD) CPU features? (default: ON)
+* `PFFFT_USE_SIMD` to use SIMD (SSE/AVX/NEON/ALTIVEC/WASM SIMD/RVV) CPU features? (default: ON)
 * `DISABLE_SIMD_AVX` to disable AVX CPU features (default: OFF)
 * `PFFFT_USE_SIMD_NEON` to force using NEON on ARM (requires PFFFT_USE_SIMD) (default: OFF)
 * `PFFFT_USE_SCALAR_VECT` to use 4-element vector scalar operations (if no other SIMD) (default: ON)
@@ -262,6 +263,16 @@ If you build for Emscripten without the bundled CMake config (e.g. a raw
 `emcc`/Makefile/Bazel invocation), compile with `-msimd128 -DPFFFT_ENABLE_WASM=1`
 to select the WASM SIMD backend; the previous `PFFFT_ENABLE_NEON` recipe no
 longer enables it and now silently falls back to scalar code.
+
+### Building on RISC-V
+
+When the host is detected as `riscv64`, the build defaults to
+`-march=rv64gcv` and defines `PFFFT_ENABLE_RVV`, enabling the
+RVV 1.0 vector backend in `src/simd/pf_rvv_{float,double}.h`. On
+hardware with `VLEN >= 256` (e.g. Spacemit X100) the configure step
+also probes the host VLEN and appends a `zvlNNNb` suffix so the
+compiler can emit single 4-wide double-precision vector ops. To opt
+out, pass `-DPFFFT_USE_SIMD=OFF` or set `-DTARGET_C_ARCH=rv64gc`.
 
 ## Using pffft in your CMake project
 
