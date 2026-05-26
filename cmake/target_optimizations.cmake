@@ -62,6 +62,12 @@ elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "armv7l")
     set(GCC_MARCH_DESC "native/ARMwNEON:armv7-a")
     set(GCC_MARCH_VALUES "none;native;armv7-a" CACHE INTERNAL "List of possible architectures")
     set(GCC_EXTRA_VALUES "none;neon_vfpv4;neon_rpi3_a53;neon_rpi4_a72" CACHE INTERNAL "List of possible additional options")
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
+    # RISC-V with the V (vector) extension; rv64gcv enables the standard
+    # G+C profile plus V (RVV 1.0). pf_rvv_*.h is gated on __riscv_vector.
+    set(GCC_MARCH_DESC "native/RISCVwRVV:rv64gcv")
+    set(GCC_MARCH_VALUES "none;native;rv64gc;rv64gcv" CACHE INTERNAL "List of possible architectures")
+    set(GCC_EXTRA_VALUES "" CACHE INTERNAL "List of possible additional options")
 elseif (EMSCRIPTEN)
     # Emscripten WASM SIMD is handled automatically in target_set_c/cxx_arch_flags
     set(GCC_MARCH_DESC "wasm-simd")
@@ -121,6 +127,61 @@ endif()
 
 ######################################################
 
+# Pick an -march string for RISC-V and report whether the V extension
+# is available. We compile and run a tiny probe against -march=rv64gcv:
+#
+#   - if compile + run succeed, the target supports V; the probe prints
+#     the host VLEN, and if VLEN >= 256 we append the matching zvlNNNb
+#     so the compiler can emit single-instruction 4-wide double ops
+#     instead of splitting them into VLEN_min=128 pieces;
+#   - if compile or run fails, the target lacks V; we fall back to
+#     plain rv64gc and the caller is expected to skip PFFFT_ENABLE_RVV
+#     so the headers stay on the scalar path.
+#
+# The probe runs natively or under CMAKE_CROSSCOMPILING_EMULATOR (e.g.
+# qemu-riscv64-static). When neither applies (bare cross-compile) we
+# optimistically default to rv64gcv with has_v=TRUE; users targeting
+# non-V cores should set TARGET_C_ARCH=rv64gc explicitly.
+function(_pffft_riscv_march out_march out_has_v)
+    if (NOT DEFINED PFFFT_RVV_HAS_V
+        AND (NOT CMAKE_CROSSCOMPILING OR CMAKE_CROSSCOMPILING_EMULATOR))
+        set(_probe "${CMAKE_CURRENT_BINARY_DIR}/pffft_rvv_vlen_probe.c")
+        file(WRITE "${_probe}"
+            "#include <stdio.h>\n"
+            "#include <riscv_vector.h>\n"
+            "int main(void){ printf(\"%zu\\n\", __riscv_vsetvlmax_e32m1() * 32); return 0; }\n")
+        try_run(_run_res _compile_ok
+            "${CMAKE_CURRENT_BINARY_DIR}/rvv_vlen_probe"
+            "${_probe}"
+            COMPILE_DEFINITIONS "-march=rv64gcv"
+            RUN_OUTPUT_VARIABLE _vlen)
+        if (_compile_ok AND _run_res EQUAL 0)
+            string(STRIP "${_vlen}" _vlen)
+            set(PFFFT_RVV_HAS_V TRUE CACHE INTERNAL "Target supports the RISC-V V extension")
+            set(PFFFT_RVV_VLEN "${_vlen}" CACHE INTERNAL "Detected RISC-V VLEN in bits")
+        else()
+            set(PFFFT_RVV_HAS_V FALSE CACHE INTERNAL "Target lacks the RISC-V V extension")
+        endif()
+    endif()
+
+    if (DEFINED PFFFT_RVV_HAS_V AND NOT PFFFT_RVV_HAS_V)
+        set(${out_march} "rv64gc" PARENT_SCOPE)
+        set(${out_has_v} FALSE PARENT_SCOPE)
+    elseif (PFFFT_RVV_VLEN AND PFFFT_RVV_VLEN GREATER_EQUAL 256)
+        set(${out_march} "rv64gcv_zvl${PFFFT_RVV_VLEN}b" PARENT_SCOPE)
+        set(${out_has_v} TRUE PARENT_SCOPE)
+    else()
+        set(${out_march} "rv64gcv" PARENT_SCOPE)
+        set(${out_has_v} TRUE PARENT_SCOPE)
+    endif()
+endfunction()
+
+# Matches RISC-V march strings that include the V extension. Examples:
+#   rv64gcv, rv64gcv_zvl256b, rv64imafdcv, rv32gc_v, rv64gc_v_zvl128b.
+# Deliberately does NOT match plain rv64gc / rv64imafdc — the leading
+# "rv" alone is not enough to claim the V extension.
+set(PFFFT_RVV_MARCH_REGEX "rv[0-9]+[a-z_]*v($|_)")
+
 function(target_set_c_arch_flags target)
     # Emscripten WASM SIMD via NEON emulation
     if (EMSCRIPTEN)
@@ -128,6 +189,25 @@ function(target_set_c_arch_flags target)
         target_compile_options(${target} PRIVATE "-msimd128")
         target_compile_definitions(${target} PRIVATE PFFFT_ENABLE_NEON=1)
         return()
+    endif()
+    # On RISC-V the V extension is opt-in via -march; auto-enable RVV
+    # when we can verify the target supports V, and skip it otherwise
+    # so a non-V target still gets a usable rv64gc build.
+    if (CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
+        if ( ("${TARGET_C_ARCH}" STREQUAL "") OR ("${TARGET_C_ARCH}" STREQUAL "none") )
+            _pffft_riscv_march(_rvv_march _rvv_has_v)
+            target_compile_options(${target} PRIVATE "-march=${_rvv_march}")
+            if (_rvv_has_v)
+                target_compile_definitions(${target} PRIVATE PFFFT_ENABLE_RVV=1)
+                message(STATUS "RISC-V detected: defaulting C target ${target} to -march=${_rvv_march} with PFFFT_ENABLE_RVV")
+            else()
+                message(STATUS "RISC-V detected (no V extension): defaulting C target ${target} to -march=${_rvv_march}")
+            endif()
+            return()
+        elseif ("${TARGET_C_ARCH}" MATCHES "${PFFFT_RVV_MARCH_REGEX}")
+            target_compile_definitions(${target} PRIVATE PFFFT_ENABLE_RVV=1)
+            message(STATUS "RISC-V detected: enabling PFFFT_ENABLE_RVV for C target ${target}")
+        endif()
     endif()
     if ( ("${TARGET_C_ARCH}" STREQUAL "") OR ("${TARGET_C_ARCH}" STREQUAL "none") )
         message(STATUS "C ARCH for target ${target} is not set!")
@@ -168,6 +248,22 @@ function(target_set_cxx_arch_flags target)
         target_compile_options(${target} PRIVATE "-msimd128")
         target_compile_definitions(${target} PRIVATE PFFFT_ENABLE_NEON=1)
         return()
+    endif()
+    if (CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
+        if ( ("${TARGET_CXX_ARCH}" STREQUAL "") OR ("${TARGET_CXX_ARCH}" STREQUAL "none") )
+            _pffft_riscv_march(_rvv_march _rvv_has_v)
+            target_compile_options(${target} PRIVATE "-march=${_rvv_march}")
+            if (_rvv_has_v)
+                target_compile_definitions(${target} PRIVATE PFFFT_ENABLE_RVV=1)
+                message(STATUS "RISC-V detected: defaulting C++ target ${target} to -march=${_rvv_march} with PFFFT_ENABLE_RVV")
+            else()
+                message(STATUS "RISC-V detected (no V extension): defaulting C++ target ${target} to -march=${_rvv_march}")
+            endif()
+            return()
+        elseif ("${TARGET_CXX_ARCH}" MATCHES "${PFFFT_RVV_MARCH_REGEX}")
+            target_compile_definitions(${target} PRIVATE PFFFT_ENABLE_RVV=1)
+            message(STATUS "RISC-V detected: enabling PFFFT_ENABLE_RVV for C++ target ${target}")
+        endif()
     endif()
     if ( ("${TARGET_CXX_ARCH}" STREQUAL "") OR ("${TARGET_CXX_ARCH}" STREQUAL "none") )
         message(STATUS "C++ ARCH for target ${target} is not set!")

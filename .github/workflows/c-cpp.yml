@@ -28,6 +28,31 @@ jobs:
     - name: test
       run: cd build_wasm && ctest --output-on-failure
 
+  build_riscv64_qemu:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: install riscv64 cross toolchain and qemu
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-riscv64-linux-gnu g++-riscv64-linux-gnu qemu-user-static
+    - name: cmake configure
+      run: |
+        cmake -S . -B build_riscv64 \
+          -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+          -DCMAKE_SYSTEM_NAME=Linux \
+          -DCMAKE_SYSTEM_PROCESSOR=riscv64 \
+          -DCMAKE_C_COMPILER=riscv64-linux-gnu-gcc \
+          -DCMAKE_CXX_COMPILER=riscv64-linux-gnu-g++ \
+          -DCMAKE_CROSSCOMPILING_EMULATOR=qemu-riscv64-static \
+          -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF \
+          -DPFFFT_BUILD_TESTS=ON -DPFFFT_BUILD_BENCHMARKS=OFF -DPFFFT_BUILD_EXAMPLES=OFF
+    - name: build
+      run: cmake --build build_riscv64
+    - name: test
+      run: cd build_riscv64 && ctest --output-on-failure
+
   build_w_mipp_ubuntu-amd64:
     runs-on: ubuntu-latest
 
