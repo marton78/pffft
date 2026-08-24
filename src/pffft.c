@@ -105,7 +105,7 @@
 #define FUNC_TRANSFORM_ORDERED     pffft_transform_ordered
 #define FUNC_ZREORDER              pffft_zreorder
 #define FUNC_ZCONVOLVE_ACCUMULATE  pffft_zconvolve_accumulate
-#define FUNC_ZCONVOLVE_NO_ACCU     pffft_zconvolve_no_accu
+#define FUNC_ZCONVOLVE_SCALE       pffft_zconvolve_scale
 
 #define FUNC_ALIGNED_MALLOC        pffft_aligned_malloc
 #define FUNC_ALIGNED_FREE          pffft_aligned_free
@@ -132,3 +132,8 @@
 #include "pffft_priv_impl.h"
 
 
+
+/* deprecated synonym for pffft_zconvolve_scale() -- kept for ABI compatibility */
+void pffft_zconvolve_no_accu(const PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling) {
+  pffft_zconvolve_scale(setup, dft_a, dft_b, dft_ab, scaling);
+}

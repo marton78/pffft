@@ -514,7 +514,7 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
     else
       Y[i] = Y[1];
 
-    Y[i][0] = 123.F;  /* test for pffft_zconvolve_no_accu() */
+    Y[i][0] = 123.F;  /* test for pffft_zconvolve_scale() */
     aSpeedFactor[i] = -1.0;
     aDuration[i] = -1.0;
     procSmpPerSec[i] = -1.0;

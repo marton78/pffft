@@ -1629,7 +1629,7 @@ void FUNC_ZCONVOLVE_ACCUMULATE(const SETUP_STRUCT *s, const float *a, const floa
   }
 }
 
-void FUNC_ZCONVOLVE_NO_ACCU(const SETUP_STRUCT *s, const float *a, const float *b, float *ab, float scaling) {
+void FUNC_ZCONVOLVE_SCALE(const SETUP_STRUCT *s, const float *a, const float *b, float *ab, float scaling) {
   v4sf vscal = LD_PS1(scaling);
   const v4sf * RESTRICT va = (const v4sf*)a;
   const v4sf * RESTRICT vb = (const v4sf*)b;
@@ -1787,8 +1787,8 @@ void pffft_zconvolve_accumulate_nosimd(const SETUP_STRUCT *s, const float *a, co
   }
 }
 
-#define pffft_zconvolve_no_accu_nosimd FUNC_ZCONVOLVE_NO_ACCU
-void pffft_zconvolve_no_accu_nosimd(const SETUP_STRUCT *s, const float *a, const float *b,
+#define pffft_zconvolve_scale_nosimd FUNC_ZCONVOLVE_SCALE
+void pffft_zconvolve_scale_nosimd(const SETUP_STRUCT *s, const float *a, const float *b,
                                     float *ab, float scaling) {
   int NcvecMulTwo = 2*s->Ncvec;  /* int Ncvec = s->Ncvec; */
   int k; /* was i -- but always used "2*i" - except at for() */

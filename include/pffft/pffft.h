@@ -95,6 +95,16 @@
   #endif
 #endif
 
+#ifndef PFFFT_DEPRECATED
+  #if defined(__GNUC__) || defined(__clang__)
+    #define PFFFT_DEPRECATED __attribute__((deprecated))
+  #elif defined(_MSC_VER)
+    #define PFFFT_DEPRECATED __declspec(deprecated)
+  #else
+    #define PFFFT_DEPRECATED
+  #endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -207,7 +217,12 @@ extern "C" {
 
      The dft_a, dft_b and dft_ab pointers may alias.
   */
-  PFFFT_EXPORT void pffft_zconvolve_no_accu(const PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
+  PFFFT_EXPORT void pffft_zconvolve_scale(const PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
+
+  /*
+     deprecated synonym for pffft_zconvolve_scale()
+  */
+  PFFFT_EXPORT void PFFFT_DEPRECATED pffft_zconvolve_no_accu(const PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
 
   /* return 4 or 1 wether support SSE/NEON/Altivec instructions was enabled when building pffft.c */
   PFFFT_EXPORT int pffft_simd_size(void);

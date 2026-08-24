@@ -100,6 +100,16 @@
   #endif
 #endif
 
+#ifndef PFFFT_DEPRECATED
+  #if defined(__GNUC__) || defined(__clang__)
+    #define PFFFT_DEPRECATED __attribute__((deprecated))
+  #elif defined(_MSC_VER)
+    #define PFFFT_DEPRECATED __declspec(deprecated)
+  #else
+    #define PFFFT_DEPRECATED
+  #endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -199,7 +209,12 @@ extern "C" {
 
      The dft_a, dft_b and dft_ab pointers may alias.
   */
-  PFFFT_EXPORT void pffftd_zconvolve_no_accu(const PFFFTD_Setup *setup, const double *dft_a, const double *dft_b, double*dft_ab, double scaling);
+  PFFFT_EXPORT void pffftd_zconvolve_scale(const PFFFTD_Setup *setup, const double *dft_a, const double *dft_b, double *dft_ab, double scaling);
+
+  /*
+     deprecated synonym for pffftd_zconvolve_scale()
+  */
+  PFFFT_EXPORT void PFFFT_DEPRECATED pffftd_zconvolve_no_accu(const PFFFTD_Setup *setup, const double *dft_a, const double *dft_b, double *dft_ab, double scaling);
 
   /* return 4 or 1 wether support AVX instructions was enabled when building pffft-double.c */
   PFFFT_EXPORT int pffftd_simd_size();

@@ -185,7 +185,7 @@ int pffastconv_apply(PFFASTCONV_Setup * s, const float *input_, int cplxInputLen
         pffft_transform(s->st, s->Xt, s->Xf, /* tmp = */ s->Mf, PFFFT_FORWARD);
       }
 
-      pffft_zconvolve_no_accu(s->st, s->Xf, s->Hf, /* tmp = */ s->Mf, s->scale);
+      pffft_zconvolve_scale(s->st, s->Xf, s->Hf, /* tmp = */ s->Mf, s->scale);
 
       if ( flags & PFFASTCONV_DIRECT_OUT )
       {
@@ -235,7 +235,7 @@ int pffastconv_apply(PFFASTCONV_Setup * s, const float *input_, int cplxInputLen
           pffft_transform(s->st, s->Xt, s->Xf, /* tmp = */ s->Mf, PFFFT_FORWARD);
         }
 
-        pffft_zconvolve_no_accu(s->st, s->Xf, s->Hf, /* tmp = */ s->Mf, s->scale);
+        pffft_zconvolve_scale(s->st, s->Xf, s->Hf, /* tmp = */ s->Mf, s->scale);
 
         if ( flags & PFFASTCONV_CPLX_INP_OUT )
         {

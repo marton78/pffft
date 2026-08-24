@@ -486,7 +486,7 @@ public:
                 Scalar* dft_ab,
                 const Scalar scaling)
   {
-    pffft_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
+    pffft_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
   }
 };
 
@@ -542,7 +542,7 @@ public:
                 Scalar* dft_ab,
                 const Scalar scaling)
   {
-    pffft_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
+    pffft_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
   }
 };
 
@@ -613,7 +613,7 @@ public:
                 Scalar* dft_ab,
                 const Scalar scaling)
   {
-    pffftd_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
+    pffftd_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
   }
 };
 
@@ -676,7 +676,7 @@ public:
                 Scalar* dft_ab,
                 const Scalar scaling)
   {
-    pffftd_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
+    pffftd_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
   }
 };
 
