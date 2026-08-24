@@ -120,6 +120,7 @@
 #define FUNC_TRANSFORM_ORDERED     pffftd_transform_ordered
 #define FUNC_ZREORDER              pffftd_zreorder
 #define FUNC_ZCONVOLVE_ACCUMULATE  pffftd_zconvolve_accumulate
+#define FUNC_ZCONVOLVE              pffftd_zconvolve
 #define FUNC_ZCONVOLVE_SCALE       pffftd_zconvolve_scale
 
 #define FUNC_ALIGNED_MALLOC        pffftd_aligned_malloc

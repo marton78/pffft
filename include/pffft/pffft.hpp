@@ -488,6 +488,13 @@ public:
   {
     pffft_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
   }
+
+  void convolve(const Scalar* dft_a,
+                const Scalar* dft_b,
+                Scalar* dft_ab)
+  {
+    pffft_zconvolve(self, dft_a, dft_b, dft_ab);
+  }
 };
 
 
@@ -543,6 +550,13 @@ public:
                 const Scalar scaling)
   {
     pffft_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
+  }
+
+  void convolve(const Scalar* dft_a,
+                const Scalar* dft_b,
+                Scalar* dft_ab)
+  {
+    pffft_zconvolve(self, dft_a, dft_b, dft_ab);
   }
 };
 
@@ -615,6 +629,13 @@ public:
   {
     pffftd_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
   }
+
+  void convolve(const Scalar* dft_a,
+                const Scalar* dft_b,
+                Scalar* dft_ab)
+  {
+    pffftd_zconvolve(self, dft_a, dft_b, dft_ab);
+  }
 };
 
 template<>
@@ -677,6 +698,13 @@ public:
                 const Scalar scaling)
   {
     pffftd_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
+  }
+
+  void convolve(const Scalar* dft_a,
+                const Scalar* dft_b,
+                Scalar* dft_ab)
+  {
+    pffftd_zconvolve(self, dft_a, dft_b, dft_ab);
   }
 };
 

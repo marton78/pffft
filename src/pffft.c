@@ -105,6 +105,7 @@
 #define FUNC_TRANSFORM_ORDERED     pffft_transform_ordered
 #define FUNC_ZREORDER              pffft_zreorder
 #define FUNC_ZCONVOLVE_ACCUMULATE  pffft_zconvolve_accumulate
+#define FUNC_ZCONVOLVE              pffft_zconvolve
 #define FUNC_ZCONVOLVE_SCALE       pffft_zconvolve_scale
 
 #define FUNC_ALIGNED_MALLOC        pffft_aligned_malloc

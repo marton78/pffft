@@ -218,6 +218,20 @@ extern "C" {
      The dft_a, dft_b and dft_ab pointers may alias.
   */
   PFFFT_EXPORT void pffft_zconvolve_scale(const PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
+  
+  /*
+     Perform a multiplication of the frequency components of dft_a and
+     dft_b and put result in dft_ab, without accumulation and without
+     scaling. The arrays should have been obtained with
+     pffft_transform(.., PFFFT_FORWARD) and should *not* have been
+     reordered with pffft_zreorder (otherwise just perform the operation
+     yourself as the dft coefs are stored as interleaved complex numbers).
+
+     the operation performed is: dft_ab = dft_a * dft_b
+
+     The dft_a, dft_b and dft_ab pointers may alias.
+  */
+  PFFFT_EXPORT void pffft_zconvolve(const PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab);
 
   /*
      deprecated synonym for pffft_zconvolve_scale()

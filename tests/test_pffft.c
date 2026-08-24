@@ -265,6 +265,79 @@ int test(int N, int cplx, int useOrdered) {
   return retError;
 }
 
+/* check that pffft_zconvolve() matches pffft_zconvolve_scale(.., 1.0)
+   bit-exactly, and that circular convolution with a delayed impulse
+   delays the signal (the backward transform carries the usual factor N) */
+static int test_zconvolve_unscaled(int N)
+{
+  int j, retError = 0;
+#ifdef PFFFT_ENABLE_FLOAT
+  typedef PFFFT_Setup setup_t;
+#define ZT_NEW_SETUP     pffft_new_setup
+#define ZT_DESTROY_SETUP pffft_destroy_setup
+#define ZT_TRANSFORM     pffft_transform
+#define ZT_ZCONVOLVE     pffft_zconvolve
+#define ZT_ZCONV_SCALE   pffft_zconvolve_scale
+#define ZT_MALLOC        pffft_aligned_malloc
+#define ZT_FREE          pffft_aligned_free
+#else
+  typedef PFFFTD_Setup setup_t;
+#define ZT_NEW_SETUP     pffftd_new_setup
+#define ZT_DESTROY_SETUP pffftd_destroy_setup
+#define ZT_TRANSFORM     pffftd_transform
+#define ZT_ZCONVOLVE     pffftd_zconvolve
+#define ZT_ZCONV_SCALE   pffftd_zconvolve_scale
+#define ZT_MALLOC        pffftd_aligned_malloc
+#define ZT_FREE          pffftd_aligned_free
+#endif
+  setup_t *s;
+  pffft_scalar *X, *H, *SX, *SH, *CNew, *CRef, *Y, *W;
+
+  s = ZT_NEW_SETUP(N, PFFFT_REAL);
+  assert(s);
+  X    = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
+  H    = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
+  SX   = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
+  SH   = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
+  CNew = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
+  CRef = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
+  Y    = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
+  W    = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
+
+  for ( j = 0; j < N; ++j ) {
+    X[j] = (pffft_scalar)(sin(0.1*j) + 0.3*cos(0.9*j));
+    H[j] = (j == 4 ? (pffft_scalar)1.0 : (pffft_scalar)0.0); /* impulse delayed by 4 samples */
+  }
+
+  ZT_TRANSFORM(s, X, SX, W, PFFFT_FORWARD);
+  ZT_TRANSFORM(s, H, SH, W, PFFFT_FORWARD);
+
+  ZT_ZCONVOLVE(s, SX, SH, CNew);
+  ZT_ZCONV_SCALE(s, SX, SH, CRef, 1.0);
+
+  if ( memcmp(CNew, CRef, N * sizeof(pffft_scalar)) != 0 ) {
+    printf("real fft %d: zconvolve() differs from zconvolve_scale(.., 1.0)\n", N);
+    retError = 1;
+  }
+
+  ZT_TRANSFORM(s, CNew, Y, W, PFFFT_BACKWARD);
+  for ( j = 0; j < N-4; ++j ) {
+    pffft_scalar expected = (pffft_scalar)(X[j]);
+    pffft_scalar got      = (pffft_scalar)(Y[j+4] / N);
+    if ( fabs(got - expected) > 1e-4 ) {
+      printf("real fft %d: delayed convolution mismatch at j = %d : got %g, expected %g\n",
+             N, j, (double)got, (double)expected);
+      retError = 1;
+      break;
+    }
+  }
+
+  ZT_FREE(X); ZT_FREE(H); ZT_FREE(SX); ZT_FREE(SH);
+  ZT_FREE(CNew); ZT_FREE(CRef); ZT_FREE(Y); ZT_FREE(W);
+  ZT_DESTROY_SETUP(s);
+  return retError;
+}
+
 /* small functions inside pffft.c that will detect (compiler) bugs with respect to simd instructions */
 void validate_pffft_simd();
 int  validate_pffft_simd_ex(FILE * DbgOut);
@@ -276,6 +349,7 @@ int  validate_pffftd_simd_ex(FILE * DbgOut);
 int main(int argc, char **argv)
 {
   int N, result, resN, resAll, i, k, resNextPw2, resIsPw2, resFFT;
+  int resZconv;
 
   int inp_power_of_two[] = { 1, 2, 3, 4, 5, 6, 7, 8,  9, 511, 512,  513 };
   int ref_power_of_two[] = { 1, 2, 4, 4, 8, 8, 8, 8, 16, 512, 512, 1024 };
@@ -360,7 +434,11 @@ int main(int argc, char **argv)
 #endif
   }
 
-  resAll = resNextPw2 | resIsPw2 | resFFT;
+  resZconv = test_zconvolve_unscaled(64);
+  if (!resZconv)
+    printf("zconvolve unscaled tests succeeded successfully.\n");
+
+  resAll = resNextPw2 | resIsPw2 | resFFT | resZconv;
   if (!resAll)
     printf("all tests succeeded successfully.\n");
   else

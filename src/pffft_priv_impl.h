@@ -1684,6 +1684,56 @@ void FUNC_ZCONVOLVE_SCALE(const SETUP_STRUCT *s, const float *a, const float *b,
 }
 
 
+void FUNC_ZCONVOLVE(const SETUP_STRUCT *s, const float *a, const float *b, float *ab) {
+  const v4sf * RESTRICT va = (const v4sf*)a;
+  const v4sf * RESTRICT vb = (const v4sf*)b;
+  v4sf * RESTRICT vab = (v4sf*)ab;
+  float sar, sai, sbr, sbi;
+  const int NcvecMulTwo = 2*s->Ncvec;  /* int Ncvec = s->Ncvec; */
+  int k; /* was i -- but always used "2*i" - except at for() */
+
+#ifdef __arm__
+  __builtin_prefetch(va);
+  __builtin_prefetch(vb);
+  __builtin_prefetch(vab);
+  __builtin_prefetch(va+2);
+  __builtin_prefetch(vb+2);
+  __builtin_prefetch(vab+2);
+  __builtin_prefetch(va+4);
+  __builtin_prefetch(vb+4);
+  __builtin_prefetch(vab+4);
+  __builtin_prefetch(va+6);
+  __builtin_prefetch(vb+6);
+  __builtin_prefetch(vab+6);
+#endif
+
+  assert(VALIGNED(a) && VALIGNED(b) && VALIGNED(ab));
+  sar = ((v4sf_union*)va)[0].f[0];
+  sai = ((v4sf_union*)va)[1].f[0];
+  sbr = ((v4sf_union*)vb)[0].f[0];
+  sbi = ((v4sf_union*)vb)[1].f[0];
+
+  /* default routine, works fine for non-arm cpus with current compilers */
+  for (k=0; k < NcvecMulTwo; k += 4) {
+    v4sf var, vai, vbr, vbi;
+    var = va[k+0]; vai = va[k+1];
+    vbr = vb[k+0]; vbi = vb[k+1];
+    VCPLXMUL(var, vai, vbr, vbi);
+    vab[k+0] = var;
+    vab[k+1] = vai;
+    var = va[k+2]; vai = va[k+3];
+    vbr = vb[k+2]; vbi = vb[k+3];
+    VCPLXMUL(var, vai, vbr, vbi);
+    vab[k+2] = var;
+    vab[k+3] = vai;
+  }
+
+  if (s->transform == PFFFT_REAL) {
+    ((v4sf_union*)vab)[0].f[0] = sar*sbr;
+    ((v4sf_union*)vab)[1].f[0] = sai*sbi;
+  }
+}
+
 #else  /* #if ( SIMD_SZ == 4 )   * !defined(PFFFT_SIMD_DISABLE) */
 
 /* standard routine using scalar floats, without SIMD stuff. */
@@ -1809,6 +1859,28 @@ void pffft_zconvolve_scale_nosimd(const SETUP_STRUCT *s, const float *a, const f
   }
 }
 
+
+#define pffft_zconvolve_nosimd FUNC_ZCONVOLVE
+void pffft_zconvolve_nosimd(const SETUP_STRUCT *s, const float *a, const float *b,
+                            float *ab) {
+  int NcvecMulTwo = 2*s->Ncvec;  /* int Ncvec = s->Ncvec; */
+  int k; /* was i -- but always used "2*i" - except at for() */
+
+  if (s->transform == PFFFT_REAL) {
+    /* take care of the fftpack ordering */
+    ab[0] = a[0]*b[0];
+    ab[NcvecMulTwo-1] = a[NcvecMulTwo-1]*b[NcvecMulTwo-1];
+    ++ab; ++a; ++b; NcvecMulTwo -= 2;
+  }
+  for (k=0; k < NcvecMulTwo; k += 2) {
+    float ar, ai, br, bi;
+    ar = a[k+0]; ai = a[k+1];
+    br = b[k+0]; bi = b[k+1];
+    VCPLXMUL(ar, ai, br, bi);
+    ab[k+0] = ar;
+    ab[k+1] = ai;
+  }
+}
 
 #endif /* #if ( SIMD_SZ == 4 )    * !defined(PFFFT_SIMD_DISABLE) */
 

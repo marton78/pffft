@@ -398,8 +398,7 @@ int pffft_validate_N(int N, int cplx) {
       float conv_err = 0, conv_max = 0;
 
       PFFFT_FUNC(zreorder)(s, ref, tmp, PFFFT_FORWARD);
-      memset(out, 0, Nbytes);
-      PFFFT_FUNC(zconvolve_accumulate)(s, ref, ref, out, 1.0);
+      PFFFT_FUNC(zconvolve)(s, ref, ref, out);
       PFFFT_FUNC(zreorder)(s, out, tmp2, PFFFT_FORWARD);
       
       for (k=0; k < Nfloat; k += 2) {
