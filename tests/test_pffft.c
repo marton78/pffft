@@ -276,8 +276,8 @@ static int test_zconvolve_unscaled(int N)
 #define ZT_NEW_SETUP     pffft_new_setup
 #define ZT_DESTROY_SETUP pffft_destroy_setup
 #define ZT_TRANSFORM     pffft_transform
-#define ZT_ZCONVOLVE     pffft_zconvolve
 #define ZT_ZCONV_SCALE   pffft_zconvolve_scale
+#define ZT_ZCONVOLVE     pffft_zconvolve
 #define ZT_MALLOC        pffft_aligned_malloc
 #define ZT_FREE          pffft_aligned_free
 #else
@@ -285,8 +285,8 @@ static int test_zconvolve_unscaled(int N)
 #define ZT_NEW_SETUP     pffftd_new_setup
 #define ZT_DESTROY_SETUP pffftd_destroy_setup
 #define ZT_TRANSFORM     pffftd_transform
-#define ZT_ZCONVOLVE     pffftd_zconvolve
 #define ZT_ZCONV_SCALE   pffftd_zconvolve_scale
+#define ZT_ZCONVOLVE     pffftd_zconvolve
 #define ZT_MALLOC        pffftd_aligned_malloc
 #define ZT_FREE          pffftd_aligned_free
 #endif
@@ -338,6 +338,172 @@ static int test_zconvolve_unscaled(int N)
   return retError;
 }
 
+/* zero-phase filtering check: a linear-phase FIR centered at t = 0
+   with left-hand taps wrapped around the block must produce exactly the
+   circular convolution of the wrapped filter with the signal when its
+   unordered spectrum is converted via pffft_zconvert_zp() and applied
+   with pffft_zconvolve_zp(). Also cross-checks against the plain
+   complex multiply and verifies the REAL-only guard. */
+static int test_zerophase(int N)
+{
+  int j, k, retError = 0;
+#ifdef PFFFT_ENABLE_FLOAT
+  typedef PFFFT_Setup setup_t;
+#define ZT_NEW_SETUP     pffft_new_setup
+#define ZT_DESTROY_SETUP pffft_destroy_setup
+#define ZT_TRANSFORM     pffft_transform
+#define ZT_ZCONVERT_ZP   pffft_zconvert_zp
+#define ZT_ZCONV_SCALE   pffft_zconvolve_scale
+#define ZT_ZCONVOLVE_ZP  pffft_zconvolve_zp
+#define ZT_MALLOC        pffft_aligned_malloc
+#define ZT_FREE          pffft_aligned_free
+#else
+  typedef PFFFTD_Setup setup_t;
+#define ZT_NEW_SETUP     pffftd_new_setup
+#define ZT_DESTROY_SETUP pffftd_destroy_setup
+#define ZT_TRANSFORM     pffftd_transform
+#define ZT_ZCONVERT_ZP   pffftd_zconvert_zp
+#define ZT_ZCONV_SCALE   pffftd_zconvolve_scale
+#define ZT_ZCONVOLVE_ZP  pffftd_zconvolve_zp
+#define ZT_MALLOC        pffftd_aligned_malloc
+#define ZT_FREE          pffftd_aligned_free
+#endif
+  setup_t *s;
+  setup_t *scplx;
+  /* symmetric FIR, centered at t = 0 : taps h[-4 .. 4] */
+  pffft_scalar ht[9] = { 0.03, -0.10, 0.25, 0.75, 1.0, 0.75, 0.25, -0.10, 0.03 };
+  pffft_scalar *X, *W, *H, *HZP, *C, *CRef, *Y;
+  s = ZT_NEW_SETUP(N, PFFFT_REAL);
+  scplx = ZT_NEW_SETUP(N, PFFFT_COMPLEX);
+  assert(s && scplx);
+  X    = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
+  W    = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
+  H    = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
+  HZP  = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
+  C    = (pffft_scalar*)ZT_MALLOC(2 * N * sizeof(pffft_scalar));
+  CRef = (pffft_scalar*)ZT_MALLOC(2 * N * sizeof(pffft_scalar));
+  Y    = (pffft_scalar*)ZT_MALLOC(2 * N * sizeof(pffft_scalar));
+
+  if ( ZT_ZCONVERT_ZP(scplx, W, HZP, 1.0) == 0 ) {
+    printf("zero-phase fft %d: zconvert_zp accepted a PFFFT_COMPLEX setup!\n", N);
+    retError = 1;
+  }
+  if ( ZT_ZCONVOLVE_ZP(scplx, C, HZP, CRef) == 0 ) {
+    printf("zero-phase fft %d: zconvolve_zp accepted a PFFFT_COMPLEX setup!\n", N);
+    retError = 1;
+  }
+
+  for ( j = 0; j < N; ++j ) {
+    X[j] = (pffft_scalar)(sin(0.37*j) + 0.5*cos(1.71*j + 0.3));
+    W[j] = (pffft_scalar)0.0;
+  }
+  for ( j = 0; j <= 4; ++j )      W[j] = (pffft_scalar)ht[4+j];   /* h[0..4] */
+  for ( j = 1; j <= 4; ++j )      W[N-j] = (pffft_scalar)ht[4-j]; /* h[-4..-1] wrapped */
+
+  ZT_TRANSFORM(s, X, C, NULL, PFFFT_FORWARD);
+  ZT_TRANSFORM(s, W, H, NULL, PFFFT_FORWARD);
+
+  if ( ZT_ZCONVERT_ZP(s, H, HZP, 1.0) != 0 ) {
+    printf("zero-phase fft %d: zconvert_zp failed on a PFFFT_REAL setup!\n", N);
+    retError = 1;
+  }
+
+  /* zero-phase invariants, layout-independent by construction:
+     1) conversion writes EVERY lane of its destination -- sentinel-fill
+        first so unwritten lanes cannot hide (this is exactly what the
+        vector-1 defect violated); no lane-value assumptions needed.
+     2) conversion is linear in scaling.
+     Lane-level value correctness is covered by the cross-check and the
+     time-domain round-trip below, which compare whole buffers without
+     lane-position assumptions. */
+  for ( j = 0; j < N; ++j )
+    CRef[j] = (pffft_scalar)123456789.0;
+  if ( ZT_ZCONVERT_ZP(s, H, CRef, 2.0) != 0 ) {
+    printf("zero-phase fft %d: zconvert_zp(scaling=2) failed!\n", N);
+    retError = 1;
+  }
+  for ( j = 0; j < N; ++j ) {
+    if ( CRef[j] == (pffft_scalar)123456789.0 ) {
+      printf("zero-phase fft %d: zconvert_zp left float %d unwritten\n", N, j);
+      retError = 1;
+      break;
+    }
+  }
+  /* linearity: convert(scaling=1) then double must equal convert(2.0) */
+  {
+    int lin_bad = -1;
+    for ( j = 0; j < N; ++j ) {
+      if ( fabs((double)(HZP[j]*2 - CRef[j])) > 1e-3 * (fabs((double)HZP[j]) + 1.0) ) {
+        lin_bad = j;
+        break;
+      }
+    }
+    if ( lin_bad >= 0 ) {
+      printf("zero-phase fft %d: zconvert_zp not linear in scaling at float %d : 2*%g != %g\n",
+             N, lin_bad, (double)HZP[lin_bad], (double)CRef[lin_bad]);
+      retError = 1;
+    }
+  }
+
+  /* documented aliasing: in == out must work (this was the crux of the
+     vector-1 defect: a naive zero-then-restore order destroys the
+     Nyquist lane before it is read) */
+  {
+    for ( j = 0; j < N; ++j )
+      CRef[j] = H[j];
+    if ( ZT_ZCONVERT_ZP(s, CRef, CRef, 1.0) != 0 ) {
+      printf("zero-phase fft %d: in-place zconvert_zp failed\n", N);
+      retError = 1;
+    }
+    for ( j = 0; j < N; ++j ) {
+      /* identical operations in identical order: any difference is a
+         real defect, so exact comparison */
+      if ( CRef[j] != HZP[j] ) {
+        printf("zero-phase fft %d: in-place zconvert_zp differs from out-of-place at float %d : %g vs %g\n",
+               N, j, (double)CRef[j], (double)HZP[j]);
+        retError = 1;
+        break;
+      }
+    }
+  }
+
+  ZT_ZCONV_SCALE(s, C, HZP, CRef, 1.0);       /* reference from pristine C */
+  ZT_ZCONVOLVE_ZP(s, C, HZP, C);              /* in-place is documented legal */
+  /* unordered layout is not interleaved re/im pairs: compare flat.
+     with a correctly converted zero-phase filter (H_im == 0) the plain
+     complex multiply collapses to exactly what the zp path computes, and
+     zconvolve_scale's REAL epilogue writes the DC and Nyquist lanes with
+     the same component-wise products -- so every float must match. */
+  for ( j = 0; j < N; ++j ) {
+    if ( fabs((double)(C[j] - CRef[j])) > 1e-3 ) {
+      printf("zero-phase fft %d: zp convolve differs from plain convolve at float %d\n", N, j);
+      retError = 1;
+      break;
+    }
+  }
+
+  ZT_TRANSFORM(s, C, Y, NULL, PFFFT_BACKWARD);
+  /* compare with direct time-domain circular convolution */
+  for ( j = 0; j < N; ++j ) {
+    pffft_scalar ref = 0;
+    for ( k = -4; k <= 4; ++k )
+      ref += (pffft_scalar)(ht[4+k] * X[(j-k+N) % N]);
+    /* no division: the backward transform's factor N completes the
+       unnormalized forward DFT's convention */
+    if ( fabs((double)(Y[j]/N) - (double)(ref)) > 1e-4 * (fabs((double)ref) + 1.0) ) {
+      printf("zero-phase fft %d: sample %d : got %g expected %g\n", N, j, (double)(Y[j]/N), (double)ref);
+      retError = 1;
+      break;
+    }
+  }
+
+  ZT_FREE(X); ZT_FREE(W); ZT_FREE(H); ZT_FREE(HZP); ZT_FREE(C); ZT_FREE(CRef); ZT_FREE(Y);
+  ZT_DESTROY_SETUP(s);
+  ZT_DESTROY_SETUP(scplx);
+  return retError;
+}
+
+
 /* small functions inside pffft.c that will detect (compiler) bugs with respect to simd instructions */
 void validate_pffft_simd();
 int  validate_pffft_simd_ex(FILE * DbgOut);
@@ -350,6 +516,7 @@ int main(int argc, char **argv)
 {
   int N, result, resN, resAll, i, k, resNextPw2, resIsPw2, resFFT;
   int resZconv;
+  int resZP;
 
   int inp_power_of_two[] = { 1, 2, 3, 4, 5, 6, 7, 8,  9, 511, 512,  513 };
   int ref_power_of_two[] = { 1, 2, 4, 4, 8, 8, 8, 8, 16, 512, 512, 1024 };
@@ -438,7 +605,11 @@ int main(int argc, char **argv)
   if (!resZconv)
     printf("zconvolve unscaled tests succeeded successfully.\n");
 
-  resAll = resNextPw2 | resIsPw2 | resFFT | resZconv;
+  resZP = test_zerophase(64);
+  if (!resZP)
+    printf("zero-phase convolution tests succeeded successfully.\n");
+
+  resAll = resNextPw2 | resIsPw2 | resFFT | resZconv | resZP;
   if (!resAll)
     printf("all tests succeeded successfully.\n");
   else
