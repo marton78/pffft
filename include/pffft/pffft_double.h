@@ -226,6 +226,40 @@ extern "C" {
   PFFFT_EXPORT void pffftd_zconvolve(const PFFFTD_Setup *setup, const double *dft_a, const double *dft_b, double *dft_ab);
 
   /*
+     Convert an unordered PFFFT_REAL forward-transform result (as
+     produced by pffftd_transform(.., PFFFT_FORWARD)) into "zero-phase"
+     form: imaginary vector lanes are zeroed, real lanes are multiplied
+     by 'scaling'. Useful for linear-phase FIR filters whose impulse
+     response is centered at t = 0 with the left-hand taps wrapped
+     around to the end of the transform block: their spectrum has no
+     imaginary components. 'in' may alias 'out'.
+
+     Layout caveat: the unordered REAL layout packs the two real-valued
+     boundary coefficients F(0) and F(N/2) into the first lanes of the
+     first two vectors, where F(N/2) occupies an otherwise-imaginary
+     lane. pffftd_zconvert_zp() keeps that lane (scaled), so the output
+     is NOT a plain spectrum: multiply it only with pffftd_zconvolve_zp(),
+     never with pffftd_zconvolve_scale() or pffftd_zconvolve(), which
+     would cross-multiply the DC and Nyquist lanes.
+
+     Returns 0 on success, nonzero if setup was not created for
+     PFFFT_REAL.
+  */
+  PFFFT_EXPORT int pffftd_zconvert_zp(const PFFFTD_Setup *setup, const double *in, double *out, double scaling);
+
+  /*
+     Frequency-domain multiply of an unordered PFFFT_REAL forward
+     spectrum dft_x with a zero-phase filter spectrum dft_hzp produced
+     by pffftd_zconvert_zp(): dft_ab = dft_x * dft_hzp. No accumulation,
+     no scaling -- scale the static filter at conversion time instead.
+     All pointers may alias.
+
+     Returns 0 on success, nonzero if setup was not created for
+     PFFFT_REAL.
+  */
+  PFFFT_EXPORT int pffftd_zconvolve_zp(const PFFFTD_Setup *setup, const double *dft_x, const double *dft_hzp, double *dft_ab);
+
+  /*
      deprecated synonym for pffftd_zconvolve_scale()
   */
   PFFFT_EXPORT void PFFFT_DEPRECATED pffftd_zconvolve_no_accu(const PFFFTD_Setup *setup, const double *dft_a, const double *dft_b, double *dft_ab, double scaling);

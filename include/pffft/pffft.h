@@ -232,6 +232,40 @@ extern "C" {
      The dft_a, dft_b and dft_ab pointers may alias.
   */
   PFFFT_EXPORT void pffft_zconvolve(const PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab);
+  
+  /*
+     Convert an unordered PFFFT_REAL forward-transform result (as
+     produced by pffft_transform(.., PFFFT_FORWARD)) into "zero-phase"
+     form: imaginary vector lanes are zeroed, real lanes are multiplied
+     by 'scaling'. Useful for linear-phase FIR filters whose impulse
+     response is centered at t = 0 with the left-hand taps wrapped
+     around to the end of the transform block: their spectrum has no
+     imaginary components. 'in' may alias 'out'.
+
+     Layout caveat: the unordered REAL layout packs the two real-valued
+     boundary coefficients F(0) and F(N/2) into the first lanes of the
+     first two vectors, where F(N/2) occupies an otherwise-imaginary
+     lane. pffft_zconvert_zp() keeps that lane (scaled), so the output
+     is NOT a plain spectrum: multiply it only with pffft_zconvolve_zp(),
+     never with pffft_zconvolve_scale() or pffft_zconvolve(), which
+     would cross-multiply the DC and Nyquist lanes.
+
+     Returns 0 on success, nonzero if setup was not created for
+     PFFFT_REAL.
+  */
+  PFFFT_EXPORT int pffft_zconvert_zp(const PFFFT_Setup *setup, const float *in, float *out, float scaling);
+
+  /*
+     Frequency-domain multiply of an unordered PFFFT_REAL forward
+     spectrum dft_x with a zero-phase filter spectrum dft_hzp produced
+     by pffft_zconvert_zp(): dft_ab = dft_x * dft_hzp. No accumulation,
+     no scaling -- scale the static filter at conversion time instead.
+     All pointers may alias.
+
+     Returns 0 on success, nonzero if setup was not created for
+     PFFFT_REAL.
+  */
+  PFFFT_EXPORT int pffft_zconvolve_zp(const PFFFT_Setup *setup, const float *dft_x, const float *dft_hzp, float *dft_ab);
 
   /*
      deprecated synonym for pffft_zconvolve_scale()

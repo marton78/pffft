@@ -34,7 +34,9 @@
 
 #include "pffft/pffft.hpp"
 
+#include <algorithm>
 #include <assert.h>
+#include <cmath>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -252,6 +254,114 @@ Ttest(int N, bool useOrdered)
   return retError;
 }
 
+// COMPLEX setups must reject the zero-phase operations. Kept in its own
+// helper so the body is fully instantiable for complex value types too --
+// a combined test function's real-only tail would fail to type-check and
+// make the whole instantiation (and with it this coverage) impossible.
+template<typename T>
+bool
+ZPRejectTest(int N)
+{
+  typedef pffft::Fft<T> Fft;
+  typedef typename Fft::Scalar FftScalar;
+
+  Fft fft(N);
+  pffft::AlignedVector<FftScalar> A = fft.internalLayoutVector();
+  pffft::AlignedVector<FftScalar> B = fft.internalLayoutVector();
+
+  // REAL setups must accept (return 0), COMPLEX setups must reject
+  // (nonzero): the functions are documented REAL-only.
+  const bool expectReject = Fft::isComplexTransform();
+  const int rc1 = fft.zconvertZP(A, B, FftScalar(1));
+  if ((rc1 == 0) == expectReject) {
+    printf("zp wrapper: zconvertZP %s a %s setup\n",
+           (rc1 == 0 ? "accepted" : "rejected"),
+           (expectReject ? "COMPLEX" : "REAL"));
+    return true;
+  }
+  const int rc2 = fft.convolveZP(A, A, B);
+  if ((rc2 == 0) == expectReject) {
+    printf("zp wrapper: convolveZP %s a %s setup\n",
+           (rc2 == 0 ? "accepted" : "rejected"),
+           (expectReject ? "COMPLEX" : "REAL"));
+    return true;
+  }
+  return false;
+}
+
+// exercise the public wrapper surface for the unscaled and zero-phase
+// convolutions added to Fft<T>: unscaled convolve must match
+// convolve(.., 1.0), the zero-phase path must reproduce a time-domain
+// circular convolution, and COMPLEX setups must reject zp conversion.
+template<typename T>
+bool
+ZPtest(int N)
+{
+  typedef pffft::Fft<T> Fft;
+  typedef typename Fft::Scalar FftScalar;
+
+  Fft fft(N);
+
+  pffft::AlignedVector<T> X = fft.valueVector();
+  pffft::AlignedVector<FftScalar> SX = fft.internalLayoutVector();
+  pffft::AlignedVector<FftScalar> W = fft.internalLayoutVector();
+  pffft::AlignedVector<FftScalar> HZP = fft.internalLayoutVector();
+  pffft::AlignedVector<FftScalar> C1 = fft.internalLayoutVector();
+  pffft::AlignedVector<FftScalar> C2 = fft.internalLayoutVector();
+  pffft::AlignedVector<T> Y = fft.valueVector();
+
+  int j, k;
+  bool retError = false;
+
+  for (j = 0; j < N; ++j) {
+    X[j] = T(0.5 * sin(0.37 * j) + 0.25 * cos(1.71 * j + 0.3));
+    W[j] = FftScalar(0);
+  }
+  const FftScalar ht[9] = { FftScalar(0.03), FftScalar(-0.10), FftScalar(0.25),
+                            FftScalar(0.75), FftScalar(1.0),  FftScalar(0.75),
+                            FftScalar(0.25), FftScalar(-0.10), FftScalar(0.03) };
+  for (j = 0; j <= 4; ++j) W[j] = ht[4 + j];
+  for (j = 1; j <= 4; ++j) W[N - j] = ht[4 - j];
+
+  fft.forwardToInternalLayout(X.data(), SX.data());
+  fft.forwardToInternalLayout(reinterpret_cast<const T*>(W.data()), W.data());
+
+  if (fft.zconvertZP(W, HZP, FftScalar(1)) != 0) {
+    printf("zp wrapper: zconvertZP failed on a REAL setup\n");
+    return true;
+  }
+
+  // unscaled public convolve must equal scaled-by-1
+  fft.convolve(SX.data(), HZP.data(), C1.data(), FftScalar(1));
+  fft.convolve(SX.data(), HZP.data(), C2.data());
+  const int layoutSize = fft.getInternalLayoutSize();
+  for (j = 0; j < layoutSize; ++j)
+    if (C1[j] != C2[j]) {
+      printf("zp wrapper: unscaled convolve differs from scaling=1 at %d\n", j);
+      retError = true;
+      break;
+    }
+
+  if (fft.convolveZP(SX, HZP, C1)) {
+    printf("zp wrapper: convolveZP failed on a REAL setup\n");
+    return true;
+  }
+  fft.inverseFromInternalLayout(C1.data(), Y.data());
+
+  for (j = 0; j < N; ++j) {
+    double ref = 0;
+    for (k = -4; k <= 4; ++k)
+      ref += double(ht[4 + k]) * double(X[(j - k + N) % N]);
+    if (std::abs(double(Y[j]) / N - ref) > 1e-3) {
+      printf("zp wrapper: circular convolution mismatch at %d : %g vs %g\n",
+             j, double(Y[j]) / N, ref);
+      retError = true;
+      break;
+    }
+  }
+  return retError;
+}
+
 bool
 test(int N, bool useComplex, bool useOrdered)
 {
@@ -286,6 +396,7 @@ int
 main(int argc, char** argv)
 {
   int N, result, resN, resAll, k, resNextPw2, resIsPw2, resFFT;
+  int resZP = 0;
 
   int inp_power_of_two[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 511, 512, 513 };
   int ref_power_of_two[] = { 1, 2, 4, 4, 8, 8, 8, 8, 16, 512, 512, 1024 };
@@ -367,7 +478,20 @@ main(int argc, char** argv)
 #endif
            ") succeeded successfully.\n");
 
-  resAll = resNextPw2 | resIsPw2 | resFFT;
+#ifdef PFFFT_ENABLE_FLOAT
+  resZP |= ZPRejectTest<float>(64);
+  resZP |= ZPRejectTest< ::std::complex<float> >(64);
+  resZP |= ZPtest<float>(64);
+#endif
+#ifdef PFFFT_ENABLE_DOUBLE
+  resZP |= ZPRejectTest<double>(64);
+  resZP |= ZPRejectTest< ::std::complex<double> >(64);
+  resZP |= ZPtest<double>(64);
+#endif
+  if (!resZP)
+    printf("zero-phase and unscaled convolve wrapper tests succeeded successfully.\n");
+
+  resAll = resNextPw2 | resIsPw2 | resFFT | resZP;
   if (!resAll)
     printf("all tests succeeded successfully.\n");
   else

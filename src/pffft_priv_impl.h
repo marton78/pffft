@@ -1734,6 +1734,73 @@ void FUNC_ZCONVOLVE(const SETUP_STRUCT *s, const float *a, const float *b, float
   }
 }
 
+
+int FUNC_ZCONVERT_ZP(const SETUP_STRUCT *s, const float *in, float *out, float scaling) {
+  int j, nv = s->Ncvec * 2;  /* number of simd vectors: alternating real/imag vector pairs */
+  /* no RESTRICT: in may alias out by contract */
+  const v4sf *vin = (const v4sf*)in;
+  v4sf *vout = (v4sf*)out;
+  v4sf vs = LD_PS1(scaling);
+  if (s->transform != PFFFT_REAL) return -1;
+  assert(VALIGNED(in) && VALIGNED(out));
+  /*
+    unordered forward REAL layout: even-indexed vectors hold the real
+    parts of 4 coefficients each, odd-indexed vectors their imaginary
+    parts -- except the very first odd lane, which packs the real
+    Nyquist coefficient F(N/2) next to F(0) in vector 0 (same packing
+    that pffft_zconvolve_accumulate() treats component-wise).
+    Zero-phase form: keep/scale the real vectors, zero the imag
+    vectors, keep/scale the Nyquist lane. */
+  vout[0] = VMUL(vin[0], vs);
+  {
+    /* latch the scaled Nyquist coefficient before zeroing: with
+       in == out the vector store below would destroy vin[1].f[0] */
+    const float nyquist = ((const v4sf_union*)vin)[1].f[0] * scaling;
+    const v4sf vz = VZERO();
+    vout[1] = vz;
+    ((v4sf_union*)vout)[1].f[0] = nyquist;
+    for (j = 2; j < nv; j += 2) {
+      vout[j] = VMUL(vin[j], vs);
+      vout[j+1] = vz;
+    }
+  }
+  return 0;
+}
+
+int FUNC_ZCONVOLVE_ZP(const SETUP_STRUCT *s, const float *x, const float *hzp, float *ab) {
+  int j, np = s->Ncvec;  /* number of real/imag vector pairs */
+  /* no RESTRICT: any pair of pointers may alias by contract */
+  const v4sf *vx = (const v4sf*)x;
+  const v4sf *vh = (const v4sf*)hzp;
+  v4sf *vab = (v4sf*)ab;
+  if (s->transform != PFFFT_REAL) return -1;
+  assert(VALIGNED(x) && VALIGNED(hzp) && VALIGNED(ab));
+  /*
+    with a zero-phase filter (imag vectors all zero):
+    Y_re = X_re * H_re   and   Y_im = X_im * H_re.
+    The first two vectors additionally carry the real DC and Nyquist
+    coefficients in their f[0] lanes (see FUNC_ZCONVERT_ZP), so that
+    pair is finished scalar-wise, component-wise, exactly like
+    FUNC_ZCONVOLVE_ACCUMULATE() does. */
+  {
+    /* note: the Nyquist product reads hv1.f[0], not hv0.f[0] */
+    v4sf_union xv1, hv0, hv1;
+    xv1.v = vx[1];
+    hv0.v = vh[0]; hv1.v = vh[1];
+    vab[0] = VMUL(vx[0], vh[0]);
+    ((v4sf_union*)vab)[1].f[0] = xv1.f[0] * hv1.f[0];
+    ((v4sf_union*)vab)[1].f[1] = xv1.f[1] * hv0.f[1];
+    ((v4sf_union*)vab)[1].f[2] = xv1.f[2] * hv0.f[2];
+    ((v4sf_union*)vab)[1].f[3] = xv1.f[3] * hv0.f[3];
+  }
+  for (j = 1; j < np; ++j) {
+    v4sf hr = vh[2*j];
+    vab[2*j] = VMUL(vx[2*j], hr);
+    vab[2*j+1] = VMUL(vx[2*j+1], hr);
+  }
+  return 0;
+}
+
 #else  /* #if ( SIMD_SZ == 4 )   * !defined(PFFFT_SIMD_DISABLE) */
 
 /* standard routine using scalar floats, without SIMD stuff. */
@@ -1880,6 +1947,34 @@ void pffft_zconvolve_nosimd(const SETUP_STRUCT *s, const float *a, const float *
     ab[k+0] = ar;
     ab[k+1] = ai;
   }
+}
+
+
+#define pffft_zconvert_zp_nosimd FUNC_ZCONVERT_ZP
+int pffft_zconvert_zp_nosimd(const SETUP_STRUCT *s, const float *in, float *out, float scaling) {
+  int k, N2 = s->Ncvec * 2;  /* number of floats: [F0, F1r, F1i .. F(n/2-1)i, F(n/2)] */
+  if (s->transform != PFFFT_REAL) return -1;
+  out[0] = in[0] * scaling;
+  out[N2-1] = in[N2-1] * scaling;
+  for (k = 1; k < N2-1; k += 2) {
+    out[k] = in[k] * scaling;
+    out[k+1] = 0.f;
+  }
+  return 0;
+}
+
+#define pffft_zconvolve_zp_nosimd FUNC_ZCONVOLVE_ZP
+int pffft_zconvolve_zp_nosimd(const SETUP_STRUCT *s, const float *x, const float *hzp, float *ab) {
+  int k, N2 = s->Ncvec * 2;
+  if (s->transform != PFFFT_REAL) return -1;
+  ab[0] = x[0] * hzp[0];
+  ab[N2-1] = x[N2-1] * hzp[N2-1];
+  for (k = 1; k < N2-1; k += 2) {
+    float hr = hzp[k];
+    ab[k] = x[k] * hr;
+    ab[k+1] = x[k+1] * hr;
+  }
+  return 0;
 }
 
 #endif /* #if ( SIMD_SZ == 4 )    * !defined(PFFFT_SIMD_DISABLE) */
