@@ -1912,8 +1912,8 @@ void pffft_zconvolve_scale_nosimd(const SETUP_STRUCT *s, const float *a, const f
 
   if (s->transform == PFFFT_REAL) {
     /* take care of the fftpack ordering */
-    ab[0] += a[0]*b[0]*scaling;
-    ab[NcvecMulTwo-1] += a[NcvecMulTwo-1]*b[NcvecMulTwo-1]*scaling;
+    ab[0] = a[0]*b[0]*scaling;
+    ab[NcvecMulTwo-1] = a[NcvecMulTwo-1]*b[NcvecMulTwo-1]*scaling;
     ++ab; ++a; ++b; NcvecMulTwo -= 2;
   }
   for (k=0; k < NcvecMulTwo; k += 2) {
