@@ -71,7 +71,9 @@
 #endif
 
 #ifdef COMPILER_MSVC
-#  define _USE_MATH_DEFINES
+#  ifndef _USE_MATH_DEFINES
+#    define _USE_MATH_DEFINES
+#  endif
 #  include <malloc.h>
 #elif defined(__MINGW32__) || defined(__MINGW64__)
 #  include <malloc.h>
