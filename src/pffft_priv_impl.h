@@ -1155,7 +1155,7 @@ static void unreversed_copy(int N, const v4sf *in, v4sf *out, int out_stride) {
   UNINTERLEAVE2(h0, g1, out[0], out[1]);
 }
 
-void FUNC_ZREORDER(SETUP_STRUCT *setup, const float *in, float *out, pffft_direction_t direction) {
+void FUNC_ZREORDER(const SETUP_STRUCT *setup, const float *in, float *out, pffft_direction_t direction) {
   int k, N = setup->N, Ncvec = setup->Ncvec;
   const v4sf *vin = (const v4sf*)in;
   v4sf *vout = (v4sf*)out;
@@ -1462,7 +1462,7 @@ static NEVER_INLINE(void) FUNC_REAL_PREPROCESS(int Ncvec, const v4sf *in, v4sf *
 }
 
 
-void FUNC_TRANSFORM_INTERNAL(SETUP_STRUCT *setup, const float *finput, float *foutput, v4sf *scratch,
+void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, float *foutput, v4sf *scratch,
                              pffft_direction_t direction, int ordered) {
   int k, Ncvec   = setup->Ncvec;
   int nf_odd = (setup->ifac[1] & 1);
@@ -1531,7 +1531,7 @@ void FUNC_TRANSFORM_INTERNAL(SETUP_STRUCT *setup, const float *finput, float *fo
   assert(buff[ib] == voutput);
 }
 
-void FUNC_ZCONVOLVE_ACCUMULATE(SETUP_STRUCT *s, const float *a, const float *b, float *ab, float scaling) {
+void FUNC_ZCONVOLVE_ACCUMULATE(const SETUP_STRUCT *s, const float *a, const float *b, float *ab, float scaling) {
   int Ncvec = s->Ncvec;
   const v4sf * RESTRICT va = (const v4sf*)a;
   const v4sf * RESTRICT vb = (const v4sf*)b;
@@ -1629,7 +1629,7 @@ void FUNC_ZCONVOLVE_ACCUMULATE(SETUP_STRUCT *s, const float *a, const float *b, 
   }
 }
 
-void FUNC_ZCONVOLVE_NO_ACCU(SETUP_STRUCT *s, const float *a, const float *b, float *ab, float scaling) {
+void FUNC_ZCONVOLVE_NO_ACCU(const SETUP_STRUCT *s, const float *a, const float *b, float *ab, float scaling) {
   v4sf vscal = LD_PS1(scaling);
   const v4sf * RESTRICT va = (const v4sf*)a;
   const v4sf * RESTRICT vb = (const v4sf*)b;
@@ -1689,7 +1689,7 @@ void FUNC_ZCONVOLVE_NO_ACCU(SETUP_STRUCT *s, const float *a, const float *b, flo
 /* standard routine using scalar floats, without SIMD stuff. */
 
 #define pffft_zreorder_nosimd FUNC_ZREORDER
-void pffft_zreorder_nosimd(SETUP_STRUCT *setup, const float *in, float *out, pffft_direction_t direction) {
+void pffft_zreorder_nosimd(const SETUP_STRUCT *setup, const float *in, float *out, pffft_direction_t direction) {
   int k, N = setup->N;
   if (setup->transform == PFFFT_COMPLEX) {
     for (k=0; k < 2*N; ++k) out[k] = in[k];
@@ -1709,7 +1709,7 @@ void pffft_zreorder_nosimd(SETUP_STRUCT *setup, const float *in, float *out, pff
 }
 
 #define pffft_transform_internal_nosimd FUNC_TRANSFORM_INTERNAL
-void pffft_transform_internal_nosimd(SETUP_STRUCT *setup, const float *input, float *output, float *scratch,
+void pffft_transform_internal_nosimd(const SETUP_STRUCT *setup, const float *input, float *output, float *scratch,
                                     pffft_direction_t direction, int ordered) {
   int Ncvec   = setup->Ncvec;
   int nf_odd = (setup->ifac[1] & 1);
@@ -1766,7 +1766,7 @@ void pffft_transform_internal_nosimd(SETUP_STRUCT *setup, const float *input, fl
 }
 
 #define pffft_zconvolve_accumulate_nosimd FUNC_ZCONVOLVE_ACCUMULATE
-void pffft_zconvolve_accumulate_nosimd(SETUP_STRUCT *s, const float *a, const float *b,
+void pffft_zconvolve_accumulate_nosimd(const SETUP_STRUCT *s, const float *a, const float *b,
                                        float *ab, float scaling) {
   int NcvecMulTwo = 2*s->Ncvec;  /* int Ncvec = s->Ncvec; */
   int k; /* was i -- but always used "2*i" - except at for() */
@@ -1788,7 +1788,7 @@ void pffft_zconvolve_accumulate_nosimd(SETUP_STRUCT *s, const float *a, const fl
 }
 
 #define pffft_zconvolve_no_accu_nosimd FUNC_ZCONVOLVE_NO_ACCU
-void pffft_zconvolve_no_accu_nosimd(SETUP_STRUCT *s, const float *a, const float *b,
+void pffft_zconvolve_no_accu_nosimd(const SETUP_STRUCT *s, const float *a, const float *b,
                                     float *ab, float scaling) {
   int NcvecMulTwo = 2*s->Ncvec;  /* int Ncvec = s->Ncvec; */
   int k; /* was i -- but always used "2*i" - except at for() */
@@ -1813,11 +1813,11 @@ void pffft_zconvolve_no_accu_nosimd(SETUP_STRUCT *s, const float *a, const float
 #endif /* #if ( SIMD_SZ == 4 )    * !defined(PFFFT_SIMD_DISABLE) */
 
 
-void FUNC_TRANSFORM_UNORDRD(SETUP_STRUCT *setup, const float *input, float *output, float *work, pffft_direction_t direction) {
+void FUNC_TRANSFORM_UNORDRD(const SETUP_STRUCT *setup, const float *input, float *output, float *work, pffft_direction_t direction) {
   FUNC_TRANSFORM_INTERNAL(setup, input, output, (v4sf*)work, direction, 0);
 }
 
-void FUNC_TRANSFORM_ORDERED(SETUP_STRUCT *setup, const float *input, float *output, float *work, pffft_direction_t direction) {
+void FUNC_TRANSFORM_ORDERED(const SETUP_STRUCT *setup, const float *input, float *output, float *work, pffft_direction_t direction) {
   FUNC_TRANSFORM_INTERNAL(setup, input, output, (v4sf*)work, direction, 1);
 }
 

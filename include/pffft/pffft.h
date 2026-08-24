@@ -156,7 +156,7 @@ extern "C" {
 
      input and output may alias.
   */
-  PFFFT_EXPORT void pffft_transform(PFFFT_Setup *setup, const float *input, float *output, float *work, pffft_direction_t direction);
+  PFFFT_EXPORT void pffft_transform(const PFFFT_Setup *setup, const float *input, float *output, float *work, pffft_direction_t direction);
 
   /* 
      Similar to pffft_transform, but makes sure that the output is
@@ -165,7 +165,7 @@ extern "C" {
      
      input and output may alias.
   */
-  PFFFT_EXPORT void pffft_transform_ordered(PFFFT_Setup *setup, const float *input, float *output, float *work, pffft_direction_t direction);
+  PFFFT_EXPORT void pffft_transform_ordered(const PFFFT_Setup *setup, const float *input, float *output, float *work, pffft_direction_t direction);
 
   /* 
      call pffft_zreorder(.., PFFFT_FORWARD) after pffft_transform(...,
@@ -179,7 +179,7 @@ extern "C" {
      
      input and output should not alias.
   */
-  PFFFT_EXPORT void pffft_zreorder(PFFFT_Setup *setup, const float *input, float *output, pffft_direction_t direction);
+  PFFFT_EXPORT void pffft_zreorder(const PFFFT_Setup *setup, const float *input, float *output, pffft_direction_t direction);
 
   /* 
      Perform a multiplication of the frequency components of dft_a and
@@ -193,7 +193,7 @@ extern "C" {
      
      The dft_a, dft_b and dft_ab pointers may alias.
   */
-  PFFFT_EXPORT void pffft_zconvolve_accumulate(PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
+  PFFFT_EXPORT void pffft_zconvolve_accumulate(const PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
 
   /* 
      Perform a multiplication of the frequency components of dft_a and
@@ -207,7 +207,7 @@ extern "C" {
 
      The dft_a, dft_b and dft_ab pointers may alias.
   */
-  PFFFT_EXPORT void pffft_zconvolve_no_accu(PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
+  PFFFT_EXPORT void pffft_zconvolve_no_accu(const PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
 
   /* return 4 or 1 wether support SSE/NEON/Altivec instructions was enabled when building pffft.c */
   PFFFT_EXPORT int pffft_simd_size(void);

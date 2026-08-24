@@ -148,7 +148,7 @@ extern "C" {
 
      input and output may alias.
   */
-  PFFFT_EXPORT void pffftd_transform(PFFFTD_Setup *setup, const double *input, double *output, double *work, pffft_direction_t direction);
+  PFFFT_EXPORT void pffftd_transform(const PFFFTD_Setup *setup, const double *input, double *output, double *work, pffft_direction_t direction);
 
   /* 
      Similar to pffft_transform, but makes sure that the output is
@@ -157,7 +157,7 @@ extern "C" {
      
      input and output may alias.
   */
-  PFFFT_EXPORT void pffftd_transform_ordered(PFFFTD_Setup *setup, const double *input, double *output, double *work, pffft_direction_t direction);
+  PFFFT_EXPORT void pffftd_transform_ordered(const PFFFTD_Setup *setup, const double *input, double *output, double *work, pffft_direction_t direction);
 
   /* 
      call pffft_zreorder(.., PFFFT_FORWARD) after pffft_transform(...,
@@ -171,7 +171,7 @@ extern "C" {
      
      input and output should not alias.
   */
-  PFFFT_EXPORT void pffftd_zreorder(PFFFTD_Setup *setup, const double *input, double *output, pffft_direction_t direction);
+  PFFFT_EXPORT void pffftd_zreorder(const PFFFTD_Setup *setup, const double *input, double *output, pffft_direction_t direction);
 
   /* 
      Perform a multiplication of the frequency components of dft_a and
@@ -185,7 +185,7 @@ extern "C" {
      
      The dft_a, dft_b and dft_ab pointers may alias.
   */
-  PFFFT_EXPORT void pffftd_zconvolve_accumulate(PFFFTD_Setup *setup, const double *dft_a, const double *dft_b, double *dft_ab, double scaling);
+  PFFFT_EXPORT void pffftd_zconvolve_accumulate(const PFFFTD_Setup *setup, const double *dft_a, const double *dft_b, double *dft_ab, double scaling);
 
   /* 
      Perform a multiplication of the frequency components of dft_a and
@@ -199,7 +199,7 @@ extern "C" {
 
      The dft_a, dft_b and dft_ab pointers may alias.
   */
-  PFFFT_EXPORT void pffftd_zconvolve_no_accu(PFFFTD_Setup *setup, const double *dft_a, const double *dft_b, double*dft_ab, double scaling);
+  PFFFT_EXPORT void pffftd_zconvolve_no_accu(const PFFFTD_Setup *setup, const double *dft_a, const double *dft_b, double*dft_ab, double scaling);
 
   /* return 4 or 1 wether support AVX instructions was enabled when building pffft-double.c */
   PFFFT_EXPORT int pffftd_simd_size();
