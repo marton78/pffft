@@ -116,6 +116,11 @@ typedef PFFFTD_Setup PFFFT_SETUP;
 #include <sys/stat.h>
 #include <errno.h>
 
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>   /* access() */
+#endif
 #ifdef __APPLE__
 #include <TargetConditionals.h>
 #endif
@@ -221,6 +226,17 @@ const char * algoFileId[NUM_FFT_ALGOS] = {
 };
 
 int runAlgo[NUM_FFT_ALGOS];
+
+/* --- samples output (long-format CSV, see docs plan 2026-08-25) --- */
+#define SAMPLES_MAGIC   "# pffft-bench-samples v2"
+#define MAX_META        32
+static const char *g_samplePath = NULL;   /* NULL = off, "-" = stdout */
+static int g_sampleRuns = 15;
+static const char *g_metaKey[MAX_META];
+static const char *g_metaVal[MAX_META];
+static int g_numMeta = 0;
+static int g_quiet = 0;
+static FILE *g_sampleFile = NULL;
 
 int compiledInAlgo[NUM_FFT_ALGOS] = {
 #ifdef HAVE_FFTPACK
@@ -526,19 +542,22 @@ int array_output_format = 1;
 
 
 void print_table(const char *txt, FILE *tableFile) {
-  fprintf(stdout, "%s", txt);
+  if (!g_quiet)
+    fprintf(stdout, "%s", txt);
   if (tableFile && tableFile != stdout)
     fprintf(tableFile, "%s", txt);
 }
 
 void print_table_flops(float mflops, FILE *tableFile) {
-  fprintf(stdout, "|%11.0f   ", mflops);
+  if (!g_quiet)
+    fprintf(stdout, "|%11.0f   ", mflops);
   if (tableFile && tableFile != stdout)
     fprintf(tableFile, "|%11.0f   ", mflops);
 }
 
 void print_table_fftsize(int N, FILE *tableFile) {
-  fprintf(stdout, "|%9d  ", N);
+  if (!g_quiet)
+    fprintf(stdout, "|%9d  ", N);
   if (tableFile && tableFile != stdout)
     fprintf(tableFile, "|%9d  ", N);
 }
@@ -552,7 +571,7 @@ double show_output(const char *name, int N, int cplx, float flops, float t0, flo
     else
       print_table("|        n/a   ", tableFile);
   } else {
-    if (flops != -1) {
+    if (flops != -1 && !g_quiet) {
       printf("N=%5d, %s %16s : %6.0f MFlops [t=%6.0f ns, %d runs]\n", N, (cplx?"CPLX":"REAL"), name, mflops, (t1-t0)/2/max_iter * 1e9, max_iter);
     }
   }
@@ -1263,6 +1282,122 @@ int  validate_pffftd_simd_ex(FILE * DbgOut);
 
 
 
+/* Collect provenance keys from an existing samples file into key/val arrays.
+   Returns number of provenance lines found, or -1 if magic mismatch. */
+static int samples_read_provenance(FILE *f,
+                                   const char *keys[], const char *vals[], int maxKeys) {
+  char line[512];
+  int n = 0;
+  if (!fgets(line, sizeof(line), f)) return -1;
+  if (strncmp(line, SAMPLES_MAGIC, strlen(SAMPLES_MAGIC)) != 0) return -1;
+  while (n < maxKeys && fgets(line, sizeof(line), f)) {
+    char *p, *eq;
+    if (line[0] != '#') break;
+    p = line + 1;
+    if (*p == ' ') ++p;          /* skip "# " prefix */
+    eq = strchr(p, '=');
+    if (!eq) continue;           /* not key=value -> ignore */
+    *eq = 0;
+    keys[n] = strdup(p);
+    vals[n] = strndup(eq + 1, strlen(eq + 1) - 1);  /* strip \n */
+    ++n;
+  }
+  return n;
+}
+
+/* Open g_samplePath for appending. Refuses on provenance mismatch.
+   Returns NULL and prints reason on failure; exits program via caller. */
+static FILE *samples_open(void) {
+  /* user meta keys (up to MAX_META) plus binary-supplied simd_arch and simd_size */
+  const char *keys[MAX_META + 2], *vals[MAX_META + 2];
+  const char *newkeys[MAX_META + 2], *newvals[MAX_META + 2];
+  static char simdSizeBuf[16];   /* outlives samples_open(); referenced by the file header only at write time */
+  int nk, nnew, i, j;
+  int exists;
+  FILE *f;
+
+#ifdef _WIN32
+  { FILE *probe = fopen(g_samplePath, "r");
+    exists = (probe != NULL);
+    if (probe) fclose(probe); }
+#else
+  exists = access(g_samplePath, F_OK) == 0;
+#endif
+
+  /* binary-supplied facts */
+  nnew = 0;
+  for (i = 0; i < g_numMeta; ++i) { newkeys[nnew] = g_metaKey[i]; newvals[nnew] = g_metaVal[i]; ++nnew; }
+  newkeys[nnew] = "simd_arch";  newvals[nnew] = PFFFT_FUNC(simd_arch)();  ++nnew;
+  snprintf(simdSizeBuf, sizeof(simdSizeBuf), "%d", PFFFT_FUNC(simd_size)());
+  newkeys[nnew] = "simd_size";  newvals[nnew] = simdSizeBuf;  ++nnew;
+
+  if (strcmp(g_samplePath, "-") == 0) {
+    printf("%s\n", SAMPLES_MAGIC);
+    for (j = 0; j < nnew; ++j) printf("# %s=%s\n", newkeys[j], newvals[j]);
+    printf("algo,prec,xform,size,sample_ms,n_iter\n");
+    fflush(stdout);
+    return stdout;
+  }
+
+  if (exists) {
+    int mismatch = 0;
+    f = fopen(g_samplePath, "r");
+    if (!f) { fprintf(stderr, "cannot open %s: %s\n", g_samplePath, strerror(errno)); exit(1); }
+    nk = samples_read_provenance(f, keys, vals, MAX_META);
+    fclose(f);
+    if (nk < 0) {
+      fprintf(stderr, "%s: not a %s file\n", g_samplePath, SAMPLES_MAGIC);
+      exit(1);
+    }
+    for (j = 0; j < nnew; ++j) {
+      int found = 0;
+      if (!strcmp(newkeys[j], "datetime")) continue;  /* volatile, not compared */
+      for (i = 0; i < nk; ++i) {
+        if (!strcmp(keys[i], newkeys[j])) {
+          found = 1;
+          if (strcmp(vals[i], newvals[j]) != 0) {
+            fprintf(stderr, "%s differs: '%s' vs '%s'\n", newkeys[j], vals[i], newvals[j]);
+            mismatch = 1;
+          }
+          break;
+        }
+      }
+      if (!found) {
+        fprintf(stderr, "missing key '%s' in %s (file predates it?)\n", newkeys[j], g_samplePath);
+        mismatch = 1;
+      }
+    }
+    /* every differing/missing key has been reported above -- now fail */
+    if (mismatch) exit(1);
+    f = fopen(g_samplePath, "a");
+    if (!f) { fprintf(stderr, "cannot append to %s: %s\n", g_samplePath, strerror(errno)); exit(1); }
+    return f;
+  }
+
+  f = fopen(g_samplePath, "w");
+  if (!f) { fprintf(stderr, "cannot create %s: %s\n", g_samplePath, strerror(errno)); exit(1); }
+  fprintf(f, "%s\n", SAMPLES_MAGIC);
+  for (j = 0; j < nnew; ++j)
+    fprintf(f, "# %s=%s\n", newkeys[j], newvals[j]);
+  fprintf(f, "algo,prec,xform,size,sample_ms,n_iter\n");
+  return f;
+}
+
+/* Emit one row per measured algorithm from the tmeas block of one
+   benchmark_ffts() call. */
+static void samples_emit(double tmeas[NUM_TYPES][NUM_FFT_ALGOS], int haveAlgo[],
+                         int N, int cplx, const char *precStr) {
+  int k;
+  for (k = 0; k < NUM_FFT_ALGOS; ++k) {
+    if (haveAlgo[k] && runAlgo[k] && tmeas[TYPE_DUR_TOT][k] > 0.0) {
+      fprintf(g_sampleFile, "%s,%s,%s,%d,%.6f,%.0f\n",
+              algoCLIName[k], precStr, (cplx ? "cplx" : "real"), N,
+              tmeas[TYPE_DUR_TOT][k] * 1000.0, tmeas[TYPE_ITER][k]);
+    }
+  }
+  fflush(g_sampleFile);
+}
+
 int main(int argc, char **argv) {
   /* unfortunately, the fft size must be a multiple of 16 for complex FFTs 
      and 32 for real FFTs -- a lot of stuff would need to be rewritten to
@@ -1306,11 +1441,12 @@ int main(int argc, char **argv) {
   for ( i = 0; i < NUM_FFT_ALGOS; ++i )
     runAlgo[i] = 1;
 
-  printf("pffft architecture:    '%s'\n", PFFFT_FUNC(simd_arch)());
-  printf("pffft SIMD size:       %d\n", PFFFT_FUNC(simd_size)());
-  printf("pffft min real fft:    %d\n", PFFFT_FUNC(min_fft_size)(PFFFT_REAL));
-  printf("pffft min complex fft: %d\n", PFFFT_FUNC(min_fft_size)(PFFFT_COMPLEX));
-  printf("\n");
+  /* pre-scan: samples-to-stdout mode must keep stdout a pure CSV stream,
+     so g_quiet has to be known before any progress/banner printing */
+  for ( i = 1; i < argc; ++i )
+    if (!strcmp(argv[i], "--samples") && i+1 < argc && !strcmp(argv[i+1], "-"))
+      g_quiet = 1;
+
 
   for ( i = 1; i < argc; ++i ) {
     if (!strcmp(argv[i], "--array-format") || !strcmp(argv[i], "--table")) {
@@ -1337,7 +1473,7 @@ int main(int argc, char **argv) {
       ++i;
     }
     else if (!strcmp(argv[i], "--quick")) {
-      fprintf(stdout, "actived quicktest mode\n");
+      if (!g_quiet) fprintf(stdout, "actived quicktest mode\n");
       quicktest = 1;
     }
     else if (!strcmp(argv[i], "--validate")) {
@@ -1372,10 +1508,35 @@ int main(int argc, char **argv) {
       strncpy(outputDir, argv[++i], sizeof(outputDir)-1);
       outputDir[sizeof(outputDir)-1] = 0;
     }
+    else if (!strcmp(argv[i], "--samples") && i+1 < argc) {
+      g_samplePath = argv[++i];
+      if (!strcmp(g_samplePath, "-")) g_quiet = 1;
+    }
+    else if (!strcmp(argv[i], "--runs") && i+1 < argc) {
+      g_sampleRuns = atoi(argv[++i]);
+      if (g_sampleRuns < 1) { fprintf(stderr, "--runs must be >= 1\n"); exit(1); }
+    }
+    else if (!strcmp(argv[i], "--meta") && i+1 < argc) {
+      char *eq;
+      if (g_numMeta >= MAX_META) { fprintf(stderr, "too many --meta\n"); exit(1); }
+      eq = strchr(argv[++i], '=');
+      if (!eq) { fprintf(stderr, "--meta expects key=value, got '%s'\n", argv[i]); exit(1); }
+      *eq = 0;
+      g_metaKey[g_numMeta] = argv[i];
+      g_metaVal[g_numMeta] = eq + 1;
+      ++g_numMeta;
+    }
     else /* if (!strcmp(argv[i], "--help")) */ {
-      printf("usage: %s [--array-format|--table] [--no-tab] [--real|--cplx] [--validate] [--fftw-full-measure] [--non-pow2] [--max-len <N>] [--quick] [--algo <name|all>] [--output-dir <dir>]\n", argv[0]);
+      printf("usage: %s [--array-format|--table] [--no-tab] [--real|--cplx] [--validate] [--fftw-full-measure] [--non-pow2] [--max-len <N>] [--quick] [--algo <name|all>] [--output-dir <dir>] [--samples <path|->] [--runs R] [--meta k=v]\n", argv[0]);
       exit(0);
     }
+  }
+  if (!g_quiet) {
+    printf("pffft architecture:    '%s'\n", PFFFT_FUNC(simd_arch)());
+    printf("pffft SIMD size:       %d\n", PFFFT_FUNC(simd_size)());
+    printf("pffft min real fft:    %d\n", PFFFT_FUNC(min_fft_size)(PFFFT_REAL));
+    printf("pffft min complex fft: %d\n", PFFFT_FUNC(min_fft_size)(PFFFT_COMPLEX));
+    printf("\n");
   }
 
 #ifdef HAVE_FFTW
@@ -1443,6 +1604,36 @@ int main(int argc, char **argv) {
     printf("calibration done in %f sec.\n\n", dur);
   }
 
+  if (g_samplePath) {
+    const char *precStr;
+#ifdef PFFFT_ENABLE_FLOAT
+    precStr = "flt";
+#else
+    precStr = "dbl";
+#endif
+    int rep, i;
+    g_sampleFile = samples_open();
+    for (rep = 0; rep < g_sampleRuns; ++rep) {
+      for (i = 0; Nvalues[i] > 0 && Nvalues[i] <= max_N; ++i) {
+        memset(tmeas[0][i], 0, sizeof(tmeas[0][i]));
+        memset(tmeas[1][i], 0, sizeof(tmeas[1][i]));
+        memset(haveAlgo, 0, sizeof(haveAlgo));
+        if (benchReal) {
+          benchmark_ffts(Nvalues[i], 0, withFFTWfullMeas, iterCalReal,
+                         tmeas[0][i], haveAlgo, runAlgo, NULL);
+          samples_emit(tmeas[0][i], haveAlgo, Nvalues[i], 0, precStr);
+        }
+        memset(haveAlgo, 0, sizeof(haveAlgo));
+        if (benchCplx) {
+          benchmark_ffts(Nvalues[i], 1, withFFTWfullMeas, iterCalCplx,
+                         tmeas[1][i], haveAlgo, runAlgo, NULL);
+          samples_emit(tmeas[1][i], haveAlgo, Nvalues[i], 1, precStr);
+        }
+      }
+    }
+    if (g_sampleFile != stdout) fclose(g_sampleFile);
+    return 0;
+  }
   if (!array_output_format) {
     if (benchReal) {
       for (i=0; Nvalues[i] > 0 && Nvalues[i] <= max_N; ++i)
