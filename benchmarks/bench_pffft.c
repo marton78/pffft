@@ -1416,6 +1416,9 @@ int main(int argc, char **argv) {
 #define MAXNUMFFTLENS MAX( NUMPOW2FFTLENS, NUMNONPOW2LENS )
   int Npow2[NUMPOW2FFTLENS];  /* exp = 1 .. 21, -1 */
   const int *Nvalues = NULL;
+  int customSizes[64];
+  int numCustomSizes = 0;
+  int Nfiltered[MAXNUMFFTLENS];
   double tmeas[2][MAXNUMFFTLENS][NUM_TYPES][NUM_FFT_ALGOS];
   double iterCalReal = 0.0, iterCalCplx = 0.0;
 
@@ -1512,6 +1515,13 @@ int main(int argc, char **argv) {
       g_samplePath = argv[++i];
       if (!strcmp(g_samplePath, "-")) g_quiet = 1;
     }
+    else if (!strcmp(argv[i], "--size") && i+1 < argc) {
+      char *tok, *dup = strdup(argv[++i]);
+      for (tok = strtok(dup, ","); tok && numCustomSizes < 64;
+           tok = strtok(NULL, ","))
+        customSizes[numCustomSizes++] = atoi(tok);
+      free(dup);
+    }
     else if (!strcmp(argv[i], "--runs") && i+1 < argc) {
       g_sampleRuns = atoi(argv[++i]);
       if (g_sampleRuns < 1) { fprintf(stderr, "--runs must be >= 1\n"); exit(1); }
@@ -1527,9 +1537,28 @@ int main(int argc, char **argv) {
       ++g_numMeta;
     }
     else /* if (!strcmp(argv[i], "--help")) */ {
-      printf("usage: %s [--array-format|--table] [--no-tab] [--real|--cplx] [--validate] [--fftw-full-measure] [--non-pow2] [--max-len <N>] [--quick] [--algo <name|all>] [--output-dir <dir>] [--samples <path|->] [--runs R] [--meta k=v]\n", argv[0]);
+      printf("usage: %s [--array-format|--table] [--no-tab] [--real|--cplx] [--validate] [--fftw-full-measure] [--non-pow2] [--max-len <N>] [--quick] [--algo <name|all>] [--output-dir <dir>] [--samples <path|->] [--runs R] [--meta k=v] [--size N,N,...]\n", argv[0]);
       exit(0);
     }
+  }
+  if (numCustomSizes > 0) {
+    int n = 0, j, found;
+    for (j = 0; Nvalues[j] > 0; ++j) {
+      found = 0;
+      for (i = 0; i < numCustomSizes; ++i) {
+        if (Nvalues[j] == customSizes[i]) { found = 1; break; }
+      }
+      if (found) Nfiltered[n++] = Nvalues[j];
+    }
+    for (i = 0; i < numCustomSizes; ++i) {
+      found = 0;
+      for (j = 0; Nvalues[j] > 0; ++j) {
+        if (Nvalues[j] == customSizes[i]) { found = 1; break; }
+      }
+      if (!found) { fprintf(stderr, "unsupported size: %d\n", customSizes[i]); exit(1); }
+    }
+    Nfiltered[n] = -1;
+    Nvalues = Nfiltered;
   }
   if (!g_quiet) {
     printf("pffft architecture:    '%s'\n", PFFFT_FUNC(simd_arch)());
