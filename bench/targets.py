@@ -17,6 +17,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 from cross_build_android import (detect_device_march, find_ndk,          # noqa: E402
                                  pffft_android_cmake_argv)
+from cross_build_ios import (build_pffft_ios, collect_device_info,       # noqa: E402
+                             deploy_and_run, extract_samples_lines,
+                             find_ios_sdk, find_signing_identity,
+                             find_team_id, list_connected_devices)
 
 BASE_CMAKE_FLAGS = [
     "-DCMAKE_BUILD_TYPE=Release",
@@ -43,9 +47,10 @@ def sh(*cmd: str) -> str:
                           text=True).stdout
 
 
-def clean_value(value: str) -> str:
-    """Sanitize a provenance value: no newlines or commas."""
-    return re.sub(r"[,\r\n]+", ";", str(value))
+def sanitize_meta_value(value: str) -> str:
+    """Sanitize a provenance value: no commas, newlines, or spaces."""
+    v = re.sub(r"[,\n\r]", "_", str(value))
+    return v.replace(" ", "_")
 
 
 def stream_stdout(argv: list[str],
@@ -141,7 +146,7 @@ class Target(ABC):
 
     def meta_list(self) -> list[str]:
         """Metadata as k=v strings (values sanitized)."""
-        return [f"{k}={clean_value(v)}" for k, v in self.meta().items()]
+        return [f"{k}={sanitize_meta_value(v)}" for k, v in self.meta().items()]
 
 
 class LocalTarget(Target):
@@ -202,7 +207,7 @@ class SshTarget(Target):
         """Actual hostname of the device (cached); falls back to spec."""
         if self._remote_name is None:
             try:
-                self._remote_name = clean_value(
+                self._remote_name = sanitize_meta_value(
                     sh(*self.ssh_argv("uname", "-n")).strip()) or self.host
             except Exception:
                 self._remote_name = self.host
@@ -303,7 +308,7 @@ class AdbTarget(Target):
         host = " ".join(part for part in (
             self._getprop("ro.product.model"),
             self._getprop("ro.board.platform")) if part)
-        return {"target": self.name, "host": clean_value(host)}
+        return {"target": self.name, "host": sanitize_meta_value(host)}
 
     def binary_path(self, wt_build: Path, prec: str) -> Path:
         self._prepare(wt_build)
@@ -381,6 +386,124 @@ class AdbTarget(Target):
                     "\n".join(lines) + ("\n" if lines else ""))
 
 
+class IosTarget(Target):
+    """An iOS device driven over ios-deploy (optionally a specific UDID).
+
+    Binaries are cross-compiled on this host as signed .app bundles via
+    build_pffft_ios() from cross_build_ios.py (same Xcode-generator flow,
+    signing helpers, and provisioning-profile lookup as that script's
+    main()); each run deploys the bundle with deploy_and_run() and launches
+    the benchmark with --samples - so its CSV streams back through the
+    ios-deploy console into a local sample file, mirroring SshTarget.
+    """
+
+    def __init__(self, udid: str | None = None):
+        self.udid = udid or None
+        # Resolved device identity lives apart from self.udid: name must
+        # stay exactly what the spec produced (perf.py derives stable
+        # sample-file paths from it before any auto-detection happens).
+        self._device_udid: str | None = self.udid
+        self._prepared: set[str] = set()
+
+    @property
+    def name(self) -> str:
+        return f"ios:{self.udid}" if self.udid else "ios"
+
+    def _resolve_udid(self) -> str:
+        """UDID of the target device; auto-detects a single attached one."""
+        if self._device_udid is None:
+            devices = list_connected_devices()
+            if not devices:
+                raise RuntimeError(
+                    "no iOS device connected (ios-deploy -c finds none); "
+                    "connect one or pass ios:<udid>")
+            self._device_udid = devices[0]["id"]
+        return self._device_udid
+
+    def meta(self) -> dict[str, str]:
+        info = collect_device_info(self._resolve_udid())
+        host = " ".join(part for part in (
+            info.get("device_name") or info.get("product"),
+            info.get("hardware"),
+            f"iOS {info['ios_version']}" if info.get("ios_version") else "",
+        ) if part)
+        return {"target": self.name, "host": sanitize_meta_value(host)}
+
+    def _prepare(self, wt_build: Path) -> None:
+        """Cross-compile one worktree as signed .app bundles (once)."""
+        wt_name = wt_build.parent.parent.name      # wt-base / wt-var
+        if wt_name in self._prepared:
+            return
+        sdk_root = find_ios_sdk()
+        if sdk_root is None:
+            raise RuntimeError(
+                "iOS SDK not found; install Xcode or set IOS_SDK")
+        identity = find_signing_identity()
+        if identity is None:
+            raise RuntimeError(
+                "no iOS code signing identity found; device deployment "
+                "requires one (security find-identity -v -p codesigning)")
+        team_id = find_team_id(identity)
+        if team_id is None:
+            raise RuntimeError(
+                "could not determine development team ID from the "
+                "signing certificate")
+        # No manual provisioning profile: a profile only works here if its
+        # file resolves under <UUID>.mobileprovision AND it is a wildcard
+        # covering com.example.* — otherwise fall back to automatic
+        # provisioning (-allowProvisioningUpdates, handled by Xcode).
+        wt = wt_build.parent.parent
+        bdir = wt / "build-ios"
+        build_pffft_ios(wt, bdir, "15",
+                        ["-DPFFFT_USE_BENCH_FFTW=OFF"], [],
+                        os.cpu_count() or 4,
+                        signing_identity=identity, team_id=team_id,
+                        bundle_id="com.example.pffft")
+        self._prepared.add(wt_name)
+
+    def binary_path(self, wt_build: Path, prec: str) -> Path:
+        self._prepare(wt_build)
+        exe = {"flt": "bench_pffft_float",
+               "dbl": "bench_pffft_double"}[prec]
+        # Local path of the signed .app bundle; resolved by ios-deploy in
+        # run() (Xcode puts signed bundles under Release-iphoneos/).
+        wt = wt_build.parent.parent
+        bundle = (wt / "build-ios" / "pffft" / "benchmarks"
+                  / "Release-iphoneos" / f"{exe}.app")
+        if not bundle.is_dir():
+            raise RuntimeError(f"{exe}.app was not built under {bundle.parent}")
+        return bundle
+
+    def run(self, cmd: list[str],
+            cwd: Path | None = None) -> Iterator[str]:
+        """Deploy cmd's app bundle and run it on-device; capture stdout."""
+        cmd = list(cmd)
+        samples_path: Path | None = None
+        if "--samples" in cmd:
+            i = cmd.index("--samples")
+            if i + 1 >= len(cmd):
+                raise ValueError("dangling --samples argument")
+            samples_path = Path(cmd[i + 1])
+            cmd[i + 1] = "-"       # binary streams pure CSV to stdout
+        stdout = deploy_and_run(Path(cmd[0]), self._resolve_udid(),
+                                app_args=cmd[1:])
+        if stdout is None:
+            raise RuntimeError(f"ios-deploy failed for {cmd[0]}")
+        lines = extract_samples_lines(stdout)
+        yield from lines
+        if samples_path is not None:
+            samples_path.parent.mkdir(parents=True, exist_ok=True)
+            if samples_path.exists():
+                # Accumulate: an existing file only receives fresh DATA rows.
+                rows = [ln for ln in lines
+                        if ln and not ln.startswith(("#", "algo,"))]
+                with open(samples_path, "a") as fh:
+                    fh.write("\n".join(rows) + ("\n" if rows else ""))
+            else:
+                samples_path.write_text(
+                    "\n".join(lines) + ("\n" if lines else ""))
+
+
 def make_target(spec: str) -> Target:
     """Dispatch a target spec to a Target instance."""
     if spec == "local":
@@ -400,6 +523,11 @@ def make_target(spec: str) -> Target:
         if not serial:
             raise ValueError(f"missing serial in target spec: {spec!r}")
         return AdbTarget(serial)
-    if spec.startswith("ios"):
-        raise NotImplementedError("ios targets arrive in Task 10")
+    if spec == "ios":
+        return IosTarget()
+    if spec.startswith("ios:"):
+        udid = spec[len("ios:"):]
+        if not udid:
+            raise ValueError(f"missing UDID in target spec: {spec!r}")
+        return IosTarget(udid)
     raise ValueError(f"unknown target spec: {spec!r}")

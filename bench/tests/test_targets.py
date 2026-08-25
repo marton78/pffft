@@ -12,8 +12,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import targets
 from perf import cmd_ab
 from samples import read_samples
-from targets import LocalTarget, SshTarget, make_target
-from targets import AdbTarget
+from targets import LocalTarget, SshTarget, make_target, sanitize_meta_value
+from targets import AdbTarget, IosTarget
+
+
+# ---- provenance value sanitizer ------------------------------------------------
+
+def test_sanitize():
+    assert sanitize_meta_value("iPhone 11 Pro,\nv13") == "iPhone_11_Pro__v13"
+
+
+def test_sanitize_passes_plain_values_through():
+    assert sanitize_meta_value("raspberrypi") == "raspberrypi"
+    assert sanitize_meta_value("iOS 17.5") == "iOS_17.5"
 
 
 # ---- sync_worktree: real git, no mocks (this is the class of bug that slips
@@ -99,18 +110,18 @@ def test_remote_host_from_uname(monkeypatch):
     assert t.remote_host() == "octopi"
 
 
+def test_meta_list_sanitizes_spaces_newlines_and_commas(monkeypatch):
+    monkeypatch.setattr(targets, "sh", lambda *cmd: "my,host\nv7\n")
+    assert SshTarget("h").meta_list() == \
+        ["target=ssh://h", "host=my_host_v7"]
+
+
 def test_remote_host_falls_back_to_spec_on_failure(monkeypatch):
     def boom(*cmd):
         raise RuntimeError("ssh down")
 
     monkeypatch.setattr(targets, "sh", boom)
     assert SshTarget("raspi").remote_host() == "raspi"
-
-
-def test_meta_list_sanitizes_newlines_and_commas(monkeypatch):
-    monkeypatch.setattr(targets, "sh", lambda *cmd: "my,host\nv7\n")
-    assert SshTarget("h").meta_list() == \
-        ["target=ssh://h", "host=my;host;v7"]
 
 
 # ---- command construction (no execution) --------------------------------------
@@ -389,7 +400,7 @@ def test_adb_meta_from_device_props(monkeypatch):
     monkeypatch.setattr(targets, "sh", fake_sh)
     t = make_target("adb")
     assert t.meta() == {"target": "adb",
-                        "host": "motorola edge 50 neo mt6878"}
+                        "host": "motorola_edge_50_neo_mt6878"}
     assert set(props) == {"ro.product.model", "ro.board.platform"}
 
 
@@ -502,3 +513,202 @@ def test_adb_run_appends_data_rows_to_existing_file(tmp_path, monkeypatch):
     assert [(r.algo, r.prec, r.xform, r.size) for r in rows_] \
         == [(r.algo, r.prec, r.xform, r.size) for r in rows_[:1]] * 3
     assert [r.sample_ms for r in rows_] == [1.5, 1.5, 2.5]
+
+
+# ---- ios: spec parsing / dispatch ----------------------------------------------
+
+def test_ios_spec_without_udid():
+    t = make_target("ios")
+    assert isinstance(t, IosTarget)
+    assert t.name == "ios"
+
+
+def test_ios_spec_with_udid():
+    t = make_target("ios:00008030-00116DEC0CF0802E")
+    assert isinstance(t, IosTarget)
+    assert t.udid == "00008030-00116DEC0CF0802E"
+    assert t.name == "ios:00008030-00116DEC0CF0802E"
+
+
+def test_ios_empty_udid_rejected():
+    with pytest.raises(ValueError):
+        make_target("ios:")
+
+
+# ---- ios: provenance meta -------------------------------------------------------
+def test_ios_bare_spec_name_stable_across_udid_resolution(monkeypatch):
+    """Auto-detected UDID must never leak into name (perf.py derives
+    sample-file paths from name before meta()/run() resolve the device)."""
+    monkeypatch.setattr(targets, "list_connected_devices",
+                        lambda: [{"id": "AUTO-UDID", "name": "iPhone"}])
+    t = make_target("ios")
+    assert t.name == "ios"
+    assert t._resolve_udid() == "AUTO-UDID"
+    assert t.name == "ios"          # unchanged after resolution
+
+
+def test_ios_meta_condenses_device_info_through_sanitizer(monkeypatch):
+    monkeypatch.setattr(targets, "collect_device_info", lambda udid: {
+        "device_name": "iPhone 11 Pro",
+        "hardware": "D421AP",
+        "ios_version": "17.5\n"})
+    assert make_target("ios:F00D").meta() == \
+        {"target": "ios:F00D", "host": "iPhone_11_Pro_D421AP_iOS_17.5_"}
+
+
+# ---- ios: build reuses cross_build_ios's shared functions ------------------------
+
+def test_ios_prepare_uses_shared_signing_and_build(tmp_path, monkeypatch):
+    calls = {}
+
+    def fake_build(script_dir, build_dir, deployment_target, fftw_cmake,
+                   extra_cmake, cpus, **kw):
+        calls.update(script_dir=script_dir, build_dir=build_dir,
+                     identity=kw.get("signing_identity"),
+                     team_id=kw.get("team_id"),
+                     profile=kw.get("provisioning_profile"))
+
+    monkeypatch.setattr(targets, "find_ios_sdk", lambda: Path("/sdk"))
+    monkeypatch.setattr(targets, "find_signing_identity",
+                        lambda: "Apple Development: x")
+    monkeypatch.setattr(targets, "find_team_id", lambda ident: "TEAM1234")
+    monkeypatch.setattr(targets, "build_pffft_ios", fake_build)
+    wt = tmp_path / "wt-var"
+    (wt / "build" / "benchmarks").mkdir(parents=True)
+    IosTarget("UDID")._prepare(wt / "build" / "benchmarks")
+    assert calls["script_dir"] == wt   # build from THIS arm's worktree, not REPO_ROOT
+    assert calls["build_dir"] == wt / "build-ios"
+    assert calls["identity"] == "Apple Development: x"
+    assert calls["team_id"] == "TEAM1234"
+    assert calls["profile"] is None      # automatic provisioning
+
+
+def test_ios_prepare_builds_each_arm_from_its_own_worktree(tmp_path, monkeypatch):
+    """Regression: _prepare once built every arm from REPO_ROOT, so an A/B
+    comparison silently compiled and ran the IDENTICAL binary for both arms.
+    Each worktree (wt-base/wt-var) must be built as its own cmake source."""
+    seen_script_dirs = []
+
+    def fake_build(script_dir, build_dir, deployment_target, fftw_cmake,
+                   extra_cmake, cpus, **kw):
+        seen_script_dirs.append(script_dir)
+
+    monkeypatch.setattr(targets, "find_ios_sdk", lambda: Path("/sdk"))
+    monkeypatch.setattr(targets, "find_signing_identity",
+                        lambda: "Apple Development: x")
+    monkeypatch.setattr(targets, "find_team_id", lambda ident: "TEAM1234")
+    monkeypatch.setattr(targets, "build_pffft_ios", fake_build)
+    base = tmp_path / "wt-base"
+    var = tmp_path / "wt-var"
+    (base / "build" / "benchmarks").mkdir(parents=True)
+    (var / "build" / "benchmarks").mkdir(parents=True)
+    tgt = IosTarget("UDID")
+    tgt._prepare(base / "build" / "benchmarks")
+    tgt._prepare(var / "build" / "benchmarks")
+    assert seen_script_dirs == [base, var]
+    assert seen_script_dirs[0] != seen_script_dirs[1]
+
+
+def test_ios_prepare_raises_without_sdk(monkeypatch, tmp_path):
+    monkeypatch.setattr(targets, "find_ios_sdk", lambda: None)
+    wt = tmp_path / "wt-base" / "build" / "benchmarks"
+    wt.mkdir(parents=True)
+    with pytest.raises(RuntimeError):
+        IosTarget()._prepare(wt)
+
+
+# ---- ios: binary_path resolves the signed .app bundle ----------------------------
+
+def test_ios_binary_path_is_app_bundle(tmp_path):
+    wt = tmp_path / "wt-var"
+    bundle = (wt / "build-ios" / "pffft" / "benchmarks"
+              / "Release-iphoneos" / "bench_pffft_float.app")
+    bundle.mkdir(parents=True)
+
+    class T(IosTarget):
+        def _prepare(self, wt_build):
+            pass
+
+    assert T("UDID").binary_path(wt / "build" / "benchmarks", "flt") == bundle
+
+
+# ---- ios: run() deploys via deploy_and_run and captures stdout locally -------------
+
+IOS_STDOUT = (
+    "\x1b[1G ios-deploy install chatter\n"
+    "[100%] Installed package\n"
+    "# pffft-bench-samples v2\n"
+    "# host=fake-phone\n"
+    "algo,prec,xform,size,sample_ms,n_iter\n"
+    "pffft,flt,real,64,1.5,100000\n"
+    "(lldb) quit\n")
+
+
+def test_ios_run_captures_samples_stdout_to_local_file(tmp_path, monkeypatch):
+    out = tmp_path / "samples" / "z.csv"
+    cmd = ["wt-base/build-ios/pffft/benchmarks/Release-iphoneos/"
+           "bench_pffft_float.app",
+           "--size", "64", "--runs", "2",
+           "--samples", str(out),
+           "--meta", "host=iPhone"]
+    recorded = {}
+
+    def fake_deploy(bundle, udid, app_args=None):
+        recorded.update(bundle=bundle, udid=udid, args=list(app_args))
+        return IOS_STDOUT
+
+    monkeypatch.setattr(targets, "deploy_and_run", fake_deploy)
+    lines = list(make_target("ios:F00D").run(cmd))
+    # ios-deploy chatter stripped; only the benchmark's own CSV survives
+    assert lines[0] == "# pffft-bench-samples v2"
+    assert lines[-1] == "pffft,flt,real,64,1.5,100000"
+    # app launched through --args with --samples rewritten to "-"
+    i = recorded["args"].index("--samples")
+    assert recorded["args"][i + 1] == "-"
+    assert recorded["udid"] == "F00D"
+    rows = read_samples(out)[1]
+    assert rows[0].sample_ms == 1.5
+
+
+def test_ios_run_appends_data_rows_to_existing_file(tmp_path, monkeypatch):
+    """Accumulation semantics match Ssh/Adb: data rows only, never a header."""
+    out = tmp_path / "samples" / "acc.csv"
+    (tmp_path / "samples").mkdir()
+    out.write_text("# pffft-bench-samples v2\n"
+                   "# host=x\n"
+                   "algo,prec,xform,size,sample_ms,n_iter\n"
+                   "pffft,flt,real,64,1.5,100000\n")
+    cmd = ["b.app", "--size", "64", "--runs", "2", "--samples", str(out)]
+    monkeypatch.setattr(
+        targets, "deploy_and_run",
+        lambda bundle, udid, app_args=None:
+            IOS_STDOUT.replace("fake-phone", "x"))
+    list(IosTarget("U").run(cmd))
+    assert open(out).read().count("# pffft-bench-samples v2") == 1
+    assert [r.sample_ms for r in read_samples(out)[1]] == [1.5, 1.5]
+
+
+def test_ios_run_raises_on_deploy_failure(tmp_path, monkeypatch):
+    out = tmp_path / "never.csv"
+    cmd = ["b.app", "--size", "64", "--samples", str(out)]
+    monkeypatch.setattr(targets, "deploy_and_run",
+                        lambda bundle, udid, app_args=None: None)
+    with pytest.raises(RuntimeError):
+        list(IosTarget("U").run(cmd))
+    assert not out.exists()
+
+
+# ---- ios: shared argv builder lives in cross_build_ios -----------------------------
+def test_ios_deploy_argv_sanitizes_unsafe_chars_in_app_args():
+    """ios-deploy's --args re-splitter breaks on spaces/shell metacharacters
+    even when shell-quoted (verified against a real device); every token's
+    unsafe characters must become '_' so it always survives as one word."""
+    from cross_build_ios import ios_deploy_argv
+    argv = ios_deploy_argv(Path("/a/B.app"), "UDID",
+                           ["--runs", "2",
+                            "--meta", "compiler=Apple clang (x)"])
+    assert argv[:7] == ["ios-deploy", "--bundle", "/a/B.app",
+                        "--id", "UDID", "--noninteractive", "--debug"]
+    assert argv[7] == "--args"
+    assert argv[8] == "--runs 2 --meta compiler=Apple_clang__x_"
+    assert " " not in "compiler=Apple_clang__x_"

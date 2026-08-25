@@ -58,6 +58,11 @@ from pathlib import Path
 FFTW_VERSION = "3.3.10"
 FFTW_URL = f"https://www.fftw.org/fftw-{FFTW_VERSION}.tar.gz"
 
+# First line emitted by `bench_pffft --samples -` (quiet mode), so the
+# benchmark's contribution to the ios-deploy console stream can be told
+# apart from install/log chatter.
+SAMPLES_MAGIC = "# pffft-bench-samples v2"
+
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -462,6 +467,14 @@ def find_provisioning_profile(device_udid, team_id=None):
             p_team = plist_val("TeamIdentifier:0")
             p_app_id = plist_val("Entitlements:application-identifier")
 
+            # A profile is only usable for manual signing if xcodebuild
+            # can resolve its specifier: <UUID>.mobileprovision must
+            # exist under this exact name (Xcode sometimes rewrites a
+            # profile's content under its old file name).
+            if p_uuid is None or not (
+                    profiles_dir / f"{p_uuid}.mobileprovision").is_file():
+                continue
+
             if team_id and p_team != team_id:
                 continue
 
@@ -483,18 +496,66 @@ def find_provisioning_profile(device_udid, team_id=None):
 
 # ── deployment via ios-deploy ─────────────────────────────────────────────────
 
-def deploy_and_run(app_bundle, device_id):
+def ios_deploy_argv(app_bundle, device_id, app_args=None):
+    """Command line deploying app_bundle to device_id and launching it.
+
+    app_args are forwarded as the launched process's argv.  ios-deploy's
+    --args option takes ONE string, and its internal re-splitting/lldb
+    command construction does NOT reliably honor shell quoting for tokens
+    containing spaces or shell metacharacters (verified: a value as
+    innocuous as "a(b)c" or "hello world" causes the whole ios-deploy
+    process to hang indefinitely after install, before ever launching the
+    app -- shlex.quote() alone does not protect against this). Every
+    token is therefore restricted to a safe character set before joining;
+    unsafe characters become '_'. This only affects what lands in the
+    device-side provenance strings (still human-readable), never the
+    numeric/flag arguments.
+    """
+    safe_re = re.compile(r"[^A-Za-z0-9_.:=/-]")
+    argv = ["ios-deploy", "--bundle", str(app_bundle),
+            "--id", str(device_id), "--noninteractive", "--debug"]
+    if app_args:
+        safe_args = [safe_re.sub("_", str(a)) for a in app_args]
+        argv += ["--args", " ".join(safe_args)]
+    return argv
+
+
+_SAMPLES_DATA_RE = re.compile(
+    r"^[^,\s]+,(flt|dbl),(real|cplx),\d+,[0-9.eE+-]+,\d+\s*$")
+
+
+def extract_samples_lines(stdout):
+    """Extract the clean benchmark CSV lines from ios-deploy console output.
+
+    The benchmark runs with ``--samples -`` (quiet mode), so everything it
+    prints is exactly the samples file contents; every other line on the
+    stream comes from ios-deploy itself.  Returns the lines from the
+    schema magic marker onward, with any trailing chatter stripped;
+    empty list if the benchmark never produced output.
+    """
+    lines = stdout.splitlines()
+    try:
+        start = next(i for i, ln in enumerate(lines)
+                     if ln.strip() == SAMPLES_MAGIC)
+    except StopIteration:
+        return []
+    out = lines[start:]
+    while out and not (out[-1].startswith("#")
+                       or out[-1].startswith("algo,")
+                       or _SAMPLES_DATA_RE.match(out[-1])):
+        out.pop()
+    return [ln.rstrip("\r") for ln in out]
+
+
+def deploy_and_run(app_bundle, device_id, app_args=None):
     """Deploy app bundle to device via ios-deploy and run it.
 
     Returns the captured stdout as a string, or None on failure.
     """
     banner([f"Deploying {app_bundle.name} to device"])
 
-    cmd = [
-        "ios-deploy", "--bundle", str(app_bundle), "--id", device_id,
-        "--noninteractive",
-    ]
-    print("$", " ".join(str(c) for c in cmd))
+    cmd = ios_deploy_argv(app_bundle, device_id, app_args)
+    print("$", " ".join(cmd))
     print("  This will take a few minutes. You'll see a black screen on")
     print("  your phone — stay put until the benchmark finishes.")
 
