@@ -1,30 +1,50 @@
 #!/usr/bin/env python3
-"""Generate benchmark charts from per-library CSV results.
+"""Generate benchmark charts from long-format benchmark samples.
 
-Reads per-library CSV files with the naming pattern:
-    <product>-<variant>-<flt|dbl>-<real|cplx>.csv
-
-Each CSV has columns: size,prep_ms,num_iter,mflops,duration_sec
+Reads pffft-bench-samples v2 CSVs directly (schema in bench/samples.py);
+MFLOPS is derived per repetition and medianed over reps -- never trusted
+from the file.
 
 Usage:
     python3 make_charts.py <dir1> [dir2 ...]
 
-When multiple directories are given, series labels are suffixed with the
-directory basename for comparison.  Output .webp files are written to the
-first directory.
+Each directory argument may be a colon-separated chain of directories that
+are merged into one variant group.  When multiple groups are given, series
+labels are suffixed with the directory basename and colors form a gradient
+across groups for comparison.
+
+    python3 make_charts.py --evolution CHAIN.json [--target local]
+
+Renders the optimization-chain evolution: (a) per-panel curve charts of the
+chain head's measured series and (b) a waterfall of accepted steps' median
+Hodges-Lehmann shift_pct per (algo, xform), green when faster / red when
+slower.
+
+Charts are written under bench_results/ at the repo root.
 """
 
-import csv
+import argparse
 import json
 import os
-import re
 import sys
+from pathlib import Path
+from statistics import median
 
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+from matplotlib.patches import Patch
+
+_BENCH_DIR = Path(__file__).resolve().parent
+if str(_BENCH_DIR) not in sys.path:
+    sys.path.insert(0, str(_BENCH_DIR))
+
+from samples import SCHEMA_MAGIC, read_samples  # noqa: E402
+
+REPO_ROOT = _BENCH_DIR.parent
+RESULTS_DIR = REPO_ROOT / 'bench_results'
 
 
 # ---------------------------------------------------------------------------
@@ -85,40 +105,60 @@ def pow2_mask(sizes):
     return (arr > 0) & ((arr & (arr - 1)) == 0)
 
 
-def parse_csv_filename(fname):
-    """Parse a CSV filename into (product_variant, precision, transform).
+def split_algo(algo):
+    """Split an algo id like 'fftw-estim' into (product, variant)."""
+    product, _, variant = algo.partition('-')
+    return product, (variant or 'default')
 
-    Pattern: <product-variant>-<flt|dbl>-<real|cplx>.csv
-    Parse from the right: last two segments before .csv are precision and
-    transform; everything before that is product-variant.
+
+def read_provenance(path):
+    """Read just the provenance header of a samples file.
+
+    Returns dict, or None when the file lacks the samples-v2 magic.
     """
-    base = fname.removesuffix('.csv') if fname.endswith('.csv') else None
-    if base is None:
+    try:
+        with open(path) as f:
+            if f.readline().rstrip('\n') != SCHEMA_MAGIC:
+                return None
+            prov = {}
+            for line in f:
+                line = line.rstrip('\n')
+                if not line.startswith('#'):
+                    break
+                k, sep, v = line[2:].partition('=')
+                if sep:
+                    prov[k] = v.strip()
+            return prov
+    except OSError:
         return None
-    parts = base.split('-')
-    if len(parts) < 3:
-        return None
-    transform = parts[-1]
-    precision = parts[-2]
-    if precision not in ('flt', 'dbl') or transform not in ('real', 'cplx'):
-        return None
-    product_variant = '-'.join(parts[:-2])
-    return product_variant, precision, transform
 
 
-def read_per_library_csv(path):
-    """Read a per-library CSV file.  Returns list of (size, mflops) tuples."""
-    rows = []
-    with open(path) as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            try:
-                size = int(row['size'])
-                mflops = float(row['mflops'])
-                rows.append((size, mflops))
-            except (ValueError, KeyError):
-                continue
-    return rows
+def read_samples_file(path):
+    """Read one long-format samples file.
+
+    Returns {product: {(prec, xform): (sizes[], median_mflops[])}}, where
+    product is the row algo id ('pffft', 'fftw-estim', ...) and each value
+    medians derived MFLOPS over repetitions.  Returns None when path is not
+    a readable pffft-bench-samples v2 file.
+    """
+    try:
+        _, rows = read_samples(path)
+    except (OSError, ValueError):
+        return None
+    acc = {}  # algo -> (prec, xform) -> size -> [mflops]
+    for s in rows:
+        m = s.mflops
+        if m > 0:
+            acc.setdefault(s.algo, {}).setdefault(
+                (s.prec, s.xform), {}).setdefault(s.size, []).append(m)
+    out = {}
+    for algo, panels in acc.items():
+        entry = {}
+        for key, by_size in panels.items():
+            sizes = sorted(by_size)
+            entry[key] = (sizes, [median(by_size[sz]) for sz in sizes])
+        out[algo] = entry
+    return out
 
 
 def get_color(product, variant, dir_index=None, num_dirs=1):
@@ -254,18 +294,6 @@ def make_chart(ax, series_list, title, num_variants=1):
     ax.legend(handles=handles, fontsize=8, loc='best', framealpha=0.9)
 
 
-def load_info(dirpath):
-    """Load info.json from a directory, return dict or empty dict."""
-    info_path = os.path.join(dirpath, 'info.json')
-    if os.path.exists(info_path):
-        try:
-            with open(info_path) as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            pass
-    return {}
-
-
 PRECISION_LABELS = {
     'flt': 'Single-precision',
     'dbl': 'Double-precision',
@@ -276,136 +304,110 @@ TRANSFORM_LABELS = {
 }
 
 
-def panel_title(precision, transform, info_list):
-    """Build a chart panel title."""
+def panel_title(precision, transform, prov=None):
+    """Build a chart panel title, including dominant provenance."""
     prec = PRECISION_LABELS.get(precision, precision)
     xform = TRANSFORM_LABELS.get(transform, transform)
     title = f'{prec} {xform}'
-    # Add CPU info from first directory that has it
-    for info in info_list:
-        cpu = info.get('cpu')
-        if cpu:
-            title = f'{title} \u2014 {cpu}'
-            break
+    if prov:
+        tag = ' @ '.join(x for x in (prov.get('label'), prov.get('host'))
+                         if x)
+        if tag:
+            title = f'{title} \u2014 {tag}'
     return title
 
 
 def scan_directory(dirpath):
-    """Scan a directory for per-library CSV files.
+    """Scan a directory for long-format samples CSV files.
 
-    Returns dict: (precision, transform) -> [(product, variant, sizes, mflops)]
+    Globs *.csv; files without the samples-v2 magic are skipped gracefully.
+    Products (algos) are merged across all readable files in the directory.
+
+    Returns (provenance, panels): provenance is the header dict of the first
+    readable file (the directory's dominant provenance) or None; panels maps
+    (prec, xform) -> [(product, variant, sizes, mflops)].
     """
     panels = {}
+    dominant_prov = None
     try:
-        entries = os.listdir(dirpath)
+        entries = sorted(os.listdir(dirpath))
     except OSError:
-        return panels
+        return dominant_prov, panels
 
-    for fname in sorted(entries):
+    for fname in entries:
         if not fname.endswith('.csv'):
             continue
-        parsed = parse_csv_filename(fname)
-        if parsed is None:
+        path = os.path.join(dirpath, fname)
+        prov = read_provenance(path)
+        if prov is None:
+            print(f'make_charts: skipping {path}: not a '
+                  f'{SCHEMA_MAGIC!r} file', file=sys.stderr)
             continue
-        product_variant, precision, transform = parsed
-        # Split product from variant: product is the first segment
-        pv_parts = product_variant.split('-', 1)
-        product = pv_parts[0]
-        variant = pv_parts[1] if len(pv_parts) > 1 else 'default'
+        if dominant_prov is None:
+            dominant_prov = prov
+        data = read_samples_file(path)
+        for algo, algo_panels in (data or {}).items():
+            product, variant = split_algo(algo)
+            for key, (sizes, mflops) in algo_panels.items():
+                panels.setdefault(key, []).append(
+                    (product, variant, sizes, mflops))
 
-        data = read_per_library_csv(os.path.join(dirpath, fname))
-        if not data:
-            continue
-        sizes = [d[0] for d in data]
-        mflops = [d[1] for d in data]
-
-        key = (precision, transform)
-        panels.setdefault(key, []).append((product, variant, sizes, mflops))
-
-    return panels
+    return dominant_prov, panels
 
 
 def merge_dirs(dirpaths):
     """Merge scan results from multiple colon-chained directories.
 
-    For each (precision, transform, product, variant) combination, concatenate
-    all (size, mflops) pairs from every directory and sort by size.
-    Returns the same structure as scan_directory.
+    For each (prec, xform, product, variant), takes the per-size median over
+    every contributing file's medians.  Returns (provenance, panels) with
+    provenance taken from the first directory that yields one.
     """
-    merged = {}  # (prec, xform) -> {(product, variant) -> list of (size, mflops)}
+    merged = {}  # (prec, xform) -> {(product, variant) -> size -> [mflops]}
+    prov = None
     for dirpath in dirpaths:
-        for key, series in scan_directory(dirpath).items():
+        dprov, dpanels = scan_directory(dirpath)
+        if prov is None:
+            prov = dprov
+        for key, series in dpanels.items():
             for product, variant, sizes, mflops in series:
-                merged.setdefault(key, {}).setdefault(
-                    (product, variant), []).extend(zip(sizes, mflops))
+                by_size = merged.setdefault(key, {}).setdefault(
+                    (product, variant), {})
+                for sz, m in zip(sizes, mflops):
+                    by_size.setdefault(sz, []).append(m)
 
     result = {}
     for key, pv_dict in merged.items():
         result[key] = []
-        for (product, variant), pairs in pv_dict.items():
-            pairs_sorted = sorted(set(pairs), key=lambda x: x[0])
+        for (product, variant), by_size in pv_dict.items():
+            sizes = sorted(by_size)
             result[key].append((
                 product, variant,
-                [p[0] for p in pairs_sorted],
-                [p[1] for p in pairs_sorted],
+                sizes,
+                [median(by_size[sz]) for sz in sizes],
             ))
-    return result
+    return prov, result
 
 
-def main():
-    if len(sys.argv) < 2:
-        print('Usage: make_charts.py <dir1[:dir2:...]> [dir2[:...] ...]',
-              file=sys.stderr)
-        sys.exit(1)
-
-    # Each argument may be colon-separated paths forming one variant group
-    groups = [arg.split(':') for arg in sys.argv[1:]]
-    groups = [[os.path.abspath(d) for d in g] for g in groups]
-    multi = len(groups) > 1
-    output_dir = groups[0][0]
-
-    # Collect data from all variant groups
-    # all_panels: (prec, xform) -> [(product, variant, label, sizes, mflops, var_index)]
-    all_panels = {}
-    info_list = []
-
-    for var_index, dirpaths in enumerate(groups):
-        info = load_info(dirpaths[0])
-        info_list.append(info)
-        dir_suffix = '+'.join(os.path.basename(d) for d in dirpaths) if multi else None
-
-        panels = merge_dirs(dirpaths)
-        for key, series in panels.items():
-            for product, variant, sizes, mflops in series:
-                label = make_label(product, variant, dir_suffix)
-                all_panels.setdefault(key, []).append(
-                    (product, variant, label, sizes, mflops, var_index))
-
-    if not all_panels:
-        print('No CSV data found in the given directories!', file=sys.stderr)
-        sys.exit(1)
-
-    # Canonical panel order
+def render_panels(all_panels, prov_list, output_dir, suptitle_base):
+    """Write per-panel webp charts plus a combined grid under output_dir."""
     panel_order = [
         ('flt', 'real'),
         ('flt', 'cplx'),
         ('dbl', 'real'),
         ('dbl', 'cplx'),
     ]
-
-    # Keep only panels that have data, in canonical order
     active_panels = [(k, all_panels[k]) for k in panel_order if k in all_panels]
-
-    # --- Individual charts ---
     panel_names = {
         ('flt', 'real'):  'float_real',
         ('flt', 'cplx'):  'float_cplx',
         ('dbl', 'real'):  'double_real',
         ('dbl', 'cplx'):  'double_cplx',
     }
-    num_variants = len(groups)
+    num_variants = len(prov_list)
+    saved = []
     for (prec, xform), series_list in active_panels:
-        title = panel_title(prec, xform, info_list)
+        title = panel_title(prec, xform, next(
+            (p for p in prov_list if p), None))
         fig, ax = plt.subplots(figsize=(11, 6.5))
         make_chart(ax, series_list, title, num_variants)
         fig.tight_layout()
@@ -413,41 +415,297 @@ def main():
         outpath = os.path.join(output_dir, f'bench_{name}.webp')
         fig.savefig(outpath, dpi=150, format='webp')
         plt.close(fig)
+        saved.append(outpath)
         print(f'Saved {outpath}')
-
-    # --- Combined 2x2 chart ---
     n = len(active_panels)
     if n >= 2:
-        rows = 2 if n > 2 else 1
-        cols = 2
-        fig, axes = plt.subplots(rows, cols, figsize=(20, 12 if rows == 2 else 7))
-        if rows == 1:
-            axes = [axes]
-        flat = [ax for row in axes
-                for ax in (row if hasattr(row, '__iter__') else [row])]
-
-        for i, ((prec, xform), series_list) in enumerate(active_panels):
-            if i < len(flat):
-                title = panel_title(prec, xform, info_list)
-                make_chart(flat[i], series_list, title, num_variants)
-
-        for j in range(n, len(flat)):
-            flat[j].set_visible(False)
-
-        # Suptitle from info
-        suptitle = 'PFFFT Benchmark'
-        for info in info_list:
-            cpu = info.get('cpu')
-            if cpu:
-                suptitle = f'PFFFT Benchmark \u2014 {cpu}'
-                break
-
-        fig.suptitle(suptitle, fontsize=16, fontweight='bold', y=0.98)
-        fig.tight_layout(rect=[0, 0, 1, 0.96])
+        prov = next((p for p in prov_list if p), None)
+        suptitle = suptitle_base
+        if prov:
+            tag = ' @ '.join(x for x in (prov.get('label'), prov.get('host'))
+                             if x)
+            if tag:
+                suptitle = f'{suptitle_base} \u2014 {tag}'
+        fig = draw_combined(active_panels, prov, suptitle, num_variants)
         outpath = os.path.join(output_dir, 'bench_all.webp')
         fig.savefig(outpath, dpi=150, format='webp')
         plt.close(fig)
+        saved.append(outpath)
         print(f'Saved {outpath}')
+    return saved
+
+
+def draw_combined(active_panels, prov, suptitle, num_variants=1):
+    """Draw active panels on a single figure (2x2 grid, smaller when n < 4)."""
+    n = len(active_panels)
+    rows = 2 if n > 2 else 1
+    cols = 2 if n > 1 else 1
+    figsize = (11, 6.5) if n == 1 else (20, 12 if rows == 2 else 7)
+    fig, axes = plt.subplots(rows, cols, figsize=figsize)
+    if not hasattr(axes, '__iter__'):
+        axes = [axes]
+    flat = [ax for row in axes
+            for ax in (row if hasattr(row, '__iter__') else [row])]
+
+    for i, ((prec, xform), series_list) in enumerate(active_panels):
+        if i < len(flat):
+            make_chart(flat[i], series_list,
+                       panel_title(prec, xform, prov), num_variants)
+
+    for j in range(n, len(flat)):
+        flat[j].set_visible(False)
+
+    fig.suptitle(suptitle, fontsize=16, fontweight='bold', y=0.98)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    return fig
+
+
+def run_directory_mode(dir_args):
+    """Original multi-directory comparison mode."""
+    # Each argument may be colon-separated paths forming one variant group
+    groups = [arg.split(':') for arg in dir_args]
+    groups = [[os.path.abspath(d) for d in g] for g in groups]
+    multi = len(groups) > 1
+
+    # all_panels: (prec, xform) -> [(product, variant, label, sizes, mflops, var_index)]
+    all_panels = {}
+    prov_list = []
+
+    for var_index, dirpaths in enumerate(groups):
+        prov, panels = merge_dirs(dirpaths)
+        prov_list.append(prov)
+        dir_suffix = '+'.join(os.path.basename(d) for d in dirpaths) if multi else None
+
+        for key, series in panels.items():
+            for product, variant, sizes, mflops in series:
+                label = make_label(product, variant, dir_suffix)
+                all_panels.setdefault(key, []).append(
+                    (product, variant, label, sizes, mflops, var_index))
+
+    if not all_panels:
+        print('No benchmark samples found in the given directories!',
+              file=sys.stderr)
+        sys.exit(1)
+
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    render_panels(all_panels, prov_list, RESULTS_DIR, 'PFFFT Benchmark')
+
+
+# ---------------------------------------------------------------------------
+# Evolution mode
+# ---------------------------------------------------------------------------
+
+def resolve_sample_file(p):
+    """Resolve a chain sample_files entry to an existing Path, or None."""
+    path = Path(p)
+    if path.is_absolute():
+        return path if path.exists() else None
+    for base in (REPO_ROOT, REPO_ROOT / '.perf'):
+        cand = base / path
+        if cand.exists():
+            return cand
+    return None
+
+
+def filter_head_files(files, tree, label):
+    """Keep only sample files belonging to the head build.
+
+    `accept` stores base+variant files together in one step's sample_files,
+    so the head curve must not aggregate baseline builds.  A file matches
+    when its provenance git_tree equals `tree`; when either side lacks a
+    git_tree, fall back to a provenance label == `label` match.  Files with
+    an unreadable header are dropped (aggregate_samples skips them anyway).
+    """
+    kept = []
+    for p in files:
+        prov = read_provenance(p)
+        if prov is None:
+            continue
+        if tree and prov.get('git_tree'):
+            if prov['git_tree'] == tree:
+                kept.append(p)
+        elif label and prov.get('label') == label:
+            kept.append(p)
+    return kept
+
+
+def aggregate_samples(files, target=None):
+    """Median derived MFLOPS per (prec, xform, algo, size) across files/reps.
+
+    Returns panels: (prec, xform) -> [(product, variant, sizes, mflops)].
+    Files whose provenance target differs from `target` are skipped.
+    """
+    acc = {}  # (prec, xform, algo, size) -> [mflops]
+    for p in files:
+        try:
+            prov, rows = read_samples(p)
+        except (OSError, ValueError):
+            continue
+        if target and prov.get('target') != target:
+            continue
+        for s in rows:
+            m = s.mflops
+            if m > 0:
+                acc.setdefault((s.prec, s.xform, s.algo, s.size), []).append(m)
+
+    algos = {}  # (prec, xform) -> algo -> size -> mflops
+    for (prec, xform, algo, size), ms in acc.items():
+        algos.setdefault((prec, xform), {}).setdefault(algo, {})[size] = median(ms)
+
+    panels = {}
+    for (prec, xform), by_algo in algos.items():
+        lst = []
+        for algo, by_size in by_algo.items():
+            product, variant = split_algo(algo)
+            sizes = sorted(by_size)
+            lst.append((product, variant, sizes,
+                        [by_size[sz] for sz in sizes]))
+        panels[(prec, xform)] = lst
+    return panels
+
+
+def load_evolution_chain(chain_path):
+    try:
+        with open(chain_path) as f:
+            chain = json.load(f)
+    except (OSError, ValueError) as e:
+        raise SystemExit(f'--evolution: cannot read {chain_path}: {e}')
+    if not isinstance(chain, dict):
+        raise SystemExit(f'--evolution: {chain_path} is not a chain manifest')
+    return chain
+
+
+def run_evolution_mode(chain_path, target):
+    """Render (a) chain-head curves and (b) accepted-steps waterfall."""
+    chain = load_evolution_chain(chain_path)
+    steps = [s for s in chain.get('steps') or [] if s.get('accepted')]
+    base = chain.get('base') or {}
+
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    saved = []
+
+    # --- (a) chain head series -------------------------------------------
+    if steps:
+        head_name = steps[-1].get('label') or 'head'
+        head_tree = (steps[-1].get('tree') or '')[:8]
+        head_full_tree = steps[-1].get('tree') or ''
+        raw_files = steps[-1].get('sample_files') or []
+    else:
+        head_name = base.get('label') or 'base'
+        head_tree = (base.get('tree') or '')[:8]
+        head_full_tree = base.get('tree') or ''
+        raw_files = []
+
+    head_files = []
+    for p in raw_files:
+        resolved = resolve_sample_file(p)
+        if resolved is None:
+            print(f'evolution: missing sample file {p}', file=sys.stderr)
+        else:
+            head_files.append(resolved)
+    # accept stores base+variant files together in one step; keep only the
+    # files that actually belong to the head build.
+    kept = filter_head_files(head_files, head_full_tree, head_name)
+    if len(kept) < len(head_files):
+        print(f'evolution: dropped {len(head_files) - len(kept)} sample '
+              f'file(s) not belonging to head {head_name!r}', file=sys.stderr)
+    head_files = kept
+    panels = aggregate_samples(head_files, target=target)
+    if not panels:
+        raise SystemExit(f'evolution: no readable sample data for target '
+                         f'{target!r} in chain head {head_name!r}')
+
+    suffix = f' @ {head_tree}' if head_tree else ''
+    prov = {'label': f'{head_name}{suffix}'}
+    head_panels = []
+    for key, series in sorted(panels.items()):
+        entries = [(product, variant, make_label(product, variant),
+                    sizes, mflops, 0)
+                   for product, variant, sizes, mflops in series]
+        head_panels.append((key, entries))
+    fig = draw_combined(head_panels, prov,
+                        f'Evolution head: {head_name}{suffix}')
+    outpath = os.path.join(RESULTS_DIR, f'evolution-{target}-curves.png')
+    fig.savefig(outpath, dpi=150, format='png')
+    plt.close(fig)
+    saved.append(outpath)
+    print(f'Saved {outpath}')
+
+    # --- (b) waterfall of accepted steps ---------------------------------
+    groups = {}  # (algo, prec, xform) -> [(step_label, shift_pct)]
+    for step in steps:
+        for v in step.get('verdicts') or []:
+            shift = v.get('shift_pct')
+            if shift is None:
+                continue
+            if (v.get('target') or 'local') != target:
+                continue
+            key = (v.get('algo'), v.get('prec'), v.get('xform'))
+            groups.setdefault(key, []).append(
+                (step.get('label'), float(shift)))
+
+    outpath = os.path.join(RESULTS_DIR, f'evolution-{target}-waterfall.png')
+    fig, ax = plt.subplots(figsize=(max(9, 1.15 * len(groups)), 6))
+    if groups:
+        keys = sorted(groups)
+        max_steps = max(len(v) for v in groups.values())
+        width = 0.8 / max_steps
+        for gi, key in enumerate(keys):
+            vals = groups[key]
+            for si, (_, pct) in enumerate(vals):
+                offset = (si - (len(vals) - 1) / 2) * width
+                color = '#16a34a' if pct < 0 else '#dc2626'
+                ax.bar(gi + offset, pct, width=width * 0.92, color=color,
+                       edgecolor='none')
+        ax.set_xticks(range(len(keys)))
+        ax.set_xticklabels([f'{a}\n{p}/{x}' for a, p, x in keys], fontsize=8)
+        step_labels = [s.get('label') or '?' for s in steps]
+        ax.set_title(
+            f'Accepted-step HL shift \u2014 target {target} \u2014 steps: '
+            + ' \u2192 '.join(step_labels),
+            fontsize=12, fontweight='bold')
+    else:
+        ax.text(0.5, 0.5, f'no accepted steps with verdicts for target '
+                          f'{target!r}', ha='center', va='center',
+                transform=ax.transAxes)
+    ax.axhline(0, color='black', linewidth=0.8)
+    ax.set_ylabel('HL shift % (negative = faster)', fontsize=11)
+    ax.legend(handles=[
+        Patch(facecolor='#16a34a', label='faster (< 0)'),
+        Patch(facecolor='#dc2626', label='slower (> 0)'),
+    ], fontsize=8, loc='best', framealpha=0.9)
+    ax.grid(True, axis='y', alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(outpath, dpi=150, format='png')
+    plt.close(fig)
+    saved.append(outpath)
+    print(f'Saved {outpath}')
+    return saved
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description='Render PFFFT benchmark charts from long-format samples.')
+    ap.add_argument('dirs', nargs='*',
+                    help='result directories (colon chains allowed)')
+    ap.add_argument('--evolution', metavar='CHAIN',
+                    help='render evolution charts for a bench_chain.json')
+    ap.add_argument('--target', default='local',
+                    help='target to filter evolution data by (default local)')
+    args = ap.parse_args(argv)
+
+    if args.evolution:
+        chain_path = args.evolution
+        if not os.path.isabs(chain_path):
+            cand = Path.cwd() / chain_path
+            chain_path = str(cand) if cand.exists() else os.path.abspath(
+                os.path.join(str(REPO_ROOT), chain_path))
+        run_evolution_mode(chain_path, args.target)
+        return
+
+    if not args.dirs:
+        ap.error('give result directories or --evolution CHAIN')
+    run_directory_mode(args.dirs)
 
 
 if __name__ == '__main__':
