@@ -142,7 +142,7 @@ def _series(groups: dict[tuple, list[float]],
 
 def cmd_ab(args):
     rng = random.Random(time.time_ns())
-    targets = [make_target(t) for t in args.target]
+    targets = [make_target(t) for t in (args.target or ["local"])]
     base_wt, var_wt = ensure_worktrees()
     base_ref = args.base
     if base_ref is None:
@@ -335,8 +335,15 @@ def cmd_accept(args):
         chain = {"base": {"label": last.get("base_label"),
                           "tree": last.get("base_tree")},
                  "steps": []}
-    sample_files = sorted(set(last.get("files", {}).get("base", []))
-                          | set(last.get("files", {}).get("var", [])))
+    def _chain_path(p):
+        """Store PERF_DIR-relative when possible (make_charts resolves both)."""
+        try:
+            return str(Path(p).relative_to(PERF_DIR))
+        except ValueError:
+            return str(p)
+    sample_files = sorted({_chain_path(p)
+                           for p in last.get("files", {}).get("base", [])
+                           + last.get("files", {}).get("var", [])})
     chain.setdefault("steps", []).append({
         "label": label, "tree": tree, "verdicts": _step_verdicts(last),
         "accepted": True, "sample_files": sample_files})
@@ -373,15 +380,15 @@ def cmd_status(_args=None):
 def cmd_evolution(_args=None):
     """Render evolution charts via make_charts.py --evolution.
 
-    make_charts.py learns that flag only in Task 11; until then the
-    invocation fails and we fall back to printing a chain summary.
+    On failure (usually an empty chain or no sample data yet), fall back
+    to printing a chain summary.
     """
     script = Path(__file__).resolve().parent / "make_charts.py"
     r = subprocess.run([sys.executable, str(script), "--evolution",
                         CHAIN_FILE.name], cwd=REPO_ROOT)
     if r.returncode != 0:
-        print("\nevolution: make_charts.py does not support --evolution yet "
-              "(planned Task 11); printing chain summary instead\n")
+        print("\nevolution: chart generation failed (usually an empty chain "
+              "or no sample data yet); printing chain summary instead\n")
         cmd_status()
 
 
@@ -400,7 +407,7 @@ def main():
     ab.add_argument("--sizes", choices=["short", "pow2", "nonpow2", "all"],
                     default="short")
     ab.add_argument("--max-len", type=int, default=1 << 30)
-    ab.add_argument("--target", action="append", default=["local"])
+    ab.add_argument("--target", action="append", default=None)
     ab.set_defaults(fn=cmd_ab)
     acc = sub.add_parser(
         "accept", help="fold the last `ab` result into bench_chain.json")
@@ -415,7 +422,7 @@ def main():
     evo = sub.add_parser(
         "evolution",
         help="render evolution charts via make_charts.py --evolution; falls "
-             "back to a chain summary until make_charts.py learns the flag")
+             "back to a chain summary when chart generation fails")
     evo.set_defaults(fn=cmd_evolution)
     args = ap.parse_args()
     SAMPLES_DIR.mkdir(parents=True, exist_ok=True)

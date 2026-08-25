@@ -1282,7 +1282,8 @@ static int samples_read_provenance(FILE *f,
     if (!eq) continue;           /* not key=value -> ignore */
     *eq = 0;
     keys[n] = strdup(p);
-    vals[n] = strndup(eq + 1, strlen(eq + 1) - 1);  /* strip \n */
+    size_t vl = strlen(eq + 1);
+    vals[n] = strndup(eq + 1, vl ? vl - 1 : 0);  /* strip \n only when present */
     ++n;
   }
   return n;
