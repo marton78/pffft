@@ -76,12 +76,37 @@ def sample_file(label: str, target_name: str, tree: str) -> Path:
     return SAMPLES_DIR / f"{label}-{target_name.replace('/', '_')}-{tree[:8]}.csv"
 
 
-def chain_head_label() -> str | None:
-    """Label of the current chain head, if a benchmark chain file exists."""
+def load_chain() -> dict | None:
+    """Load bench_chain.json, or None when absent/corrupt."""
     try:
-        return json.loads(CHAIN_FILE.read_text()).get("head")
-    except (OSError, ValueError, AttributeError):
+        return json.loads(CHAIN_FILE.read_text())
+    except (OSError, ValueError):
         return None
+
+
+def save_chain(chain: dict) -> None:
+    CHAIN_FILE.write_text(json.dumps(chain, indent=2) + "\n")
+
+
+def _chain_head(chain: dict | None) -> dict | None:
+    if not chain:
+        return None
+    steps = chain.get("steps") or []
+    if steps:
+        return steps[-1]
+    return chain.get("base") or None
+
+
+def chain_head_tree() -> str | None:
+    """Tree hash of the current chain head (last step, else base), if any."""
+    head = _chain_head(load_chain())
+    return head.get("tree") if head else None
+
+
+def chain_head_label() -> str | None:
+    """Label of the current chain head (last step, else base), if any."""
+    head = _chain_head(load_chain())
+    return head.get("label") if head else None
 
 
 def counts_at_size(path: Path, prec: str, size: int) -> dict[tuple[str, str], int]:
@@ -119,7 +144,19 @@ def cmd_ab(args):
     rng = random.Random(time.time_ns())
     targets = [make_target(t) for t in args.target]
     base_wt, var_wt = ensure_worktrees()
-    base_ref = args.base or "HEAD"
+    base_ref = args.base
+    if base_ref is None:
+        head_tree = chain_head_tree()
+        if head_tree:
+            # No explicit --base: continue the accepted-optimization chain.
+            base_ref = head_tree
+            own = subprocess.run(["git", "rev-parse", "HEAD^{tree}"],
+                                 cwd=REPO_ROOT, capture_output=True, text=True)
+            own_tree = own.stdout.strip() if own.returncode == 0 else None
+            if own_tree != head_tree:
+                print(f"base: {chain_head_label()} @ {head_tree[:8]} "
+                      f"(chain head)", flush=True)
+    base_ref = base_ref or "HEAD"
     var_ref = args.variant or "HEAD"
     label = args.label
     base_label = args.base_label or chain_head_label() or f"{label}-base"
@@ -250,6 +287,104 @@ def cmd_ab(args):
     print(f"wrote {out}")
 
 
+def _step_verdicts(last: dict) -> list[dict]:
+    """Per-group verdict entries for a chain step, from last_ab.json."""
+    p_min: dict[str, float] = {}
+    for c in last.get("comparisons", []):
+        k = f"{c['target']}/{c['prec']}/{c['algo']}/{c['xform']}"
+        p_min[k] = min(p_min.get(k, 1.0), c["p_value"])
+    out = []
+    for key, agg in sorted(last.get("groups", {}).items()):
+        target, prec, algo, xform = key.split("/")
+        out.append({"target": target, "prec": prec, "algo": algo,
+                    "xform": xform,
+                    "sizes_total": agg["n_groups"],
+                    "sizes_sig_faster": agg["n_sig_faster"],
+                    "sizes_sig_slower": agg["n_sig_slower"],
+                    "shift_pct": agg.get("median_shift_pct"),
+                    "p_min": p_min.get(key)})
+    return out
+
+
+def cmd_accept(args):
+    """Fold the last `ab` result into bench_chain.json (human-gated)."""
+    last_file = PERF_DIR / "last_ab.json"
+    try:
+        last = json.loads(last_file.read_text())
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"accept: cannot read {last_file} ({e}); "
+                         "run `perf.py ab` first")
+    label, tree = last["label"], last["var_tree"]
+    suggest = last.get("suggest")
+    groups = last.get("groups", {})
+    print(f"label: {label} @ {tree[:8]}   suggest: {suggest}")
+    print(f"{'group':<40} {'shift%':>9} {'faster':>7} {'slower':>7}")
+    for key, agg in sorted(groups.items()):
+        print(f"{key:<40} {agg.get('median_shift_pct', 0.0):>+8.2f}% "
+              f"{agg['n_sig_faster']:>7} {agg['n_sig_slower']:>7}")
+    if suggest == "slower" and not args.force:
+        raise SystemExit("accept: refusing: A/B verdict is 'slower' "
+                         "(pass --force to override)")
+    if not args.yes:
+        reply = input(f"accept '{label}' @ {tree[:8]} into "
+                      f"{CHAIN_FILE.name}? [y/N] ")
+        if reply.strip().lower() not in ("y", "yes"):
+            raise SystemExit("aborted")
+    chain = load_chain()
+    if not chain or not isinstance(chain.get("base"), dict):
+        chain = {"base": {"label": last.get("base_label"),
+                          "tree": last.get("base_tree")},
+                 "steps": []}
+    sample_files = sorted(set(last.get("files", {}).get("base", []))
+                          | set(last.get("files", {}).get("var", [])))
+    chain.setdefault("steps", []).append({
+        "label": label, "tree": tree, "verdicts": _step_verdicts(last),
+        "accepted": True, "sample_files": sample_files})
+    save_chain(chain)
+    print(f"accepted '{label}' @ {tree[:8]} -> {CHAIN_FILE}")
+    print(f"chain head is now {label} @ {tree[:8]}")
+
+
+def cmd_status(_args=None):
+    """Pretty-print the chain base, accepted steps, and current head."""
+    chain = load_chain()
+    if not chain:
+        print(f"no chain manifest at {CHAIN_FILE}")
+        return
+    base = chain.get("base") or {}
+    print(f"base: {base.get('label')} @ {(base.get('tree') or '')[:8]}")
+    steps = chain.get("steps") or []
+    if not steps:
+        print("steps: (none)")
+    for s in steps:
+        vs = s.get("verdicts") or []
+        shifts = [v["shift_pct"] for v in vs if v.get("shift_pct") is not None]
+        med = f"{np.median(shifts):+.2f}%" if shifts else "n/a"
+        nf = sum(v.get("sizes_sig_faster", 0) for v in vs)
+        ns = sum(v.get("sizes_sig_slower", 0) for v in vs)
+        print(f"  step {s.get('label')} @ {(s.get('tree') or '')[:8]}  "
+              f"median shift {med}, {nf} sizes sig-faster / {ns} sig-slower "
+              f"across {len(vs)} verdict(s), "
+              f"{len(s.get('sample_files') or [])} sample file(s)")
+    head_t, head_l = chain_head_tree(), chain_head_label()
+    print(f"head: {head_l} @ {head_t[:8] if head_t else '?'}")
+
+
+def cmd_evolution(_args=None):
+    """Render evolution charts via make_charts.py --evolution.
+
+    make_charts.py learns that flag only in Task 11; until then the
+    invocation fails and we fall back to printing a chain summary.
+    """
+    script = Path(__file__).resolve().parent / "make_charts.py"
+    r = subprocess.run([sys.executable, str(script), "--evolution",
+                        CHAIN_FILE.name], cwd=REPO_ROOT)
+    if r.returncode != 0:
+        print("\nevolution: make_charts.py does not support --evolution yet "
+              "(planned Task 11); printing chain summary instead\n")
+        cmd_status()
+
+
 def main():
     ap = argparse.ArgumentParser(prog="perf.py")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -267,7 +402,21 @@ def main():
     ab.add_argument("--max-len", type=int, default=1 << 30)
     ab.add_argument("--target", action="append", default=["local"])
     ab.set_defaults(fn=cmd_ab)
-    # accept/status/evolution added in Task 7
+    acc = sub.add_parser(
+        "accept", help="fold the last `ab` result into bench_chain.json")
+    acc.add_argument("--yes", action="store_true",
+                     help="skip interactive confirmation")
+    acc.add_argument("--force", action="store_true",
+                     help="accept even when the verdict suggests 'slower'")
+    acc.set_defaults(fn=cmd_accept)
+    st = sub.add_parser("status",
+                        help="print chain base, accepted steps, and head")
+    st.set_defaults(fn=cmd_status)
+    evo = sub.add_parser(
+        "evolution",
+        help="render evolution charts via make_charts.py --evolution; falls "
+             "back to a chain summary until make_charts.py learns the flag")
+    evo.set_defaults(fn=cmd_evolution)
     args = ap.parse_args()
     SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
     args.fn(args)

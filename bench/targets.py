@@ -43,8 +43,18 @@ def ensure_worktrees() -> tuple[Path, Path]:
 
 
 def sync_worktree(wt: Path, ref: str) -> str:
-    """Point a worktree at ref and return its content-identity tree hash."""
+    """Point a worktree at ref (commit-ish or raw tree) and return its
+    content-identity tree hash."""
     sh("git", "-C", str(REPO_ROOT), "fetch", "--all", "--quiet")
+    kind = subprocess.run(["git", "-C", str(REPO_ROOT), "cat-file", "-t", ref],
+                          capture_output=True, text=True)
+    if kind.returncode == 0 and kind.stdout.strip() == "tree":
+        # `git reset --hard` needs a commit; check out a bare tree via
+        # read-tree instead (chain heads are stored as tree hashes).
+        sh("git", "-C", str(wt), "reset", "--hard", "HEAD")
+        sh("git", "-C", str(wt), "clean", "-ffd", "-e", ".perf")
+        sh("git", "-C", str(wt), "read-tree", "-u", "--reset", ref)
+        return ref
     sh("git", "-C", str(wt), "reset", "--hard", ref)
     # -ffd: remove nested git dirs too; -e .perf: keep local benchmark state
     sh("git", "-C", str(wt), "clean", "-ffd", "-e", ".perf")
