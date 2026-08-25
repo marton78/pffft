@@ -30,13 +30,17 @@ BASE_CMAKE_FLAGS = [
     "-DPFFFT_BUILD_BENCHMARKS=ON", "-Wno-dev",
 ]
 
+# Sources rsynced to a remote target: everything cmake needs to build the
+# benchmark binary (competitor libs are OFF, so no submodules are required).
+REMOTE_SOURCES = ("src", "include", "CMakeLists.txt", "cmake",
+                  "benchmarks/bench_pffft.c")
+REMOTE_EXCLUDES = (".git", ".perf", "build")
+REMOTE_ROOT = "fftbench"           # under $HOME on the remote machine
 
 def sh(*cmd: str) -> str:
     """Run a command, return its captured stdout."""
     return subprocess.run(cmd, capture_output=True, check=True,
                           text=True).stdout
-
-
 
 
 def clean_value(value: str) -> str:
@@ -133,23 +137,11 @@ class Target(ABC):
     def run(self, cmd: list[str],
             cwd: Path | None = None) -> Iterator[str]:
         """Run cmd on this target, yielding stdout lines."""
-        proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE,
-                                stderr=subprocess.DEVNULL, text=True)
-        try:
-            for line in proc.stdout:
-                yield line.rstrip("\n")
-            ret = proc.wait()
-        finally:
-            if proc.poll() is None:
-                proc.kill()
-                proc.wait()
-        if ret != 0:
-            raise RuntimeError(
-                f"command failed ({ret}): {' '.join(cmd)}")
+        yield from stream_stdout(cmd, cwd=cwd)
 
     def meta_list(self) -> list[str]:
-        """Metadata as k=v strings."""
-        return [f"{k}={v}" for k, v in self.meta().items()]
+        """Metadata as k=v strings (values sanitized)."""
+        return [f"{k}={clean_value(v)}" for k, v in self.meta().items()]
 
 
 class LocalTarget(Target):
@@ -162,6 +154,117 @@ class LocalTarget(Target):
         exe = {"flt": "bench_pffft_float",
                "dbl": "bench_pffft_double"}[prec]
         return wt_build / exe
+
+
+class SshTarget(Target):
+    """A remote machine reached over ssh/rsync (e.g. a Raspberry Pi).
+
+    Sources are rsynced to ``~/fftbench/<worktree-name>/`` and built
+    natively there with cmake (incremental across runs); benchmark
+    invocations execute remotely with ``--samples -`` so the CSV streams
+    back over stdout and is written locally into SAMPLES_DIR.
+    """
+
+    def __init__(self, host: str, user: str | None = None):
+        self.host = host
+        self.user = user or None
+        self._remote_name: str | None = None
+        self._prepared: set[str] = set()
+
+    @property
+    def name(self) -> str:
+        return self.host
+
+    @property
+    def dest(self) -> str:
+        """ssh/rsync destination: [user@]host."""
+        return f"{self.user}@{self.host}" if self.user else self.host
+
+    def ssh_argv(self, *remote_cmd: str) -> list[str]:
+        return ["ssh", self.dest, *remote_cmd]
+
+    def sync_argv(self, wt_name: str) -> list[str]:
+        """rsync command pushing one worktree's sources to the device."""
+        return ["rsync", "-az", "--delete",
+                *(x for e in REMOTE_EXCLUDES for x in ("--exclude", e)),
+                "-R", *REMOTE_SOURCES,
+                f"{self.dest}:{REMOTE_ROOT}/{wt_name}/"]
+
+    def build_script(self, wt_name: str) -> str:
+        """Remote shell snippet configuring + building one arm's tree."""
+        rdir = f"$HOME/{REMOTE_ROOT}/{wt_name}"
+        return (f"cmake -S {rdir} -B {rdir}/build "
+                f"{' '.join(BASE_CMAKE_FLAGS)} && "
+                f"cmake --build {rdir}/build --target bench_pffft_float "
+                f"bench_pffft_double -j$(nproc 2>/dev/null || echo 4)")
+
+    def remote_host(self) -> str:
+        """Actual hostname of the device (cached); falls back to spec."""
+        if self._remote_name is None:
+            try:
+                self._remote_name = clean_value(
+                    sh(*self.ssh_argv("uname", "-n")).strip()) or self.host
+            except Exception:
+                self._remote_name = self.host
+        return self._remote_name
+
+    def _prepare(self, wt_build: Path) -> None:
+        """Sync sources and build remotely (once per worktree per process)."""
+        wt_name = wt_build.parent.parent.name      # wt-base / wt-var
+        if wt_name in self._prepared:
+            return
+        subprocess.run(self.ssh_argv(f"mkdir -p {REMOTE_ROOT}/{wt_name}"),
+                       check=True)
+        subprocess.run(self.sync_argv(wt_name),
+                       cwd=wt_build.parent.parent, check=True)
+        subprocess.run(self.ssh_argv(self.build_script(wt_name)), check=True)
+        self._prepared.add(wt_name)
+
+    def meta(self) -> dict[str, str]:
+        return {"target": f"ssh://{self.dest}", "host": self.remote_host()}
+
+    def binary_path(self, wt_build: Path, prec: str) -> Path:
+        self._prepare(wt_build)
+        exe = {"flt": "bench_pffft_float",
+               "dbl": "bench_pffft_double"}[prec]
+        # Path RELATIVE to the remote home dir: ssh lands the shell there,
+        # matching how the rsync destination is resolved. Kept free of
+        # $-expansions so every token can be shell-quoted in run().
+        return (Path(REMOTE_ROOT) / wt_build.parent.parent.name
+                / "build" / "benchmarks" / exe)
+
+    def run(self, cmd: list[str],
+            cwd: Path | None = None) -> Iterator[str]:
+        """Run cmd remotely; capture --samples CSV from stdout to disk.
+
+        Every token is shell-quoted before ssh hands the joined string to
+        the remote shell, so meta values containing spaces survive intact.
+        """
+        cmd = list(cmd)
+        samples_path: Path | None = None
+        if "--samples" in cmd:
+            i = cmd.index("--samples")
+            if i + 1 >= len(cmd):
+                raise ValueError("dangling --samples argument")
+            samples_path = Path(cmd[i + 1])
+            cmd[i + 1] = "-"       # binary streams pure CSV to stdout
+        lines: list[str] = []
+        for line in stream_stdout(self.ssh_argv(*(shlex.quote(t)
+                                                  for t in cmd))):
+            lines.append(line)
+            yield line
+        if samples_path is not None:
+            samples_path.parent.mkdir(parents=True, exist_ok=True)
+            if samples_path.exists():
+                # perf.py reuses one file per (label, target, tree) across
+                # invocations: append data rows only, never a second header.
+                rows = [ln for ln in lines
+                        if ln and not ln.startswith(("#", "algo,"))]
+                with open(samples_path, "a") as fh:
+                    fh.write("\n".join(rows) + ("\n" if rows else ""))
+            else:
+                samples_path.write_text(
+                    "\n".join(lines) + ("\n" if lines else ""))
 
 
 class AdbTarget(Target):
@@ -283,7 +386,13 @@ def make_target(spec: str) -> Target:
     if spec == "local":
         return LocalTarget()
     if spec.startswith("ssh://"):
-        raise NotImplementedError("ssh targets arrive in Task 8")
+        rest = spec[len("ssh://"):].rstrip("/")
+        user, sep, host = rest.rpartition("@")
+        if not sep:
+            user, host = None, rest
+        if not host:
+            raise ValueError(f"missing host in target spec: {spec!r}")
+        return SshTarget(host, user)
     if spec == "adb":
         return AdbTarget()
     if spec.startswith("adb:"):
