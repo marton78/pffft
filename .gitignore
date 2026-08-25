@@ -3,3 +3,4 @@ build_benches
 build_*
 !build_fftw.py
 .vscode
+.perf/
