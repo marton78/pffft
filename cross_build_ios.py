@@ -11,7 +11,7 @@ Options:
     --fftw          Cross-compile FFTW 3.3.10 and include it in the benchmark
                     (requires autoconf/make)
     --no-run        Build only; do not deploy or run on device
-    --output-dir    Local directory to store pulled benchmark CSVs
+    --output-dir    Local directory to store benchmark samples files
                     (default: bench_results_ios_<id>)
     --sdk <path>    Override iOS SDK root directory
     --deployment-target <ver>
@@ -574,30 +574,6 @@ def deploy_and_run(app_bundle, device_id, app_args=None):
     return stdout
 
 
-def extract_csvs_from_output(stdout, output_dir):
-    """Extract CSV files from stdout marker blocks.
-
-    Looks for:
-        === start <filename>.csv ===
-        <csv data>
-        === end <filename>.csv ===
-
-    Returns list of written file paths.
-    """
-    written = []
-    pattern = re.compile(
-        r"^=== start (.+\.csv) ===$\n(.*?)^=== end \1 ===$",
-        re.MULTILINE | re.DOTALL,
-    )
-    for match in pattern.finditer(stdout):
-        filename = match.group(1)
-        csv_data = match.group(2)
-        out_path = Path(output_dir) / filename
-        out_path.write_text(csv_data)
-        written.append(out_path)
-        print(f"  Extracted {filename}")
-    return written
-
 
 # ── argument parsing ──────────────────────────────────────────────────────────
 
@@ -612,7 +588,7 @@ def parse_args():
     parser.add_argument("--no-run", action="store_true",
                         help="Build only; skip deployment and run on device")
     parser.add_argument("--output-dir", default=None,
-                        help="Local directory for pulled CSV results")
+                        help="Local directory for benchmark samples files")
     parser.add_argument("--sdk", default=None,
                         help="Override iOS SDK root directory")
     parser.add_argument("--deployment-target", default="15",
@@ -791,7 +767,7 @@ def main():
 
     banner(["Running benchmarks on device"])
 
-    all_csvs = []
+    all_samples = []
     for exe_name in ("bench_pffft_float", "bench_pffft_double"):
         # Xcode puts signed .app bundles under Release-iphoneos/
         app_bundle = pffft_build_dir / "benchmarks" / "Release-iphoneos" / f"{exe_name}.app"
@@ -802,22 +778,23 @@ def main():
             print(f"WARNING: {exe_name}.app not found (was it built?)", file=sys.stderr)
             continue
 
-        stdout = deploy_and_run(app_bundle, device["id"])
+        stdout = deploy_and_run(app_bundle, device["id"],
+                                app_args=["--samples", "-"])
         if stdout:
-            csvs = extract_csvs_from_output(stdout, str(output_dir))
-            all_csvs.extend(csvs)
+            lines = extract_samples_lines(stdout)
+            if lines:
+                samples_path = output_dir / f"{exe_name}-samples.csv"
+                samples_path.write_text("\n".join(lines) + "\n")
+                print(f"  Wrote {samples_path}")
+                all_samples.append(samples_path)
 
     banner(["Done"])
     print(f"Output directory: {output_dir}")
     print(f"Device info:      {output_dir / 'device_info.txt'}")
-    existing_csvs = list(output_dir.glob("*.csv"))
-    if all_csvs:
-        print(f"CSV files:        {len(all_csvs)} extracted")
-    elif existing_csvs:
-        print(f"CSV files:        {len(existing_csvs)} present (from previous run)")
+    if all_samples:
+        print(f"Sample files:     {len(all_samples)} written")
     else:
-        print("WARNING: No CSV files were extracted from benchmark output.")
-
+        print("WARNING: No sample data was captured from benchmark output.")
 
 if __name__ == "__main__":
     main()

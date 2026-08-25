@@ -550,38 +550,117 @@ The benchmark executables (`bench_pffft_float`, `bench_pffft_double`) support ru
 individual FFT libraries independently. This allows adding new benchmarks or re-running
 specific libraries without re-benchmarking everything.
 
-**Per-library output:** Each library produces its own CSV file following the naming pattern
-`<product>-<variant>-<flt|dbl>-<real|cplx>.csv`. For example: `pffft-simd-flt-real.csv`,
-`fftw-estim-dbl-cplx.csv`, `vdsp-default-flt-real.csv`.
+**Samples output:** With `--samples <path>` each run appends long-format timing
+rows (`algo,prec,xform,size,sample_ms,n_iter`) plus a provenance header to one
+samples file; `--samples -` streams the same content to stdout in quiet mode.
+Use `-` when a host script captures the output remotely (SSH, adb, ios-deploy).
+See [Samples file format](#samples-file-format) for the exact schema.
 
 **CLI flags:**
 
 * `--algo <name>` select which algorithm(s) to benchmark (repeatable).
   Available: `fftpack`, `vdsp`, `fftw-estim`, `fftw-auto`, `green`, `kiss`,
   `pocket`, `mkl`, `ffts`, `pffftu`, `pffft`, `all`. Default: `all`.
-* `--output-dir <path>` directory for CSV output (created if needed). Default: current directory.
+* `--samples <path|->` append long-format timing samples to `<path>` (or stdout).
+* `--runs R` timing repetitions per (algorithm, size) — default 15.
+* `--meta k=v` extra provenance key/value pairs written to the samples header (repeatable).
+* `--size N,N,...` benchmark only these FFT sizes.
 * `--real` / `--cplx` benchmark only real or complex transforms.
 * `--max-len <N>` maximum FFT size.
 * `--non-pow2` use non-power-of-2 sizes instead of power-of-2.
 
 **Examples:**
 ```bash
-# Run only PFFFT and vDSP, single-precision
-./bench_pffft_float --algo pffft --algo vdsp --output-dir results/darwin-arm64-clang
+# Run only PFFFT and vDSP, single precision, appending to a samples file
+./bench_pffft_float --algo pffft --algo vdsp --samples results/local-flt-samples.csv
 
-# Run FFTW separately (can be added to existing results directory)
-./bench_pffft_float --algo fftw-estim --algo fftw-auto --output-dir results/darwin-arm64-clang
+# Run FFTW separately into the same file (provenance guard refuses mismatched appends)
+./bench_pffft_float --algo fftw-estim --algo fftw-auto --samples results/local-flt-samples.csv
 
-# Run all algorithms, double-precision
-./bench_pffft_double --algo all --output-dir results/darwin-arm64-clang
+# Stream samples to stdout for a host script to capture
+./bench_pffft_double --algo all --max-len 1024 --samples -
 ```
+
+#### Benchmark A/B workflow with perf.py
+
+`bench/perf.py` drives repeatable A/B performance comparisons between two
+builds and maintains an accepted chain of performance steps
+(`bench_chain.json`):
+
+```bash
+# Compare working tree vs HEAD (~minutes; both variants are interleaved
+# per size to cancel machine noise)
+./bench/perf.py ab --label my-change --sizes short --max-len 512
+
+# Fold the last ab result into bench_chain.json (human-gated; refuses on a
+# "slower" verdict unless --force is given explicitly)
+./bench/perf.py accept
+
+# Show the accepted chain plus the verdicts of the last ab run
+./bench/perf.py status
+
+# Render evolution charts (curves + waterfall) over the accepted chain
+./bench/perf.py evolution
+```
+
+Useful `ab` options: `--variant GIT-REV` / `--base GIT-REV` pick the compared
+trees, `--prec flt|dbl|both`, `--sizes short|pow2|nonpow2|all`, `--max-len N`,
+`--runs R`, `--invocations K`, and `--target` (repeatable). The default target
+is `local`; additional targets are opt-in, e.g. `--target ssh://pi@raspberrypi`,
+`--target adb[:serial]`, `--target ios[:udid]`. Wide per-library result tables
+can be rendered from any samples file with `bench/report.py`.
+
+**Stats interpretation:** For each (target, prec, algo, transform, size),
+warmup repetitions and MAD outliers are trimmed, then a Mann–Whitney U test
+(lower runtime = better, p < 0.01 threshold) decides whether the variant is
+significantly faster or slower at that size, together with the Hodges–Lehmann
+shift. The aggregate suggestion printed by `ab` is `faster` only if ≥70% of
+sizes are significantly faster and none are significantly slower.
+
+**A/A caveat:** Running `ab` against *identical* binaries can still yield
+`suggest="slower"` when sub-percent median shifts happen to be statistically
+significant (MWU p < 0.01) across many sizes on a quiet machine. That is why
+`accept` is always an explicit human decision — it refuses on a "slower"
+suggestion unless you pass `--force`.
+
+**Python requirements:** `perf.py` needs Python 3 with `numpy` and `scipy`;
+`make_charts.py` additionally needs `matplotlib` (`pip3 install numpy scipy matplotlib`).
+
+<a name="samples-file-format"></a>
+**Samples file format:** One samples file per (label, target, tree); rows are
+appended per invocation and guarded by provenance comparison:
+
+```csv
+# pffft-bench-samples v2
+# label=fma-f32
+# git_tree=dc0f1a3e...
+# dirty=false
+# compiler=AppleClang 17.0
+# flags=-O3 -mcpu=apple-m2
+# prec=flt
+# host=macbook-air-m2 Darwin 25.5.0
+# target=local
+# datetime=2026-08-25T09:14Z
+# simd_arch=4xNEON
+# simd_size=4
+algo,prec,xform,size,sample_ms,n_iter
+PFFFT,flt,real,64,152.312,412300
+PFFFT,flt,real,64,149.807,412300
+```
+
+Rules:
+- One row = one completed timing loop (~150 ms) over one `(algo, prec, xform, size)`.
+- Rows are appended strictly grouped by invocation; `rep` is derivable by counting prior rows with the same `(algo,prec,xform,size)` key within a file.
+- Append guard: before appending, compare every provenance key against the file's header (excluding `datetime`). Any mismatch → refuse, print each differing key as `key differs: <old> vs <new>`, exit 1. This makes wrong-file appends structurally impossible without hashing.
+- `algo` values are the clean CLI ids from `algoCLIName[]`: `pffft`, `pffftu`, `vdsp`, `fftw-estim`, ... (not the space-padded table names, not the file ids like `pffft-simd`).
 
 #### Benchmarking on Android
 
 `cross_build_android.py` cross-compiles the benchmarks with the Android NDK,
-pushes them to a connected device via ADB, runs them, and pulls the CSV results
-back — in one step. Requires Python 3, CMake, and an Android NDK (auto-detected
-from the default SDK location; override with `--ndk` or `ANDROID_NDK`).
+pushes them to a connected device via ADB, runs them with `--samples -`, and
+captures the streamed sample data — in one step. Requires Python 3, CMake,
+and an Android NDK (auto-detected from the default SDK location; override
+with `--ndk` or `ANDROID_NDK`).
 
 ```bash
 # Build for arm64-v8a, run on connected device, collect results
@@ -601,7 +680,8 @@ Notes:
 * MKL and FFTS are disabled automatically (not available / not compatible with the NDK).
 * `--fftw` downloads FFTW 3.3.10, cross-compiles it with the NDK clang (float + double), and
   links it into the benchmark. Requires `make` and autoconf; not supported on Windows.
-* Results land in `bench_results_android_<id>/` and are compatible with `bench/make_charts.py`.
+* Results land in `bench_results_android_<id>/` (`<exe>-samples.csv`, long-format
+  samples per [Samples file format](#samples-file-format)) and are compatible with `bench/make_charts.py`.
 
 #### Benchmarking on iOS
 
@@ -629,14 +709,15 @@ Notes:
   identity, team ID, and a provisioning profile that includes the target device
   (preferring wildcard profiles). If no matching profile is found it falls back to
   automatic provisioning. Use `--no-run` to build without a device.
-* CSV results are captured automatically: the iOS app emits CSV data to stdout
-  with markers, and the host-side script extracts the files into the output directory.
+* Sample data is captured automatically: the iOS app runs with `--samples -`
+  (the app sandbox blocks file writes), streams the samples content through
+  the ios-deploy console, and the host-side script writes it into the output directory.
 * Results land in `bench_results_ios_<id>/` and are compatible with `bench/make_charts.py`.
 
 #### Generating benchmark charts
 
-The `bench/make_charts.py` script generates charts from the per-library CSV files.
-It requires Python 3 with `matplotlib` and `numpy`.
+The `bench/make_charts.py` script generates charts from directories of
+long-format samples files. It requires Python 3 with `matplotlib` and `numpy`.
 
 ```bash
 # Generate system info
@@ -651,6 +732,9 @@ python3 bench/make_charts.py results/darwin-arm64-clang-v1.0 results/darwin-arm6
 
 The script produces individual charts per precision/transform combination and a
 combined 2x2 overview chart, all as `.webp` files in the first directory argument.
+
+Evolution charts over an accepted A/B chain can be rendered directly with
+`./bench/perf.py evolution`.
 
 
 #### Benchmark results and contribution

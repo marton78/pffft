@@ -19,7 +19,7 @@ Options:
     --fftw          Cross-compile FFTW 3.3.10 and include it in the benchmark
                     (requires autoconf/make; not supported on Windows)
     --no-run        Build only; do not push or run on device
-    --output-dir    Local directory to store pulled benchmark CSVs
+    --output-dir    Local directory to store benchmark samples files
                     (default: bench_results_android_<id>)
     --ndk <path>    Override NDK root directory
     --serial <s>    ADB device serial (passed as -s <s> to adb)
@@ -50,6 +50,28 @@ from pathlib import Path
 
 FFTW_VERSION = "3.3.10"
 FFTW_URL = f"https://www.fftw.org/fftw-{FFTW_VERSION}.tar.gz"
+
+# First line emitted by `bench_pffft --samples -` (quiet mode), so the
+# samples-file content on the adb shell stream can be told apart from any
+# install or log chatter.
+SAMPLES_MAGIC = "# pffft-bench-samples v2"
+
+
+def extract_samples_lines(stdout):
+    """Extract the clean benchmark samples lines from adb shell output.
+
+    The benchmark runs with ``--samples -`` (quiet mode), so everything it
+    prints is exactly the samples file contents.  Returns the lines from
+    the schema magic marker onward; empty list if the benchmark never
+    produced output.
+    """
+    lines = [ln.rstrip("\r") for ln in stdout.splitlines()]
+    try:
+        start = next(i for i, ln in enumerate(lines)
+                     if ln.strip() == SAMPLES_MAGIC)
+    except StopIteration:
+        return []
+    return lines[start:]
 
 # autoconf --host triple and extra configure flags per ABI.
 # --enable-armv8-cntvct-el0: read the ARM virtual counter directly from
@@ -290,7 +312,7 @@ def parse_args():
     parser.add_argument("--no-run", action="store_true",
                         help="Build only; skip push and run on device")
     parser.add_argument("--output-dir", default=None,
-                        help="Local directory for pulled CSV results")
+                        help="Local directory for benchmark samples files")
     parser.add_argument("--ndk", default=None,
                         help="Override NDK root directory")
     parser.add_argument("--serial", default=None,
@@ -373,7 +395,6 @@ def main():
     build_dir  = script_dir / f"build_android_{args.id}"
     output_dir = Path(args.output_dir) if args.output_dir else script_dir / f"bench_results_android_{args.id}"
     device_dir = f"/data/local/tmp/pffft_bench_{args.id}"
-    device_out = f"{device_dir}/results"
 
     cpu_count = os.cpu_count() or 4
 
@@ -488,41 +509,36 @@ def main():
 
     # ── run benchmarks ────────────────────────────────────────────────────────
 
-    banner(["Running benchmarks on device"])
-
-    run(adb_base + ["shell", f"mkdir -p {device_out}"])
-
+    all_samples = []
     for exe in pushed:
         print(f"\n── Running {exe} ──")
-        result = run(
-            adb_base + ["shell", f"cd {device_dir} && ./{exe} --output-dir {device_out} {args.bench_args}"],
-            check=False,
+        result = subprocess.run(
+            adb_base + ["shell", f"cd {device_dir} && ./{exe} --samples - {args.bench_args}"],
+            capture_output=True, text=True,
         )
         if result.returncode != 0:
             print(f"WARNING: {exe} exited with status {result.returncode}", file=sys.stderr)
-
-    # ── pull results ──────────────────────────────────────────────────────────
-
-    banner([f"Pulling results to {output_dir}"])
-
-    ls_result = subprocess.run(
-        adb_base + ["shell", f"ls {device_out}/*.csv 2>/dev/null"],
-        capture_output=True, text=True,
-    )
-    csv_files = [p.strip().replace("\r", "") for p in ls_result.stdout.splitlines() if p.strip()]
-
-    for csv in csv_files:
-        run(adb_base + ["pull", csv, str(output_dir) + "/"])
-        print(f"Pulled: {Path(csv).name}")
+        lines = extract_samples_lines(result.stdout)
+        if lines:
+            samples_path = output_dir / f"{Path(exe).name}-samples.csv"
+            samples_path.write_text("\n".join(lines) + "\n")
+            print(f"Captured {samples_path}")
+            all_samples.append(samples_path)
+        else:
+            print(f"WARNING: no sample data captured from {exe}", file=sys.stderr)
 
     # ── clean up device ───────────────────────────────────────────────────────
 
     subprocess.run(adb_base + ["shell", f"rm -rf {device_dir}"], check=False)
 
     print(f"\nDone. Results in: {output_dir}")
-    print(f"\nTo generate charts:")
-    print(f'  python3 bench/make_charts.py "{output_dir}"')
+    if all_samples:
+        print(f"Sample files: {len(all_samples)} written")
+    else:
+        print("WARNING: No sample data was captured from benchmark output.", file=sys.stderr)
 
+    print("\nTo generate charts:")
+    print(f'  python3 bench/make_charts.py "{output_dir}"')
 
 if __name__ == "__main__":
     main()

@@ -113,7 +113,6 @@ typedef PFFFTD_Setup PFFFT_SETUP;
 #include <time.h>
 #include <assert.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <errno.h>
 
 #ifdef _WIN32
@@ -124,14 +123,6 @@ typedef PFFFTD_Setup PFFFT_SETUP;
 #ifdef __APPLE__
 #include <TargetConditionals.h>
 #endif
-
-static void ensure_directory(const char *path) {
-#ifdef _WIN32
-  _mkdir(path);
-#else
-  mkdir(path, 0755);
-#endif
-}
 
 #ifdef HAVE_SYS_TIMES
 #  include <sys/times.h>
@@ -215,14 +206,6 @@ const char * algoCLIName[NUM_FFT_ALGOS] = {
   "green", "kiss", "pocket", "mkl", "ffts",
   "avfft",
   "pffftu", "pffft"
-};
-
-/* File ID for per-algo CSV output: <product>-<variant> */
-const char * algoFileId[NUM_FFT_ALGOS] = {
-  "fftpack-default", "vdsp-default", "fftw-estim", "fftw-auto",
-  "green-default", "kiss-default", "pocket-default", "mkl-default", "ffts-default",
-  "avfft-default",
-  "pffftu-simd", "pffft-simd"
 };
 
 int runAlgo[NUM_FFT_ALGOS];
@@ -1430,9 +1413,8 @@ int main(int argc, char **argv) {
   FILE *tableFile = NULL;
 
   int haveAlgo[NUM_FFT_ALGOS];
-  char outputDir[512] = ".";
   int algoExplicit = 0;
-  char acCsvFilename[64];
+
 
   for ( k = 1; k <= NUMPOW2FFTLENS; ++k )
     Npow2[k-1] = (k == NUMPOW2FFTLENS) ? -1 : (1 << k);
@@ -1507,10 +1489,6 @@ int main(int argc, char **argv) {
         if (!found) { fprintf(stderr, "unknown algo: %s\n", argv[i]); exit(1); }
       }
     }
-    else if (!strcmp(argv[i], "--output-dir") && i+1 < argc) {
-      strncpy(outputDir, argv[++i], sizeof(outputDir)-1);
-      outputDir[sizeof(outputDir)-1] = 0;
-    }
     else if (!strcmp(argv[i], "--samples") && i+1 < argc) {
       g_samplePath = argv[++i];
       if (!strcmp(g_samplePath, "-")) g_quiet = 1;
@@ -1537,7 +1515,7 @@ int main(int argc, char **argv) {
       ++g_numMeta;
     }
     else /* if (!strcmp(argv[i], "--help")) */ {
-      printf("usage: %s [--array-format|--table] [--no-tab] [--real|--cplx] [--validate] [--fftw-full-measure] [--non-pow2] [--max-len <N>] [--quick] [--algo <name|all>] [--output-dir <dir>] [--samples <path|->] [--runs R] [--meta k=v] [--size N,N,...]\n", argv[0]);
+      printf("usage: %s [--array-format|--table] [--no-tab] [--real|--cplx] [--validate] [--fftw-full-measure] [--non-pow2] [--max-len <N>] [--quick] [--algo <name|all>] [--samples <path|->] [--runs R] [--meta k=v] [--size N,N,...]\n", argv[0]);
       exit(0);
     }
   }
@@ -1583,17 +1561,6 @@ int main(int argc, char **argv) {
 #endif
     algoTableHeader[ALGO_FFTW_AUTO][0] = "|real FFTWmeas "; /* "|real FFTWauto " */
     algoTableHeader[ALGO_FFTW_AUTO][1] = "|cplx FFTWmeas "; /* "|cplx FFTWauto " */
-    algoFileId[ALGO_FFTW_AUTO] = "fftw-meas";
-  }
-#endif
-
-#ifdef PFFFT_SIMD_DISABLE
-  algoFileId[ALGO_PFFFT_U] = "pffftu-scalar";
-  algoFileId[ALGO_PFFFT_O] = "pffft-scalar";
-#else
-  if ( PFFFT_FUNC(simd_size)() == 1 || !strcmp(PFFFT_FUNC(simd_arch)(), "4xScalar") ) {
-    algoFileId[ALGO_PFFFT_U] = "pffftu-scalar";
-    algoFileId[ALGO_PFFFT_O] = "pffft-scalar";
   }
 #endif
 
@@ -1736,78 +1703,6 @@ int main(int argc, char **argv) {
 
   printf("\n");
 
-  {
-    const char *precStr;
-    int csvToStdout = 0;
-#ifdef PFFFT_ENABLE_FLOAT
-    precStr = "flt";
-#else
-    precStr = "dbl";
-#endif
-
-#if TARGET_OS_IOS
-    /* On iOS the app sandbox blocks file writes.  Emit CSV data to stdout
-       with markers so a host-side script can extract individual files. */
-    csvToStdout = 1;
-    printf("writing per-algo .csv data to stdout ..\n");
-#else
-    printf("now writing per-algo .csv files to '%s' ..\n", outputDir);
-    ensure_directory(outputDir);
-#endif
-
-    for (realCplxIdx = 0; realCplxIdx < 2; ++realCplxIdx)
-    {
-      const char *rcStr = (realCplxIdx == 0) ? "real" : "cplx";
-      if ( (realCplxIdx == 0 && !benchReal) || (realCplxIdx == 1 && !benchCplx) )
-        continue;
-
-      for (k = 0; k < NUM_FFT_ALGOS; ++k)
-      {
-        FILE *f;
-        char filename[256];
-
-        if ( !haveAlgo[k] )
-          continue;
-
-        snprintf(filename, sizeof(filename), "%s-%s-%s.csv",
-                 algoFileId[k], precStr, rcStr);
-
-        if (csvToStdout) {
-          printf("=== start %s ===\n", filename);
-          f = stdout;
-        } else {
-          char path[1024];
-          snprintf(path, sizeof(path), "%s/%s", outputDir, filename);
-          f = fopen(path, "w");
-          if (!f) {
-            fprintf(stderr, "failed to open %s: %s\n", path, strerror(errno));
-            continue;
-          }
-        }
-
-        fprintf(f, "size,prep_ms,num_iter,mflops,duration_sec\n");
-        for (i = 0; Nvalues[i] > 0 && Nvalues[i] <= max_N; ++i)
-        {
-          if (tmeas[realCplxIdx][i][TYPE_MFLOPS][k] > 0.0)
-          {
-            fprintf(f, "%d,%.6f,%.0f,%.6f,%.6f\n",
-                    Nvalues[i],
-                    tmeas[realCplxIdx][i][TYPE_PREP][k],
-                    tmeas[realCplxIdx][i][TYPE_ITER][k],
-                    tmeas[realCplxIdx][i][TYPE_MFLOPS][k],
-                    tmeas[realCplxIdx][i][TYPE_DUR_TOT][k]);
-          }
-        }
-
-        if (csvToStdout) {
-          printf("=== end %s ===\n", filename);
-        } else {
-          fclose(f);
-          printf("  wrote %s\n", filename);
-        }
-      }
-    }
-  }
 
   return 0;
 }
