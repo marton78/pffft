@@ -302,6 +302,29 @@ def parse_args():
     return args, extra_cmake
 
 
+def pffft_android_cmake_argv(source_dir, build_dir, toolchain, abi, api,
+                             march, extra_cmake=()):
+    """CMake configure argv for the pffft benchmarks against an NDK toolchain.
+
+    Shared by cross_build_android.main() and bench/targets.AdbTarget.build()
+    so both cross-compiles use exactly the same flag set.
+    """
+    return [
+        "cmake", "-S", str(source_dir), "-B", str(build_dir),
+        f"-DCMAKE_TOOLCHAIN_FILE={toolchain}",
+        f"-DANDROID_ABI={abi}",
+        f"-DANDROID_PLATFORM=android-{api}",
+        "-DCMAKE_BUILD_TYPE=Release",
+        f"-DTARGET_C_ARCH={march}",
+        f"-DTARGET_CXX_ARCH={march}",
+        "-DPFFFT_BUILD_TESTS=OFF",
+        "-DPFFFT_BUILD_BENCHMARKS=ON",
+        "-DPFFFT_BUILD_EXAMPLES=OFF",
+        "-DPFFFT_USE_BENCH_MKL=OFF",
+        "-DPFFFT_USE_BENCH_FFTS=OFF",
+    ] + list(extra_cmake)
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -380,20 +403,9 @@ def main():
         shutil.rmtree(pffft_build_dir)
     pffft_build_dir.mkdir(parents=True)
 
-    run([
-        "cmake", "-S", str(script_dir), "-B", str(pffft_build_dir),
-        f"-DCMAKE_TOOLCHAIN_FILE={toolchain}",
-        f"-DANDROID_ABI={args.abi}",
-        f"-DANDROID_PLATFORM=android-{args.api}",
-        "-DCMAKE_BUILD_TYPE=Release",
-        f"-DTARGET_C_ARCH={march}",
-        f"-DTARGET_CXX_ARCH={march}",
-        "-DPFFFT_BUILD_TESTS=OFF",
-        "-DPFFFT_BUILD_BENCHMARKS=ON",
-        "-DPFFFT_BUILD_EXAMPLES=OFF",
-        "-DPFFFT_USE_BENCH_MKL=OFF",
-        "-DPFFFT_USE_BENCH_FFTS=OFF",
-    ] + fftw_cmake_args + extra_cmake)
+    run(pffft_android_cmake_argv(
+            script_dir, pffft_build_dir, toolchain,
+            args.abi, args.api, march) + fftw_cmake_args + extra_cmake)
 
     run([
         "cmake", "--build", str(pffft_build_dir),

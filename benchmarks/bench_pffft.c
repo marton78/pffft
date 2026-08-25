@@ -1618,19 +1618,20 @@ int main(int argc, char **argv) {
   if (!quicktest)
   {
     double t0, t1, dur;
-    printf("calibrating fft benchmark duration at size N = 512 ..\n");
+    if (!g_quiet)
+      printf("calibrating fft benchmark duration at size N = 512 ..\n");
     t0 = uclock_sec();
     if (benchReal) {
       iterCalReal = cal_benchmark(512, 0 /* real fft */);
-      printf("real fft iterCal = %f\n", iterCalReal);
+      if (!g_quiet) printf("real fft iterCal = %f\n", iterCalReal);
     }
     if (benchCplx) {
       iterCalCplx = cal_benchmark(512, 1 /* cplx fft */);
-      printf("cplx fft iterCal = %f\n", iterCalCplx);
+      if (!g_quiet) printf("cplx fft iterCal = %f\n", iterCalCplx);
     }
     t1 = uclock_sec();
     dur = t1 - t0;
-    printf("calibration done in %f sec.\n\n", dur);
+    if (!g_quiet) printf("calibration done in %f sec.\n\n", dur);
   }
 
   if (g_samplePath) {
