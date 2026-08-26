@@ -78,21 +78,11 @@ typedef union v4sf_union {
    out2 = [ in1[2], in2[2], in1[3], in2[3] ]
 */
 #  define INTERLEAVE2(in1, in2, out1, out2) {                                  \
-    float64x2_t lo1__ = (in1).lo, lo2__ = (in2).lo;                           \
-    float64x2_t hi1__ = (in1).hi, hi2__ = (in2).hi;                           \
-    float64x1_t lo1_l__ = vget_low_f64(lo1__);                                \
-    float64x1_t lo1_h__ = vget_high_f64(lo1__);                               \
-    float64x1_t lo2_l__ = vget_low_f64(lo2__);                                \
-    float64x1_t lo2_h__ = vget_high_f64(lo2__);                               \
-    float64x1_t hi1_l__ = vget_low_f64(hi1__);                                \
-    float64x1_t hi1_h__ = vget_high_f64(hi1__);                               \
-    float64x1_t hi2_l__ = vget_low_f64(hi2__);                                \
-    float64x1_t hi2_h__ = vget_high_f64(hi2__);                               \
     v4sf tmp__;                                                                \
-    tmp__.lo = vcombine_f64(lo1_l__, lo2_l__);                                 \
-    tmp__.hi = vcombine_f64(lo1_h__, lo2_h__);                                 \
-    out2 = (v4sf){ vcombine_f64(hi1_l__, hi2_l__),                             \
-                   vcombine_f64(hi1_h__, hi2_h__) };                           \
+    tmp__.lo = vtrn1q_f64((in1).lo, (in2).lo);                                \
+    tmp__.hi = vtrn2q_f64((in1).lo, (in2).lo);                                \
+    out2 = (v4sf){ vtrn1q_f64((in1).hi, (in2).hi),                            \
+                   vtrn2q_f64((in1).hi, (in2).hi) };                          \
     out1 = tmp__;                                                              \
   }
 
@@ -101,21 +91,11 @@ typedef union v4sf_union {
    out2 = [ in1[1], in1[3], in2[1], in2[3] ]
 */
 #  define UNINTERLEAVE2(in1, in2, out1, out2) {                                \
-    float64x2_t lo1__ = (in1).lo, lo2__ = (in2).lo;                           \
-    float64x2_t hi1__ = (in1).hi, hi2__ = (in2).hi;                           \
-    float64x1_t lo1_l__ = vget_low_f64(lo1__);                                \
-    float64x1_t lo1_h__ = vget_high_f64(lo1__);                               \
-    float64x1_t lo2_l__ = vget_low_f64(lo2__);                                \
-    float64x1_t lo2_h__ = vget_high_f64(lo2__);                               \
-    float64x1_t hi1_l__ = vget_low_f64(hi1__);                                \
-    float64x1_t hi1_h__ = vget_high_f64(hi1__);                               \
-    float64x1_t hi2_l__ = vget_low_f64(hi2__);                                \
-    float64x1_t hi2_h__ = vget_high_f64(hi2__);                               \
     v4sf tmp__;                                                                \
-    tmp__.lo = vcombine_f64(lo1_l__, hi1_l__);                                 \
-    tmp__.hi = vcombine_f64(lo2_l__, hi2_l__);                                 \
-    out2 = (v4sf){ vcombine_f64(lo1_h__, hi1_h__),                             \
-                   vcombine_f64(lo2_h__, hi2_h__) };                           \
+    tmp__.lo = vtrn1q_f64((in1).lo, (in1).hi);                                \
+    tmp__.hi = vtrn1q_f64((in2).lo, (in2).hi);                                \
+    out2 = (v4sf){ vtrn2q_f64((in1).lo, (in1).hi),                            \
+                   vtrn2q_f64((in2).lo, (in2).hi) };                          \
     out1 = tmp__;                                                              \
   }
 
