@@ -401,7 +401,10 @@ public:
                    Scalar* spectrum_internal_ab);
 
   // zero-phase helpers for REAL transforms; return 0 on success,
-  // nonzero for COMPLEX transforms. See pffft_zconvert_zp() /
+  // nonzero for COMPLEX transforms. zconvertZP() normalizes by 1/N:
+  // with scaling == 1, transform(x, FORWARD) -> convolveZP() ->
+  // transform(.., BACKWARD) yields the circular convolution of x
+  // with the filter at unit gain. See pffft_zconvert_zp() /
   // pffft_zconvolve_zp() for the layout contract.
   int zconvertZP(const Scalar* spectrum_internal_in,
                  Scalar* spectrum_internal_out,

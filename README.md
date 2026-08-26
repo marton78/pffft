@@ -251,7 +251,9 @@ The main changes on top of the original include:
 * additional library for fast convolution
 * const-correct setup arguments for all transform functions
 * zero-phase convolution support for linear-phase FIR filters
-  (`pffft_zconvert_zp()` / `pffft_zconvolve_zp()`, see `pffft.h`)
+  (`pffft_zconvert_zp()` / `pffft_zconvolve_zp()`, see `pffft.h`);
+  with default scaling the forward transform -> zconvolve_zp ->
+  backward pipeline yields the circular convolution at unit gain
 * unscaled frequency-domain multiply `pffft_zconvolve()` and `pffft_zconvolve_scale()`
 * cmake support
 * ctest

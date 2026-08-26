@@ -237,10 +237,15 @@ extern "C" {
      Convert an unordered PFFFT_REAL forward-transform result (as
      produced by pffft_transform(.., PFFFT_FORWARD)) into "zero-phase"
      form: imaginary vector lanes are zeroed, real lanes are multiplied
-     by 'scaling'. Useful for linear-phase FIR filters whose impulse
-     response is centered at t = 0 with the left-hand taps wrapped
-     around to the end of the transform block: their spectrum has no
-     imaginary components. 'in' may alias 'out'.
+     by 'scaling' and normalized by 1/N. Useful for linear-phase FIR
+     filters whose impulse response is centered at t = 0 with the
+     left-hand taps wrapped around to the end of the transform block:
+     their spectrum has no imaginary components. 'in' may alias 'out'.
+
+     With scaling == 1 the pipeline transform(x, FORWARD) ->
+     pffft_zconvolve_zp() -> transform(.., BACKWARD) yields the
+     circular convolution of x with the filter at unit gain.
+     'scaling' specifies an additional gain on top of that.
 
      Layout caveat: the unordered REAL layout packs the two real-valued
      boundary coefficients F(0) and F(N/2) into the first lanes of the
@@ -258,9 +263,11 @@ extern "C" {
   /*
      Frequency-domain multiply of an unordered PFFFT_REAL forward
      spectrum dft_x with a zero-phase filter spectrum dft_hzp produced
-     by pffft_zconvert_zp(): dft_ab = dft_x * dft_hzp. No accumulation,
-     no scaling -- scale the static filter at conversion time instead.
-     All pointers may alias.
+     by pffft_zconvert_zp(): dft_ab = dft_x * dft_hzp. No accumulation.
+     With a filter converted using scaling == 1, the pipeline
+     transform(x, FORWARD) -> zconvolve_zp() -> transform(.., BACKWARD)
+     yields the circular convolution at unit gain. All pointers may
+     alias.
 
      Returns 0 on success, nonzero if setup was not created for
      PFFFT_REAL.

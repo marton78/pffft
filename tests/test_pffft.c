@@ -372,7 +372,7 @@ static int test_zerophase(int N)
   setup_t *scplx;
   /* symmetric FIR, centered at t = 0 : taps h[-4 .. 4] */
   pffft_scalar ht[9] = { 0.03, -0.10, 0.25, 0.75, 1.0, 0.75, 0.25, -0.10, 0.03 };
-  pffft_scalar *X, *W, *H, *HZP, *C, *CRef, *Y;
+  pffft_scalar *X, *W, *H, *HZP, *HZPN, *C, *CRef, *Y;
   s = ZT_NEW_SETUP(N, PFFFT_REAL);
   scplx = ZT_NEW_SETUP(N, PFFFT_COMPLEX);
   assert(s && scplx);
@@ -380,6 +380,7 @@ static int test_zerophase(int N)
   W    = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
   H    = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
   HZP  = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
+  HZPN = (pffft_scalar*)ZT_MALLOC(N * sizeof(pffft_scalar));
   C    = (pffft_scalar*)ZT_MALLOC(2 * N * sizeof(pffft_scalar));
   CRef = (pffft_scalar*)ZT_MALLOC(2 * N * sizeof(pffft_scalar));
   Y    = (pffft_scalar*)ZT_MALLOC(2 * N * sizeof(pffft_scalar));
@@ -466,9 +467,36 @@ static int test_zerophase(int N)
       }
     }
   }
+  /* unit-gain round trip: with scaling == 1, the 1/N applied by
+     zconvert_zp() completes the backward transform's factor N, so Y
+     must match the direct time-domain circular convolution without
+     any rescaling */
+  {
+    for ( j = 0; j < N; ++j )
+      CRef[j] = C[j];
+    ZT_ZCONVOLVE_ZP(s, CRef, HZP, CRef);        /* in-place is documented legal */
+    ZT_TRANSFORM(s, CRef, Y, NULL, PFFFT_BACKWARD);
+    for ( j = 0; j < N; ++j ) {
+      pffft_scalar ref = 0;
+      for ( k = -4; k <= 4; ++k )
+        ref += (pffft_scalar)(ht[4+k] * X[(j-k+N) % N]);
+      if ( fabs((double)(Y[j]) - (double)(ref)) > 1e-4 * (fabs((double)ref) + 1.0) ) {
+        printf("zero-phase fft %d: sample %d : got %g expected %g\n", N, j, (double)(Y[j]), (double)ref);
+        retError = 1;
+        break;
+      }
+    }
+  }
 
-  ZT_ZCONV_SCALE(s, C, HZP, CRef, 1.0);       /* reference from pristine C */
-  ZT_ZCONVOLVE_ZP(s, C, HZP, C);              /* in-place is documented legal */
+  /* bit-exact cross-check against the plain complex multiply:
+     converting with scaling == N cancels the internal 1/N, restoring
+     the raw zero-phase spectrum */
+  if ( ZT_ZCONVERT_ZP(s, H, HZPN, (pffft_scalar)N) != 0 ) {
+    printf("zero-phase fft %d: zconvert_zp(scaling=N) failed!\n", N);
+    retError = 1;
+  }
+  ZT_ZCONV_SCALE(s, C, HZPN, CRef, 1.0);      /* reference from pristine C */
+  ZT_ZCONVOLVE_ZP(s, C, HZPN, C);             /* in-place is documented legal */
   /* unordered layout is not interleaved re/im pairs: compare flat.
      with a correctly converted zero-phase filter (H_im == 0) the plain
      complex multiply collapses to exactly what the zp path computes, and
@@ -482,22 +510,7 @@ static int test_zerophase(int N)
     }
   }
 
-  ZT_TRANSFORM(s, C, Y, NULL, PFFFT_BACKWARD);
-  /* compare with direct time-domain circular convolution */
-  for ( j = 0; j < N; ++j ) {
-    pffft_scalar ref = 0;
-    for ( k = -4; k <= 4; ++k )
-      ref += (pffft_scalar)(ht[4+k] * X[(j-k+N) % N]);
-    /* no division: the backward transform's factor N completes the
-       unnormalized forward DFT's convention */
-    if ( fabs((double)(Y[j]/N) - (double)(ref)) > 1e-4 * (fabs((double)ref) + 1.0) ) {
-      printf("zero-phase fft %d: sample %d : got %g expected %g\n", N, j, (double)(Y[j]/N), (double)ref);
-      retError = 1;
-      break;
-    }
-  }
-
-  ZT_FREE(X); ZT_FREE(W); ZT_FREE(H); ZT_FREE(HZP); ZT_FREE(C); ZT_FREE(CRef); ZT_FREE(Y);
+  ZT_FREE(X); ZT_FREE(W); ZT_FREE(H); ZT_FREE(HZP); ZT_FREE(HZPN); ZT_FREE(C); ZT_FREE(CRef); ZT_FREE(Y);
   ZT_DESTROY_SETUP(s);
   ZT_DESTROY_SETUP(scplx);
   return retError;

@@ -1740,7 +1740,8 @@ int FUNC_ZCONVERT_ZP(const SETUP_STRUCT *s, const float *in, float *out, float s
   /* no RESTRICT: in may alias out by contract */
   const v4sf *vin = (const v4sf*)in;
   v4sf *vout = (v4sf*)out;
-  v4sf vs = LD_PS1(scaling);
+  const float nscaling = scaling / (float)s->N;  /* unit-gain normalization */
+  v4sf vs = LD_PS1(nscaling);
   if (s->transform != PFFFT_REAL) return -1;
   assert(VALIGNED(in) && VALIGNED(out));
   /*
@@ -1750,12 +1751,17 @@ int FUNC_ZCONVERT_ZP(const SETUP_STRUCT *s, const float *in, float *out, float s
     Nyquist coefficient F(N/2) next to F(0) in vector 0 (same packing
     that pffft_zconvolve_accumulate() treats component-wise).
     Zero-phase form: keep/scale the real vectors, zero the imag
-    vectors, keep/scale the Nyquist lane. */
+    vectors, keep/scale the Nyquist lane.
+
+    The conversion applies a 1/N factor (times 'scaling'): with
+    scaling == 1, transform(x, FORWARD) -> zconvolve_zp() ->
+    transform(.., BACKWARD) yields the circular convolution of x
+    with the filter at unit gain. */
   vout[0] = VMUL(vin[0], vs);
   {
     /* latch the scaled Nyquist coefficient before zeroing: with
        in == out the vector store below would destroy vin[1].f[0] */
-    const float nyquist = ((const v4sf_union*)vin)[1].f[0] * scaling;
+    const float nyquist = ((const v4sf_union*)vin)[1].f[0] * nscaling;
     const v4sf vz = VZERO();
     vout[1] = vz;
     ((v4sf_union*)vout)[1].f[0] = nyquist;
@@ -1952,12 +1958,13 @@ void pffft_zconvolve_nosimd(const SETUP_STRUCT *s, const float *a, const float *
 
 #define pffft_zconvert_zp_nosimd FUNC_ZCONVERT_ZP
 int pffft_zconvert_zp_nosimd(const SETUP_STRUCT *s, const float *in, float *out, float scaling) {
-  int k, N2 = s->Ncvec * 2;  /* number of floats: [F0, F1r, F1i .. F(n/2-1)i, F(n/2)] */
+  int k, N2 = s->Ncvec * 2;
+  float nscaling = scaling / (float)s->N;  /* unit-gain normalization */
   if (s->transform != PFFFT_REAL) return -1;
-  out[0] = in[0] * scaling;
-  out[N2-1] = in[N2-1] * scaling;
+  out[0] = in[0] * nscaling;
+  out[N2-1] = in[N2-1] * nscaling;
   for (k = 1; k < N2-1; k += 2) {
-    out[k] = in[k] * scaling;
+    out[k] = in[k] * nscaling;
     out[k+1] = 0.f;
   }
   return 0;

@@ -352,9 +352,9 @@ ZPtest(int N)
     double ref = 0;
     for (k = -4; k <= 4; ++k)
       ref += double(ht[4 + k]) * double(X[(j - k + N) % N]);
-    if (std::abs(double(Y[j]) / N - ref) > 1e-3) {
+    if (std::abs(double(Y[j]) - ref) > 1e-3) {
       printf("zp wrapper: circular convolution mismatch at %d : %g vs %g\n",
-             j, double(Y[j]) / N, ref);
+             j, double(Y[j]), ref);
       retError = true;
       break;
     }
