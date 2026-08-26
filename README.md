@@ -603,6 +603,12 @@ builds and maintains an accepted chain of performance steps
 ./bench/perf.py evolution
 ```
 
+See [`bench/PERF_TESTING.md`](bench/PERF_TESTING.md) for a full how-to:
+direct/sustained measurement (lower-noise than `ab`'s interleaving),
+plotting an MFLOPS-distribution evolution across versions with
+`bench/plot_evolution.py`, device-target gotchas (iOS/Android/SSH), and
+caveats worth knowing before trusting a "neutral" verdict.
+
 Useful `ab` options: `--variant GIT-REV` / `--base GIT-REV` pick the compared
 trees, `--prec flt|dbl|both`, `--sizes short|pow2|nonpow2|all`, `--max-len N`,
 `--runs R`, `--invocations K`, and `--target` (repeatable). The default target
