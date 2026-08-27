@@ -52,11 +52,20 @@ noise — sub-percent shifts are statistically significant but practically
 meaningless once timings are this reproducible. Only trust verdicts on the
 algo you actually changed (`pffft`/`pffftu`).
 
-**3. On battery, Mac performance can look worse than it should — the
-iPhone won't.** If the host machine throttles under battery/thermal
-pressure mid-session, only *local* numbers degrade; a connected iOS/Android
-device's numbers are unaffected. A sudden Mac-only regression mid-series is
-a power/thermal artifact, not a code regression.
+**3. Thermal state matters most on fanless hardware, and it's not just a
+"battery" thing.** A MacBook Air has no fan — sustained load saturates its
+passive heatsink within a few minutes regardless of AC vs battery, producing
+a real cold-start-then-plateau pattern (confirmed: identical behavior with
+the charger connected). Re-running the very first checkpoint late in a
+session reproduced the same ~35% "improvement" with zero code change,
+proving it was thermal, not any commit. Phones show a different character —
+not a clean monotonic drift, but real session-to-session bounce (one
+iPhone 11 Pro session moved by up to 6% between two measurements of
+*byte-identical compiled code*) — so don't assume "it's a phone, it won't
+throttle." Mitigate with `bench/collect_series.py --warmup-runs N`
+(discards N sustained reps before recording, on every requested target) and
+physically elevate the device for airflow; see "Reducing thermal noise"
+below.
 
 **4. Sequential order confounds unless you check for it.** If you benchmark
 several checkpoints back-to-back, a monotonic drift (things keep getting
@@ -71,6 +80,18 @@ worktree has its own detached-HEAD state. `git -C <worktree> reset --hard
 HEAD` is a no-op relative to the worktree, not "catch up with the main
 checkout." `sync_worktree` resolves refs against `REPO_ROOT` first for
 exactly this reason — don't reintroduce the bug.
+
+**6. A significant p-value is not the same as a real effect.** With 20
+sustained reps, `bench/stats.py::compare`'s Mann-Whitney U test flags
+`p < 0.01` almost every time — even between two runs of *the exact same
+binary*. Measured proof: comparing two checkpoints on Android where zero
+intervening commit touched the tested sizes, 11 of 12 `(prec, xform, size)`
+groups came back "significant" at shifts as small as 0.08%. The variance in
+these benchmarks is small enough that MWU's null hypothesis ("these two
+samples are from literally the same distribution") is nearly always false
+in a trivial sense, regardless of whether the code changed. Don't accept a
+verdict on `p < alpha` alone — see "Objective significance" below for the
+noise-floor criterion this project actually uses.
 
 ## Direct measurement (bypasses `ab`'s interleaving entirely)
 
@@ -162,6 +183,117 @@ change is neutral" — check whether the underlying metric is actually
 varying at all (see caveat #1's root cause: this exact tool caught a bug
 where the comparison metric was accidentally constant by design).
 
+## Objective significance: a noise floor, not just a p-value
+
+Caveat #6 above shows why `p < 0.01` alone can't tell you a change is real.
+What actually distinguishes signal from noise in this project:
+
+1. **Measure an empirical noise floor per platform first.** Take two
+   samples files where you *know* nothing relevant changed between them
+   (e.g. two checkpoints where the diff between them doesn't touch the
+   `(prec, xform, size)` group you're inspecting) and run `compare()` on
+   them. The resulting `|shift_pct|` values are pure noise — their max
+   (not median; be conservative) is your floor. Measured so far: Android
+   ~0.5%, Mac (once past the cold-start plateau) ~0.4%, iPhone ~6.5% —
+   these differ by more than 10x, so a single blanket threshold across
+   platforms is wrong.
+2. **Require the effect to clear the floor, not just beat alpha.** A
+   commit's median Hodges-Lehmann shift has to exceed the platform's own
+   noise floor by a real margin (this project uses the raw floor as a strict
+   pass/fail line; a stricter version would require 3-5x it) before it
+   counts as a real effect — this is minimum-effect-size / equivalence
+   testing in spirit (TOST), just without the extra machinery: instead of
+   asking "is the shift different from exactly zero" (always yes, per
+   caveat #6), ask "is the shift bigger than what this platform's own
+   same-code noise looks like."
+3. **Negative-control your own commit's scope.** If a commit touches only
+   `pf_neon_double.h`, its `flt` groups should sit *inside* the noise floor.
+   If they don't, that's the tell the "effect" you're seeing on the touched
+   groups is session noise too, not the commit's doing — this caught every
+   false-positive iOS swing during this project's own investigation (`flt`
+   moving in lockstep with `dbl` on a double-only commit).
+4. **Require cross-platform sign agreement** (same direction on 2 of 3
+   platforms, or an explicit code-scope reason one platform is exempt, e.g.
+   an ARMv7-only guard on arm64-only test hardware) before trusting a
+   single-platform result.
+
+## `bench/collect_series.py`: sustained multi-platform direct measurement
+
+A driver around `bench/targets.py`'s cross-build machinery for exactly the
+"direct measurement" method above, across `local`/`adb`/`ios` in one call,
+one size per invocation (`ios-deploy`'s `--args` re-splitting silently
+strips commas from a joined `--size` list — this bit us once):
+
+```bash
+./bench/collect_series.py --ref <sha-or-rev> --label my-checkpoint \
+    --target local --target adb --target ios \
+    --sizes 256,1024,4096 --runs 20 --warmup-runs 3 \
+    --out .perf/series
+```
+
+- `--warmup-runs N`: runs N discarded sustained reps per target/precision
+  *before* the recorded ones, to reach thermal steady state first (see
+  caveat #3). Applies to every `--target` given, not just `local`.
+- `--wt`: worktree to build in (default `.perf/wt-seq`), reused
+  incrementally across calls with different `--ref` — unlike `sync_worktree`
+  used by `ab`, this does a plain detached checkout, not `git clean -ffd`,
+  so `build/`, `build-android/`, `build-ios/` stay incremental across
+  checkpoints (a full Xcode rebuild per checkpoint is otherwise the
+  dominant cost).
+- Output: one CSV per `(label, target, prec)` under `--out`, directly
+  consumable by `plot_evolution.py` or `plot_summary.py`.
+
+## `bench/plot_summary.py`: reader-facing before/after plots
+
+`plot_evolution.py`'s many-column box plot is the right tool for *deriving*
+a verdict (the engineering audit trail — did this specific commit move the
+numbers?) but the wrong one for *communicating* it: a reader has to know
+what a box plot and 10 commit labels mean before the picture says anything.
+`plot_summary.py` renders exactly two bars — baseline vs final — with a
+shaded noise-floor band (from the previous section) so "the change is
+bigger than measurement noise" is visible without reading any of this file:
+
+```bash
+./bench/plot_summary.py baseline.csv final.csv \
+    --baseline-label master --final-label final \
+    --platform "Android (Motorola Edge 50 Neo)" \
+    --sizes 256,1024,4096 --prec flt --xform real \
+    --noise-floor-pct 0.6 \
+    --out bench_results/summary-adb-flt-real.png
+```
+
+Each panel's title states the percent change and a plain-language verdict
+(`faster` / `slower` / `within noise`) computed directly from the
+noise-floor comparison — a bar that doesn't clear the shaded band is
+labeled `within noise` even if the raw percentage looks nonzero. Use
+`--caption` for a one-line footnote when the baseline needed a caveat (e.g.
+substituting a warm checkpoint for a cold-start-confounded `master` on
+fanless hardware — see caveat #3). Recommended structure for a public
+README: lead with 2-3 of these summary plots, one line explaining the gray
+band, and link the full per-commit evolution plots as the "how we know"
+appendix rather than including them inline.
+
+## Reducing thermal/session noise before measuring
+
+- **Software (most reliable, works regardless of physical setup):**
+  `--warmup-runs` on `collect_series.py` (above) — start every *recorded*
+  measurement from the same already-warmed-up state instead of fighting the
+  warm-up transient.
+- **Elevate the device for airflow.** A phone or laptop resting flat on a
+  desk traps heat against its underside; propping it on something a few cm
+  tall lets air circulate underneath. Free, zero risk.
+- **Avoid direct cold-pack contact for condensation reasons.** A chilled
+  gel pad (the reusable kind used for bruises) cools faster than air but
+  risks condensation if it's colder than the room's dew point — moisture
+  can wick into a phone's mic/speaker/USB-C openings or, worse, a laptop's
+  fan-less intake vents near the logic board. A passive aluminum stand or
+  cooling plate (no chilling) is the safer middle ground; a clip-on phone
+  cooling fan (a real, inexpensive product for mobile gaming) is the
+  purpose-built solution if you want active cooling without condensation
+  risk.
+- **Fanless hardware (e.g. MacBook Air) throttles fastest and hardest** —
+  it has no active cooling at all, so `--warmup-runs` matters most there.
+
 ## Device targets (SSH / Android / iOS)
 
 `--target ssh://host`, `--target adb[:serial]`, `--target ios[:udid]` (all
@@ -191,12 +323,18 @@ specific to each, learned the hard way:
 1. Fast iteration: `./bench/perf.py ab --label X --sizes short --max-len 2048`
    on `--target local`. Good for "did I break anything / rough direction."
 2. Before believing a "neutral" verdict on something that should matter
-   (a rewrite, an FMA fusion, anything in the FFT inner loop): run the
-   **direct measurement** method above for the specific sizes/precision you
-   care about, 15-20 reps, and eyeball it with `plot_evolution.py`.
-3. Only `accept` into `bench_chain.json` once you trust the number — accept
-   is a human decision, not a formality; it refuses `slower` verdicts for a
-   reason.
-4. For a device you don't personally have running 24/7 (Pi, phone), budget
+   (a rewrite, an FMA fusion, anything in the FFT inner loop): run
+   `bench/collect_series.py` (direct, sustained, multi-platform in one
+   call, `--warmup-runs` to control for thermal state) for the specific
+   sizes/precision you care about, 15-20 reps, and check it against your
+   platforms' noise floors (see "Objective significance") rather than
+   eyeballing `p < alpha` alone.
+3. Only `accept` into `bench_chain.json` once the effect clears the noise
+   floor and agrees in direction across platforms — accept is a human
+   decision, not a formality; it refuses `slower` verdicts for a reason.
+4. Render `plot_summary.py` before/after plots for anything going in a
+   README or PR description; keep `plot_evolution.py`'s full per-commit
+   view as the audit trail, not the headline artifact.
+5. For a device you don't personally have running 24/7 (Pi, phone), budget
    real wall-clock time — a device sweep with several sizes and invocations
    easily takes minutes, and a `--prec both` sweep roughly doubles that.
