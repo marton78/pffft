@@ -28,6 +28,13 @@
 
  */
 
+/* Needed before any system header pulls in <features.h> transitively:
+   CPU_SET/CPU_ZERO/sched_setaffinity require it on glibc (bionic doesn't
+   gate on it, but defining it there is harmless). */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
+
 #define CONCAT_TOKENS(A, B)  A ## B
 #define CONCAT_THREE_TOKENS(A, B, C)  A ## B ## C
 
@@ -124,14 +131,24 @@ typedef PFFFTD_Setup PFFFT_SETUP;
 #include <TargetConditionals.h>
 #endif
 
-/* Thermal-state query (Apple only): calls -[NSProcessInfo thermalState]
-   through the plain-C objc_msgSend ABI, so this stays a .c file (no
-   Objective-C compiler / CMake language toggle needed) and links against
-   -framework Foundation. Available macOS 10.10.3+ / iOS 11+ -- exactly the
-   platforms bench_pffft already targets. Used to make warmup/measurement
-   noise from thermal throttling OBSERVABLE (stderr only, never part of the
-   --samples CSV/provenance schema, since thermal state legitimately drifts
-   between invocations appending to the same file). */
+/* Thermal-state / scheduler-hint shims, used to make warmup/measurement
+   noise from thermal throttling and P/E-core migration OBSERVABLE and
+   (where possible) reduced. Diagnostics go to stderr only, never the
+   --samples CSV/provenance schema, since they legitimately drift between
+   invocations appending to the same file.
+
+   Apple (macOS 10.10.3+ / iOS 11+): -[NSProcessInfo thermalState] via the
+   plain-C objc_msgSend ABI (no Objective-C compiler / CMake language
+   toggle needed), and a QOS_CLASS_USER_INTERACTIVE scheduling hint.
+
+   Linux / Android: no equivalent qualitative thermalState or QoS-class
+   API, but two portable stand-ins that need no special permission for a
+   binary run from a shell (adb shell or ssh): the raw sysfs thermal-zone
+   temperature, and pinning this process's affinity to the "big" cluster
+   (the cores sharing the platform's max cpuinfo_max_freq), which avoids
+   the scheduler migrating a single-threaded benchmark onto little cores
+   mid-run. Both are best-effort: silently do nothing if sysfs is absent,
+   unreadable, or sched_setaffinity is denied (e.g. by SELinux). */
 #if defined(__APPLE__)
 #include <objc/objc.h>
 #include <objc/runtime.h>
@@ -154,20 +171,99 @@ static const char *pf_thermal_state_name(int s) {
     default: return "unknown";
   }
 }
+static double pf_thermal_temp_c(void) { return -1.0; }
 
-/* Hint the scheduler to keep this thread on performance cores (QoS
-   USER_INTERACTIVE), reducing P/E-core migration jitter during sustained
-   measurement. Best-effort: failures are silently ignored, matching how
-   real-time audio/DSP apps use this same call. */
 #include <pthread/qos.h>
 static void pf_qos_boost(void) {
   pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
 }
+static void pf_affinity_boost(void) { }
+
+#elif defined(__linux__) || defined(__ANDROID__)
+#include <dirent.h>
+#include <sched.h>
+static int pf_thermal_state(void) { return -1; }
+static const char *pf_thermal_state_name(int s) { (void)s; return "unsupported"; }
+static double pf_thermal_temp_c(void) {
+  DIR *d = opendir("/sys/class/thermal");
+  struct dirent *ent;
+  double maxC = -1.0;
+  if (!d) return -1.0;
+  while ((ent = readdir(d)) != NULL) {
+    if (!strncmp(ent->d_name, "thermal_zone", 12)) {
+      char path[320]; FILE *f;
+      snprintf(path, sizeof(path), "/sys/class/thermal/%s/temp", ent->d_name);
+      f = fopen(path, "r");
+      if (f) {
+        long milliC;
+        if (fscanf(f, "%ld", &milliC) == 1) {
+          double c = milliC / 1000.0;
+          /* sanity-bound: unpopulated/virtual zones can report bogus values */
+          if (c > -40.0 && c < 150.0 && c > maxC) maxC = c;
+        }
+        fclose(f);
+      }
+    }
+  }
+  closedir(d);
+  return maxC;
+}
+static void pf_qos_boost(void) { }
+static void pf_affinity_boost(void) {
+  DIR *d = opendir("/sys/devices/system/cpu");
+  struct dirent *ent;
+  long freqs[256];
+  int ncpu = 0, cpu, i;
+  long maxFreq = 0;
+  cpu_set_t mask;
+  if (!d) return;
+  memset(freqs, 0, sizeof(freqs));
+  while ((ent = readdir(d)) != NULL) {
+    if (sscanf(ent->d_name, "cpu%d", &cpu) == 1 && cpu >= 0 && cpu < 256) {
+      char path[320]; FILE *f;
+      snprintf(path, sizeof(path),
+              "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", cpu);
+      f = fopen(path, "r");
+      if (f) {
+        long v;
+        if (fscanf(f, "%ld", &v) == 1) {
+          freqs[cpu] = v;
+          if (v > maxFreq) maxFreq = v;
+          if (cpu + 1 > ncpu) ncpu = cpu + 1;
+        }
+        fclose(f);
+      }
+    }
+  }
+  closedir(d);
+  if (maxFreq <= 0) return;   /* cpufreq not exposed here; nothing to pin to */
+  CPU_ZERO(&mask);
+  for (i = 0; i < ncpu; ++i)
+    if (freqs[i] == maxFreq) CPU_SET(i, &mask);
+  (void)sched_setaffinity(0, sizeof(mask), &mask);  /* best-effort */
+}
+
 #else
 static int pf_thermal_state(void) { return -1; }
 static const char *pf_thermal_state_name(int s) { (void)s; return "unsupported"; }
+static double pf_thermal_temp_c(void) { return -1.0; }
 static void pf_qos_boost(void) { }
+static void pf_affinity_boost(void) { }
 #endif
+
+/* Unified diagnostic string: prefer the qualitative Apple state; fall back
+   to a raw Celsius reading (Linux/Android); "unsupported" otherwise. */
+static const char *pf_thermal_describe(char *buf, size_t bufsz) {
+  int state = pf_thermal_state();
+  if (state >= 0) {
+    snprintf(buf, bufsz, "%s", pf_thermal_state_name(state));
+  } else {
+    double t = pf_thermal_temp_c();
+    if (t >= 0.0) snprintf(buf, bufsz, "%.1fC", t);
+    else snprintf(buf, bufsz, "unsupported");
+  }
+  return buf;
+}
 
 #ifdef HAVE_SYS_TIMES
 #  include <sys/times.h>
@@ -1455,9 +1551,12 @@ static int warmup_steady(const int *Nvalues, int max_N, double iterCalReal,
   if (probeN < 0 || warmupMaxSec <= 0.0) return 0;
 
   t0 = uclock_sec();
-  fprintf(stderr, "-- warmup: N=%d until MFLOPS stabilizes (<=%.0fs cap, "
-         "thermal_state=%s)\n", probeN, warmupMaxSec,
-         pf_thermal_state_name(pf_thermal_state()));
+  {
+    char tdesc[32];
+    fprintf(stderr, "-- warmup: N=%d until MFLOPS stabilizes (<=%.0fs cap, "
+           "thermal=%s)\n", probeN, warmupMaxSec,
+           pf_thermal_describe(tdesc, sizeof(tdesc)));
+  }
   fflush(stderr);
   do {
     double mflops;
@@ -1493,8 +1592,11 @@ static int warmup_steady(const int *Nvalues, int max_N, double iterCalReal,
     elapsed = uclock_sec() - t0;
   } while (elapsed < warmupMaxSec);
   elapsed = uclock_sec() - t0;
-  fprintf(stderr, "-- warmup done: %d bursts in %.1fs, thermal_state=%s\n",
-         n, elapsed, pf_thermal_state_name(pf_thermal_state()));
+  {
+    char tdesc[32];
+    fprintf(stderr, "-- warmup done: %d bursts in %.1fs, thermal=%s\n",
+           n, elapsed, pf_thermal_describe(tdesc, sizeof(tdesc)));
+  }
   fflush(stderr);
   return n;
 #undef WARMUP_WINDOW
@@ -1502,6 +1604,7 @@ static int warmup_steady(const int *Nvalues, int max_N, double iterCalReal,
 
 int main(int argc, char **argv) {
   pf_qos_boost();
+  pf_affinity_boost();
   /* unfortunately, the fft size must be a multiple of 16 for complex FFTs 
      and 32 for real FFTs -- a lot of stuff would need to be rewritten to
      handle other cases (or maybe just switch to a scalar fft, I don't know..) */
