@@ -45,8 +45,15 @@ def safe_name(s: str) -> str:
 
 def run_one(tgt, bindir: Path, label: str, tree: str, sizes: list[int],
             runs: int, out_dir: Path, precs: list[str],
-            max_len: int | None) -> list[str]:
+            max_len: int | None, warmup_steady_sec: float = 0.0) -> list[str]:
     """One target, both precisions, sustained. Returns log lines.
+
+    `warmup_steady_sec`, when > 0, is passed straight to the binary as
+    --warmup-steady: it runs an in-process adaptive warmup (burst the
+    largest requested size until throughput stabilizes, capped at this
+    many seconds) immediately before the recorded reps, in the SAME
+    invocation/app-launch -- avoiding both a second iOS app relaunch and
+    guesswork over how many reps a fixed discard count should be.
 
     One size per invocation (matches perf.py's cmd_ab): ios-deploy's
     app-arg safety filter strips commas from --size lists, silently
@@ -67,6 +74,7 @@ def run_one(tgt, bindir: Path, label: str, tree: str, sizes: list[int],
                    "--size", str(size),
                    "--runs", str(runs),
                    *(["--max-len", str(max_len)] if max_len else []),
+                   *(["--warmup-steady", str(warmup_steady_sec)] if warmup_steady_sec > 0 else []),
                    "--samples", str(path), *extra,
                    *[x for m in meta for x in ("--meta", m)]]
             t0 = time.time()
@@ -121,7 +129,15 @@ def main() -> int:
                     "discarded, to reach thermal steady state first on every "
                     "requested target (mitigates the cold-start plateau seen "
                     "on a fanless Mac, and reduces session-to-session drift "
-                    "on phones too)")
+                    "on phones too); ignored if --warmup-steady is given")
+    ap.add_argument("--warmup-steady", type=float, default=0.0,
+                    help="in-process adaptive warmup cap in seconds, passed "
+                    "to the binary as --warmup-steady (see bench_pffft.c): "
+                    "bursts the largest requested size until MFLOPS "
+                    "stabilizes, in the SAME invocation as the recorded "
+                    "reps. Preferred over --warmup-runs: detects actual "
+                    "steady state instead of guessing a rep count, and "
+                    "halves iOS app-relaunch overhead")
     ap.add_argument("--serial-measure", action="store_true",
                     help="measure targets one after another (no host contention)")
     a = ap.parse_args()
@@ -143,10 +159,14 @@ def main() -> int:
     for tgt in tgts:
         for prec in precs:
             tgt.binary_path(bindir, prec)
-    if a.warmup_runs:
+    if a.warmup_steady:
+        print(f"-- warmup: adaptive, <= {a.warmup_steady:.0f}s per target/prec/size "
+              f"(in-process, see --warmup-steady)", flush=True)
+    elif a.warmup_runs:
         print(f"-- warmup: {a.warmup_runs} discarded reps per target/prec "
               f"(thermal/power steady-state, not recorded)", flush=True)
         warm_dir = out_dir / ".warmup-scratch"
+        warm_dir.mkdir(parents=True, exist_ok=True)
         for tgt in tgts:
             for prec in precs:
                 exe = tgt.binary_path(bindir, prec)
@@ -167,14 +187,16 @@ def main() -> int:
         for tgt in tgts:
             try:
                 print("\n".join(run_one(tgt, bindir, a.label, tree, sizes,
-                                        a.runs, out_dir, precs, a.max_len)),
+                                        a.runs, out_dir, precs, a.max_len,
+                                        a.warmup_steady)),
                       flush=True)
             except Exception as e:                       # noqa: BLE001
                 fails.append(f"{tgt.name}: {e}")
     else:
         with cf.ThreadPoolExecutor(max_workers=len(tgts)) as ex:
             futs = {ex.submit(run_one, tgt, bindir, a.label, tree, sizes,
-                              a.runs, out_dir, precs, a.max_len): tgt
+                              a.runs, out_dir, precs, a.max_len,
+                              a.warmup_steady): tgt
                     for tgt in tgts}
             for fut in cf.as_completed(futs):
                 tgt = futs[fut]

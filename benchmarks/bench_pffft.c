@@ -124,6 +124,51 @@ typedef PFFFTD_Setup PFFFT_SETUP;
 #include <TargetConditionals.h>
 #endif
 
+/* Thermal-state query (Apple only): calls -[NSProcessInfo thermalState]
+   through the plain-C objc_msgSend ABI, so this stays a .c file (no
+   Objective-C compiler / CMake language toggle needed) and links against
+   -framework Foundation. Available macOS 10.10.3+ / iOS 11+ -- exactly the
+   platforms bench_pffft already targets. Used to make warmup/measurement
+   noise from thermal throttling OBSERVABLE (stderr only, never part of the
+   --samples CSV/provenance schema, since thermal state legitimately drifts
+   between invocations appending to the same file). */
+#if defined(__APPLE__)
+#include <objc/objc.h>
+#include <objc/runtime.h>
+#include <objc/message.h>
+static int pf_thermal_state(void) {
+  Class piClass = objc_getClass("NSProcessInfo");
+  id pi; long state;
+  if (!piClass) return -1;
+  pi = ((id (*)(Class, SEL))objc_msgSend)(piClass, sel_registerName("processInfo"));
+  if (!pi) return -1;
+  state = ((long (*)(id, SEL))objc_msgSend)(pi, sel_registerName("thermalState"));
+  return (int)state;
+}
+static const char *pf_thermal_state_name(int s) {
+  switch (s) {
+    case 0: return "nominal";
+    case 1: return "fair";
+    case 2: return "serious";
+    case 3: return "critical";
+    default: return "unknown";
+  }
+}
+
+/* Hint the scheduler to keep this thread on performance cores (QoS
+   USER_INTERACTIVE), reducing P/E-core migration jitter during sustained
+   measurement. Best-effort: failures are silently ignored, matching how
+   real-time audio/DSP apps use this same call. */
+#include <pthread/qos.h>
+static void pf_qos_boost(void) {
+  pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+}
+#else
+static int pf_thermal_state(void) { return -1; }
+static const char *pf_thermal_state_name(int s) { (void)s; return "unsupported"; }
+static void pf_qos_boost(void) { }
+#endif
+
 #ifdef HAVE_SYS_TIMES
 #  include <sys/times.h>
 #  include <unistd.h>
@@ -1382,7 +1427,81 @@ static void samples_emit(double tmeas[NUM_TYPES][NUM_FFT_ALGOS], int haveAlgo[],
   fflush(g_sampleFile);
 }
 
+static double g_warmupSteadySec = 0.0;   /* --warmup-steady <sec>; 0 = disabled */
+
+/* Run repeated real-FFT bursts at the LARGEST requested size (same mixed
+   algo set as the recorded measurement, so it reproduces the real
+   power/thermal load) until throughput stops drifting, or warmupMaxSec
+   is exhausted -- whichever comes first. Replaces guessing a fixed
+   discard-N-reps count with an actual steady-state detector: track a
+   trailing window of PFFFT MFLOPS and stop once its relative range
+   (max-min)/mean stays under 2% for a few consecutive windows.
+   No-op (returns 0 immediately) if warmupMaxSec <= 0 or no size fits. */
+static int warmup_steady(const int *Nvalues, int max_N, double iterCalReal,
+                         const int runAlgo_[NUM_FFT_ALGOS],
+                         double warmupMaxSec) {
+  int probeN = -1, i, n = 0;
+#define WARMUP_WINDOW 6
+  double window[WARMUP_WINDOW];
+  int windowLen = 0;
+  const double stableRelRange = 0.02;
+  const int stableHitsNeeded = 3;
+  int stableHits = 0;
+  int haveAlgo[NUM_FFT_ALGOS];
+  double tmeasProbe[NUM_TYPES][NUM_FFT_ALGOS];
+  double t0, elapsed;
+
+  for (i = 0; Nvalues[i] > 0 && Nvalues[i] <= max_N; ++i) probeN = Nvalues[i];
+  if (probeN < 0 || warmupMaxSec <= 0.0) return 0;
+
+  t0 = uclock_sec();
+  fprintf(stderr, "-- warmup: N=%d until MFLOPS stabilizes (<=%.0fs cap, "
+         "thermal_state=%s)\n", probeN, warmupMaxSec,
+         pf_thermal_state_name(pf_thermal_state()));
+  fflush(stderr);
+  do {
+    double mflops;
+    memset(tmeasProbe, 0, sizeof(tmeasProbe));
+    memset(haveAlgo, 0, sizeof(haveAlgo));
+    benchmark_ffts(probeN, 0 /* real */, 0, iterCalReal, tmeasProbe,
+                   haveAlgo, runAlgo_, NULL);
+    if (!haveAlgo[ALGO_PFFFT_O]) break;
+    mflops = tmeasProbe[TYPE_MFLOPS][ALGO_PFFFT_O];
+    if (windowLen < WARMUP_WINDOW) {
+      window[windowLen++] = mflops;
+    } else {
+      memmove(window, window + 1, (WARMUP_WINDOW - 1) * sizeof(double));
+      window[WARMUP_WINDOW - 1] = mflops;
+    }
+    ++n;
+    if (windowLen == WARMUP_WINDOW) {
+      double mn = window[0], mx = window[0], sum = 0.0, mean, relRange;
+      int j;
+      for (j = 0; j < WARMUP_WINDOW; ++j) {
+        if (window[j] < mn) mn = window[j];
+        if (window[j] > mx) mx = window[j];
+        sum += window[j];
+      }
+      mean = sum / WARMUP_WINDOW;
+      relRange = (mean > 0.0) ? (mx - mn) / mean : 1.0;
+      if (relRange < stableRelRange) {
+        if (++stableHits >= stableHitsNeeded) break;
+      } else {
+        stableHits = 0;
+      }
+    }
+    elapsed = uclock_sec() - t0;
+  } while (elapsed < warmupMaxSec);
+  elapsed = uclock_sec() - t0;
+  fprintf(stderr, "-- warmup done: %d bursts in %.1fs, thermal_state=%s\n",
+         n, elapsed, pf_thermal_state_name(pf_thermal_state()));
+  fflush(stderr);
+  return n;
+#undef WARMUP_WINDOW
+}
+
 int main(int argc, char **argv) {
+  pf_qos_boost();
   /* unfortunately, the fft size must be a multiple of 16 for complex FFTs 
      and 32 for real FFTs -- a lot of stuff would need to be rewritten to
      handle other cases (or maybe just switch to a scalar fft, I don't know..) */
@@ -1505,6 +1624,10 @@ int main(int argc, char **argv) {
       g_sampleRuns = atoi(argv[++i]);
       if (g_sampleRuns < 1) { fprintf(stderr, "--runs must be >= 1\n"); exit(1); }
     }
+    else if (!strcmp(argv[i], "--warmup-steady") && i+1 < argc) {
+      g_warmupSteadySec = atof(argv[++i]);
+      if (g_warmupSteadySec < 0.0) { fprintf(stderr, "--warmup-steady must be >= 0\n"); exit(1); }
+    }
     else if (!strcmp(argv[i], "--meta") && i+1 < argc) {
       char *eq;
       if (g_numMeta >= MAX_META) { fprintf(stderr, "too many --meta\n"); exit(1); }
@@ -1516,7 +1639,7 @@ int main(int argc, char **argv) {
       ++g_numMeta;
     }
     else /* if (!strcmp(argv[i], "--help")) */ {
-      printf("usage: %s [--array-format|--table] [--no-tab] [--real|--cplx] [--validate] [--fftw-full-measure] [--non-pow2] [--max-len <N>] [--quick] [--algo <name|all>] [--samples <path|->] [--runs R] [--meta k=v] [--size N,N,...]\n", argv[0]);
+      printf("usage: %s [--array-format|--table] [--no-tab] [--real|--cplx] [--validate] [--fftw-full-measure] [--non-pow2] [--max-len <N>] [--quick] [--algo <name|all>] [--samples <path|->] [--runs R] [--warmup-steady SEC] [--meta k=v] [--size N,N,...]\n", argv[0]);
       exit(0);
     }
   }
@@ -1611,6 +1734,7 @@ int main(int argc, char **argv) {
 #endif
     int rep, i;
     g_sampleFile = samples_open();
+    warmup_steady(Nvalues, max_N, iterCalReal, runAlgo, g_warmupSteadySec);
     for (rep = 0; rep < g_sampleRuns; ++rep) {
       for (i = 0; Nvalues[i] > 0 && Nvalues[i] <= max_N; ++i) {
         memset(tmeas[0][i], 0, sizeof(tmeas[0][i]));

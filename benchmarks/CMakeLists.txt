@@ -102,7 +102,7 @@ if (PFFFT_USE_TYPE_FLOAT)
 
   if (APPLE)
     target_compile_definitions(bench_pffft_float PRIVATE HAVE_VECLIB=1)
-    target_link_libraries(bench_pffft_float "-framework Accelerate")
+    target_link_libraries(bench_pffft_float "-framework Accelerate" "-framework Foundation" "-lobjc")
   endif()
 
   if (PFFFT_USE_BENCH_FFTW)
@@ -173,7 +173,7 @@ if (PFFFT_USE_TYPE_DOUBLE)
 
   if (APPLE)
     target_compile_definitions(bench_pffft_double PRIVATE HAVE_VECLIB=1)
-    target_link_libraries(bench_pffft_double "-framework Accelerate")
+    target_link_libraries(bench_pffft_double "-framework Accelerate" "-framework Foundation" "-lobjc")
   endif()
 
   if (PFFFT_USE_BENCH_FFTW)
