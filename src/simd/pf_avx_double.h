@@ -65,8 +65,14 @@ typedef union v4sf_union {
 #  define VZERO() _mm256_setzero_pd()
 #  define VMUL(a,b) _mm256_mul_pd(a,b)
 #  define VADD(a,b) _mm256_add_pd(a,b)
+/* Use true fused multiply-add when the target has FMA (e.g. -march=haswell+) */
+#if defined(__FMA__)
+#  define VMADD(a,b,c) _mm256_fmadd_pd(a,b,c)
+#  define VMSUB(a,b,c) _mm256_fnmadd_pd(a,b,c)
+#else
 #  define VMADD(a,b,c) _mm256_add_pd(_mm256_mul_pd(a,b), c)
 #  define VMSUB(a,b,c) _mm256_sub_pd(c, _mm256_mul_pd(a,b))
+#endif
 #  define VSUB(a,b) _mm256_sub_pd(a,b)
 #  define LD_PS1(p) _mm256_set1_pd(p)
 #  define VLOAD_UNALIGNED(ptr)  _mm256_loadu_pd(ptr)

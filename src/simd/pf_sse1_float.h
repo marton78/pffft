@@ -58,8 +58,15 @@ typedef union v4sf_union {
 #  define VZERO() _mm_setzero_ps()
 #  define VMUL(a,b) _mm_mul_ps(a,b)
 #  define VADD(a,b) _mm_add_ps(a,b)
+/* Use true fused multiply-add when the target has FMA (e.g. -march=haswell+) */
+#if defined(__FMA__)
+#  include <immintrin.h>
+#  define VMADD(a,b,c) _mm_fmadd_ps(a,b,c)
+#  define VMSUB(a,b,c) _mm_fnmadd_ps(a,b,c)
+#else
 #  define VMADD(a,b,c) _mm_add_ps(_mm_mul_ps(a,b), c)
 #  define VMSUB(a,b,c) _mm_sub_ps(c, _mm_mul_ps(a,b))
+#endif
 #  define VSUB(a,b) _mm_sub_ps(a,b)
 #  define LD_PS1(p) _mm_set1_ps(p)
 #  define VLOAD_UNALIGNED(ptr)  _mm_loadu_ps(ptr)
