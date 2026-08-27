@@ -81,18 +81,18 @@ typedef union v4sf_union {
     out1 = t1__; out2 = t2__;                                \
   }
 
-#  define VTRANSPOSE4(x0, x1, x2, x3) {                       \
-    v128_t t0_ = wasm_i32x4_shuffle(x0, x1, 0, 4, 1, 5);     \
-    v128_t t1_ = wasm_i32x4_shuffle(x0, x1, 2, 6, 3, 7);     \
-    v128_t t2_ = wasm_i32x4_shuffle(x2, x3, 0, 4, 1, 5);     \
-    v128_t t3_ = wasm_i32x4_shuffle(x2, x3, 2, 6, 3, 7);     \
-    x0 = wasm_i32x4_shuffle(t0_, t2_, 0, 1, 4, 5);           \
-    x1 = wasm_i32x4_shuffle(t0_, t2_, 2, 3, 6, 7);           \
-    x2 = wasm_i32x4_shuffle(t1_, t3_, 0, 1, 4, 5);           \
-    x3 = wasm_i32x4_shuffle(t1_, t3_, 2, 3, 6, 7);           \
+#  define VTRANSPOSE4(x0, x1, x2, x3) {                         \
+    v128_t t0lo_ = wasm_i32x4_shuffle(x0, x2, 0, 4, 1, 5);     \
+    v128_t t0hi_ = wasm_i32x4_shuffle(x0, x2, 2, 6, 3, 7);     \
+    v128_t t1lo_ = wasm_i32x4_shuffle(x1, x3, 0, 4, 1, 5);     \
+    v128_t t1hi_ = wasm_i32x4_shuffle(x1, x3, 2, 6, 3, 7);     \
+    x0 = wasm_i32x4_shuffle(t0lo_, t1lo_, 0, 4, 1, 5);         \
+    x1 = wasm_i32x4_shuffle(t0lo_, t1lo_, 2, 6, 3, 7);         \
+    x2 = wasm_i32x4_shuffle(t0hi_, t1hi_, 0, 4, 1, 5);         \
+    x3 = wasm_i32x4_shuffle(t0hi_, t1hi_, 2, 6, 3, 7);         \
   }
 
-#  define VSWAPHL(a,b) wasm_i32x4_shuffle(b, a, 0, 1, 6, 7)
+#  define VSWAPHL(a,b) __builtin_shufflevector((b), (a), 0, 1, 6, 7)
 
 /* reverse/flip all floats: [0,1,2,3] -> [3,2,1,0] */
 #  define VREV_S(a) wasm_i32x4_shuffle(a, a, 3, 2, 1, 0)
