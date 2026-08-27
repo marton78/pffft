@@ -1389,11 +1389,11 @@ int main(int argc, char **argv) {
 
   /* Non-power-of-2 sizes: N = 2^a * 3^b * 5^c (a >= 5 for real FFTs).
      Covers small mixed-radix through ~1M for real-world workloads. */
-#define NUMNONPOW2LENS  27
+#define NUMNONPOW2LENS  28
   int NnonPow2[NUMNONPOW2LENS] = {
-    96, 160, 192, 320, 480,   640, 768, 960, 1280, 1440,
-    1600, 1920, 2400, 2560, 3200,   4000, 4800, 7200, 9216, 15360,
-    32000, 48000, 72000, 100000, 300000,   1000000,
+    96, 160, 192, 320, 480,   640, 768, 960, 1152, 1280,
+    1440, 1600, 1920, 2400, 2560,   3200, 4000, 4800, 7200, 9216,
+    15360, 32000, 48000, 72000, 100000,   300000, 1000000,
     -1 };
 
 #define NUMPOW2FFTLENS  22

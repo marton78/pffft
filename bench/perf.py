@@ -36,8 +36,8 @@ def balance_order(n: int, rng: random.Random) -> list[str]:
 
 def pick_sizes(mode: str) -> list[int]:
     pow2 = [32 << e for e in range(17)]           # 32 .. 2^21 (C binary's max)
-    npow2 = [96, 160, 192, 320, 480, 640, 768, 960, 1280, 1440, 1600, 1920,
-             2400, 2560, 3200, 4000, 4800, 7200, 9216, 15360]
+    npow2 = [96, 160, 192, 320, 480, 640, 768, 960, 1152, 1280, 1440, 1600,
+             1920, 2400, 2560, 3200, 4000, 4800, 7200, 9216, 15360]
     if mode == "short":  return sorted(set(SHORT_POW2 + SHORT_NPOW2))
     if mode == "pow2":   return pow2
     if mode == "nonpow2": return npow2
