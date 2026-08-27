@@ -1733,8 +1733,8 @@ int main(int argc, char **argv) {
     precStr = "dbl";
 #endif
     int rep, i;
-    g_sampleFile = samples_open();
     warmup_steady(Nvalues, max_N, iterCalReal, runAlgo, g_warmupSteadySec);
+    g_sampleFile = samples_open();
     for (rep = 0; rep < g_sampleRuns; ++rep) {
       for (i = 0; Nvalues[i] > 0 && Nvalues[i] <= max_N; ++i) {
         memset(tmeas[0][i], 0, sizeof(tmeas[0][i]));
