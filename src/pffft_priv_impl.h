@@ -543,6 +543,45 @@ static NEVER_INLINE(void) radf4_ps(int ido, int l1, const v4sf *RESTRICT cc, v4s
     cc = cc_; ch = ch_;
   }
   if (ido < 2) return;
+  if (ido == 3) {
+    /* Fast path: inner loop executes exactly once with i=2, ic=ido-i=1 */
+    v4sf wr, wi, cr2, ci2, cr3, ci3, cr4, ci4;
+    v4sf tr1, ti1, tr2, ti2, tr3, ti3, tr4, ti4;
+    for (k = 0; k < l1ido; k += ido) {
+      cr2 = cc[1 + k + 1*l1ido];
+      ci2 = cc[1 + k + 1*l1ido + 1];
+      wr = LD_PS1(wa1[0]); wi = LD_PS1(wa1[1]);
+      VCPLXMULCONJ(cr2, ci2, wr, wi);
+
+      cr3 = cc[1 + k + 2*l1ido];
+      ci3 = cc[1 + k + 2*l1ido + 1];
+      wr = LD_PS1(wa2[0]); wi = LD_PS1(wa2[1]);
+      VCPLXMULCONJ(cr3, ci3, wr, wi);
+
+      cr4 = cc[1 + k + 3*l1ido];
+      ci4 = cc[1 + k + 3*l1ido + 1];
+      wr = LD_PS1(wa3[0]); wi = LD_PS1(wa3[1]);
+      VCPLXMULCONJ(cr4, ci4, wr, wi);
+
+      tr1 = VADD(cr2, cr4);
+      tr4 = VSUB(cr4, cr2);
+      tr2 = VADD(cc[1 + k], cr3);
+      tr3 = VSUB(cc[1 + k], cr3);
+      ch[1 + 4*k] = VADD(tr1, tr2);
+      ch[0 + 4*k + 3*ido] = VSUB(tr2, tr1);
+      ti1 = VADD(ci2, ci4);
+      ti4 = VSUB(ci2, ci4);
+      ch[1 + 4*k + 2*ido] = VADD(ti4, tr3);
+      ch[0 + 4*k + 1*ido] = VSUB(tr3, ti4);
+      ti2 = VADD(cc[1 + k + 1], ci3);
+      ti3 = VSUB(cc[1 + k + 1], ci3);
+      ch[2 + 4*k] = VADD(ti1, ti2);
+      ch[1 + 4*k + 3*ido] = VSUB(ti1, ti2);
+      ch[2 + 4*k + 2*ido] = VADD(tr4, ti3);
+      ch[1 + 4*k + 1*ido] = VSUB(tr4, ti3);
+    }
+    return;
+  }
   if (ido != 2) {
     for (k = 0; k < l1ido; k += ido) {
       const v4sf * RESTRICT pc = (v4sf*)(cc + 1 + k);
@@ -631,6 +670,43 @@ static NEVER_INLINE(void) radb4_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
     cc = cc_; ch = ch_;
   }
   if (ido < 2) return;
+  if (ido == 3) {
+    /* Fast path: inner loop executes exactly once with i=2, ic=ido-i=1 */
+    v4sf wa1_r = LD_PS1(wa1[0]), wa1_i = LD_PS1(wa1[1]);
+    v4sf wa2_r = LD_PS1(wa2[0]), wa2_i = LD_PS1(wa2[1]);
+    v4sf wa3_r = LD_PS1(wa3[0]), wa3_i = LD_PS1(wa3[1]);
+    for (k = 0; k < l1ido; k += ido) {
+      tr1 = VSUB(cc[1 + 4*k], cc[9 + 4*k]);
+      tr2 = VADD(cc[1 + 4*k], cc[9 + 4*k]);
+      ti4 = VSUB(cc[7 + 4*k], cc[3 + 4*k]);
+      tr3 = VADD(cc[7 + 4*k], cc[3 + 4*k]);
+      ch[k + 1] = VADD(tr2, tr3);
+      cr3 = VSUB(tr2, tr3);
+
+      ti3 = VSUB(cc[8 + 4*k], cc[4 + 4*k]);
+      tr4 = VADD(cc[8 + 4*k], cc[4 + 4*k]);
+      cr2 = VSUB(tr1, tr4);
+      cr4 = VADD(tr1, tr4);
+
+      ti1 = VADD(cc[2 + 4*k], cc[10 + 4*k]);
+      ti2 = VSUB(cc[2 + 4*k], cc[10 + 4*k]);
+
+      ch[k + 2] = VADD(ti2, ti3);
+      ci3 = VSUB(ti2, ti3);
+      ci2 = VADD(ti1, ti4);
+      ci4 = VSUB(ti1, ti4);
+      VCPLXMUL(cr2, ci2, wa1_r, wa1_i);
+      ch[k + 1 + l1ido] = cr2;
+      ch[k + 2 + l1ido] = ci2;
+      VCPLXMUL(cr3, ci3, wa2_r, wa2_i);
+      ch[k + 1 + 2*l1ido] = cr3;
+      ch[k + 2 + 2*l1ido] = ci3;
+      VCPLXMUL(cr4, ci4, wa3_r, wa3_i);
+      ch[k + 1 + 3*l1ido] = cr4;
+      ch[k + 2 + 3*l1ido] = ci4;
+    }
+    return;
+  }
   if (ido != 2) {
     for (k = 0; k < l1ido; k += ido) {
       const v4sf * RESTRICT pc = (v4sf*)(cc - 1 + 4*k);
