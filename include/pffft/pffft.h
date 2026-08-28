@@ -95,6 +95,16 @@
   #endif
 #endif
 
+#ifndef PFFFT_DEPRECATED
+  #if defined(__GNUC__) || defined(__clang__)
+    #define PFFFT_DEPRECATED __attribute__((deprecated))
+  #elif defined(_MSC_VER)
+    #define PFFFT_DEPRECATED __declspec(deprecated)
+  #else
+    #define PFFFT_DEPRECATED
+  #endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -156,7 +166,7 @@ extern "C" {
 
      input and output may alias.
   */
-  PFFFT_EXPORT void pffft_transform(PFFFT_Setup *setup, const float *input, float *output, float *work, pffft_direction_t direction);
+  PFFFT_EXPORT void pffft_transform(const PFFFT_Setup *setup, const float *input, float *output, float *work, pffft_direction_t direction);
 
   /* 
      Similar to pffft_transform, but makes sure that the output is
@@ -165,7 +175,7 @@ extern "C" {
      
      input and output may alias.
   */
-  PFFFT_EXPORT void pffft_transform_ordered(PFFFT_Setup *setup, const float *input, float *output, float *work, pffft_direction_t direction);
+  PFFFT_EXPORT void pffft_transform_ordered(const PFFFT_Setup *setup, const float *input, float *output, float *work, pffft_direction_t direction);
 
   /* 
      call pffft_zreorder(.., PFFFT_FORWARD) after pffft_transform(...,
@@ -179,7 +189,7 @@ extern "C" {
      
      input and output should not alias.
   */
-  PFFFT_EXPORT void pffft_zreorder(PFFFT_Setup *setup, const float *input, float *output, pffft_direction_t direction);
+  PFFFT_EXPORT void pffft_zreorder(const PFFFT_Setup *setup, const float *input, float *output, pffft_direction_t direction);
 
   /* 
      Perform a multiplication of the frequency components of dft_a and
@@ -193,7 +203,7 @@ extern "C" {
      
      The dft_a, dft_b and dft_ab pointers may alias.
   */
-  PFFFT_EXPORT void pffft_zconvolve_accumulate(PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
+  PFFFT_EXPORT void pffft_zconvolve_accumulate(const PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
 
   /* 
      Perform a multiplication of the frequency components of dft_a and
@@ -207,7 +217,67 @@ extern "C" {
 
      The dft_a, dft_b and dft_ab pointers may alias.
   */
-  PFFFT_EXPORT void pffft_zconvolve_no_accu(PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
+  PFFFT_EXPORT void pffft_zconvolve_scale(const PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
+  
+  /*
+     Perform a multiplication of the frequency components of dft_a and
+     dft_b and put result in dft_ab, without accumulation and without
+     scaling. The arrays should have been obtained with
+     pffft_transform(.., PFFFT_FORWARD) and should *not* have been
+     reordered with pffft_zreorder (otherwise just perform the operation
+     yourself as the dft coefs are stored as interleaved complex numbers).
+
+     the operation performed is: dft_ab = dft_a * dft_b
+
+     The dft_a, dft_b and dft_ab pointers may alias.
+  */
+  PFFFT_EXPORT void pffft_zconvolve(const PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab);
+  
+  /*
+     Convert an unordered PFFFT_REAL forward-transform result (as
+     produced by pffft_transform(.., PFFFT_FORWARD)) into "zero-phase"
+     form: imaginary vector lanes are zeroed, real lanes are multiplied
+     by 'scaling' and normalized by 1/N. Useful for linear-phase FIR
+     filters whose impulse response is centered at t = 0 with the
+     left-hand taps wrapped around to the end of the transform block:
+     their spectrum has no imaginary components. 'in' may alias 'out'.
+
+     With scaling == 1 the pipeline transform(x, FORWARD) ->
+     pffft_zconvolve_zp() -> transform(.., BACKWARD) yields the
+     circular convolution of x with the filter at unit gain.
+     'scaling' specifies an additional gain on top of that.
+
+     Layout caveat: the unordered REAL layout packs the two real-valued
+     boundary coefficients F(0) and F(N/2) into the first lanes of the
+     first two vectors, where F(N/2) occupies an otherwise-imaginary
+     lane. pffft_zconvert_zp() keeps that lane (scaled), so the output
+     is NOT a plain spectrum: multiply it only with pffft_zconvolve_zp(),
+     never with pffft_zconvolve_scale() or pffft_zconvolve(), which
+     would cross-multiply the DC and Nyquist lanes.
+
+     Returns 0 on success, nonzero if setup was not created for
+     PFFFT_REAL.
+  */
+  PFFFT_EXPORT int pffft_zconvert_zp(const PFFFT_Setup *setup, const float *in, float *out, float scaling);
+
+  /*
+     Frequency-domain multiply of an unordered PFFFT_REAL forward
+     spectrum dft_x with a zero-phase filter spectrum dft_hzp produced
+     by pffft_zconvert_zp(): dft_ab = dft_x * dft_hzp. No accumulation.
+     With a filter converted using scaling == 1, the pipeline
+     transform(x, FORWARD) -> zconvolve_zp() -> transform(.., BACKWARD)
+     yields the circular convolution at unit gain. All pointers may
+     alias.
+
+     Returns 0 on success, nonzero if setup was not created for
+     PFFFT_REAL.
+  */
+  PFFFT_EXPORT int pffft_zconvolve_zp(const PFFFT_Setup *setup, const float *dft_x, const float *dft_hzp, float *dft_ab);
+
+  /*
+     deprecated synonym for pffft_zconvolve_scale()
+  */
+  PFFFT_EXPORT void PFFFT_DEPRECATED pffft_zconvolve_no_accu(const PFFFT_Setup *setup, const float *dft_a, const float *dft_b, float *dft_ab, float scaling);
 
   /* return 4 or 1 wether support SSE/NEON/Altivec instructions was enabled when building pffft.c */
   PFFFT_EXPORT int pffft_simd_size(void);

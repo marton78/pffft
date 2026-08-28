@@ -1155,7 +1155,7 @@ static void unreversed_copy(int N, const v4sf *in, v4sf *out, int out_stride) {
   UNINTERLEAVE2(h0, g1, out[0], out[1]);
 }
 
-void FUNC_ZREORDER(SETUP_STRUCT *setup, const float *in, float *out, pffft_direction_t direction) {
+void FUNC_ZREORDER(const SETUP_STRUCT *setup, const float *in, float *out, pffft_direction_t direction) {
   int k, N = setup->N, Ncvec = setup->Ncvec;
   const v4sf *vin = (const v4sf*)in;
   v4sf *vout = (v4sf*)out;
@@ -1462,7 +1462,7 @@ static NEVER_INLINE(void) FUNC_REAL_PREPROCESS(int Ncvec, const v4sf *in, v4sf *
 }
 
 
-void FUNC_TRANSFORM_INTERNAL(SETUP_STRUCT *setup, const float *finput, float *foutput, v4sf *scratch,
+void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, float *foutput, v4sf *scratch,
                              pffft_direction_t direction, int ordered) {
   int k, Ncvec   = setup->Ncvec;
   int nf_odd = (setup->ifac[1] & 1);
@@ -1531,7 +1531,7 @@ void FUNC_TRANSFORM_INTERNAL(SETUP_STRUCT *setup, const float *finput, float *fo
   assert(buff[ib] == voutput);
 }
 
-void FUNC_ZCONVOLVE_ACCUMULATE(SETUP_STRUCT *s, const float *a, const float *b, float *ab, float scaling) {
+void FUNC_ZCONVOLVE_ACCUMULATE(const SETUP_STRUCT *s, const float *a, const float *b, float *ab, float scaling) {
   int Ncvec = s->Ncvec;
   const v4sf * RESTRICT va = (const v4sf*)a;
   const v4sf * RESTRICT vb = (const v4sf*)b;
@@ -1629,7 +1629,7 @@ void FUNC_ZCONVOLVE_ACCUMULATE(SETUP_STRUCT *s, const float *a, const float *b, 
   }
 }
 
-void FUNC_ZCONVOLVE_NO_ACCU(SETUP_STRUCT *s, const float *a, const float *b, float *ab, float scaling) {
+void FUNC_ZCONVOLVE_SCALE(const SETUP_STRUCT *s, const float *a, const float *b, float *ab, float scaling) {
   v4sf vscal = LD_PS1(scaling);
   const v4sf * RESTRICT va = (const v4sf*)a;
   const v4sf * RESTRICT vb = (const v4sf*)b;
@@ -1684,12 +1684,135 @@ void FUNC_ZCONVOLVE_NO_ACCU(SETUP_STRUCT *s, const float *a, const float *b, flo
 }
 
 
+void FUNC_ZCONVOLVE(const SETUP_STRUCT *s, const float *a, const float *b, float *ab) {
+  const v4sf * RESTRICT va = (const v4sf*)a;
+  const v4sf * RESTRICT vb = (const v4sf*)b;
+  v4sf * RESTRICT vab = (v4sf*)ab;
+  float sar, sai, sbr, sbi;
+  const int NcvecMulTwo = 2*s->Ncvec;  /* int Ncvec = s->Ncvec; */
+  int k; /* was i -- but always used "2*i" - except at for() */
+
+#ifdef __arm__
+  __builtin_prefetch(va);
+  __builtin_prefetch(vb);
+  __builtin_prefetch(vab);
+  __builtin_prefetch(va+2);
+  __builtin_prefetch(vb+2);
+  __builtin_prefetch(vab+2);
+  __builtin_prefetch(va+4);
+  __builtin_prefetch(vb+4);
+  __builtin_prefetch(vab+4);
+  __builtin_prefetch(va+6);
+  __builtin_prefetch(vb+6);
+  __builtin_prefetch(vab+6);
+#endif
+
+  assert(VALIGNED(a) && VALIGNED(b) && VALIGNED(ab));
+  sar = ((v4sf_union*)va)[0].f[0];
+  sai = ((v4sf_union*)va)[1].f[0];
+  sbr = ((v4sf_union*)vb)[0].f[0];
+  sbi = ((v4sf_union*)vb)[1].f[0];
+
+  /* default routine, works fine for non-arm cpus with current compilers */
+  for (k=0; k < NcvecMulTwo; k += 4) {
+    v4sf var, vai, vbr, vbi;
+    var = va[k+0]; vai = va[k+1];
+    vbr = vb[k+0]; vbi = vb[k+1];
+    VCPLXMUL(var, vai, vbr, vbi);
+    vab[k+0] = var;
+    vab[k+1] = vai;
+    var = va[k+2]; vai = va[k+3];
+    vbr = vb[k+2]; vbi = vb[k+3];
+    VCPLXMUL(var, vai, vbr, vbi);
+    vab[k+2] = var;
+    vab[k+3] = vai;
+  }
+
+  if (s->transform == PFFFT_REAL) {
+    ((v4sf_union*)vab)[0].f[0] = sar*sbr;
+    ((v4sf_union*)vab)[1].f[0] = sai*sbi;
+  }
+}
+
+
+int FUNC_ZCONVERT_ZP(const SETUP_STRUCT *s, const float *in, float *out, float scaling) {
+  int j, nv = s->Ncvec * 2;  /* number of simd vectors: alternating real/imag vector pairs */
+  /* no RESTRICT: in may alias out by contract */
+  const v4sf *vin = (const v4sf*)in;
+  v4sf *vout = (v4sf*)out;
+  const float nscaling = scaling / (float)s->N;  /* unit-gain normalization */
+  v4sf vs = LD_PS1(nscaling);
+  if (s->transform != PFFFT_REAL) return -1;
+  assert(VALIGNED(in) && VALIGNED(out));
+  /*
+    unordered forward REAL layout: even-indexed vectors hold the real
+    parts of 4 coefficients each, odd-indexed vectors their imaginary
+    parts -- except the very first odd lane, which packs the real
+    Nyquist coefficient F(N/2) next to F(0) in vector 0 (same packing
+    that pffft_zconvolve_accumulate() treats component-wise).
+    Zero-phase form: keep/scale the real vectors, zero the imag
+    vectors, keep/scale the Nyquist lane.
+
+    The conversion applies a 1/N factor (times 'scaling'): with
+    scaling == 1, transform(x, FORWARD) -> zconvolve_zp() ->
+    transform(.., BACKWARD) yields the circular convolution of x
+    with the filter at unit gain. */
+  vout[0] = VMUL(vin[0], vs);
+  {
+    /* latch the scaled Nyquist coefficient before zeroing: with
+       in == out the vector store below would destroy vin[1].f[0] */
+    const float nyquist = ((const v4sf_union*)vin)[1].f[0] * nscaling;
+    const v4sf vz = VZERO();
+    vout[1] = vz;
+    ((v4sf_union*)vout)[1].f[0] = nyquist;
+    for (j = 2; j < nv; j += 2) {
+      vout[j] = VMUL(vin[j], vs);
+      vout[j+1] = vz;
+    }
+  }
+  return 0;
+}
+
+int FUNC_ZCONVOLVE_ZP(const SETUP_STRUCT *s, const float *x, const float *hzp, float *ab) {
+  int j, np = s->Ncvec;  /* number of real/imag vector pairs */
+  /* no RESTRICT: any pair of pointers may alias by contract */
+  const v4sf *vx = (const v4sf*)x;
+  const v4sf *vh = (const v4sf*)hzp;
+  v4sf *vab = (v4sf*)ab;
+  if (s->transform != PFFFT_REAL) return -1;
+  assert(VALIGNED(x) && VALIGNED(hzp) && VALIGNED(ab));
+  /*
+    with a zero-phase filter (imag vectors all zero):
+    Y_re = X_re * H_re   and   Y_im = X_im * H_re.
+    The first two vectors additionally carry the real DC and Nyquist
+    coefficients in their f[0] lanes (see FUNC_ZCONVERT_ZP), so that
+    pair is finished scalar-wise, component-wise, exactly like
+    FUNC_ZCONVOLVE_ACCUMULATE() does. */
+  {
+    /* note: the Nyquist product reads hv1.f[0], not hv0.f[0] */
+    v4sf_union xv1, hv0, hv1;
+    xv1.v = vx[1];
+    hv0.v = vh[0]; hv1.v = vh[1];
+    vab[0] = VMUL(vx[0], vh[0]);
+    ((v4sf_union*)vab)[1].f[0] = xv1.f[0] * hv1.f[0];
+    ((v4sf_union*)vab)[1].f[1] = xv1.f[1] * hv0.f[1];
+    ((v4sf_union*)vab)[1].f[2] = xv1.f[2] * hv0.f[2];
+    ((v4sf_union*)vab)[1].f[3] = xv1.f[3] * hv0.f[3];
+  }
+  for (j = 1; j < np; ++j) {
+    v4sf hr = vh[2*j];
+    vab[2*j] = VMUL(vx[2*j], hr);
+    vab[2*j+1] = VMUL(vx[2*j+1], hr);
+  }
+  return 0;
+}
+
 #else  /* #if ( SIMD_SZ == 4 )   * !defined(PFFFT_SIMD_DISABLE) */
 
 /* standard routine using scalar floats, without SIMD stuff. */
 
 #define pffft_zreorder_nosimd FUNC_ZREORDER
-void pffft_zreorder_nosimd(SETUP_STRUCT *setup, const float *in, float *out, pffft_direction_t direction) {
+void pffft_zreorder_nosimd(const SETUP_STRUCT *setup, const float *in, float *out, pffft_direction_t direction) {
   int k, N = setup->N;
   if (setup->transform == PFFFT_COMPLEX) {
     for (k=0; k < 2*N; ++k) out[k] = in[k];
@@ -1709,7 +1832,7 @@ void pffft_zreorder_nosimd(SETUP_STRUCT *setup, const float *in, float *out, pff
 }
 
 #define pffft_transform_internal_nosimd FUNC_TRANSFORM_INTERNAL
-void pffft_transform_internal_nosimd(SETUP_STRUCT *setup, const float *input, float *output, float *scratch,
+void pffft_transform_internal_nosimd(const SETUP_STRUCT *setup, const float *input, float *output, float *scratch,
                                     pffft_direction_t direction, int ordered) {
   int Ncvec   = setup->Ncvec;
   int nf_odd = (setup->ifac[1] & 1);
@@ -1766,7 +1889,7 @@ void pffft_transform_internal_nosimd(SETUP_STRUCT *setup, const float *input, fl
 }
 
 #define pffft_zconvolve_accumulate_nosimd FUNC_ZCONVOLVE_ACCUMULATE
-void pffft_zconvolve_accumulate_nosimd(SETUP_STRUCT *s, const float *a, const float *b,
+void pffft_zconvolve_accumulate_nosimd(const SETUP_STRUCT *s, const float *a, const float *b,
                                        float *ab, float scaling) {
   int NcvecMulTwo = 2*s->Ncvec;  /* int Ncvec = s->Ncvec; */
   int k; /* was i -- but always used "2*i" - except at for() */
@@ -1787,16 +1910,16 @@ void pffft_zconvolve_accumulate_nosimd(SETUP_STRUCT *s, const float *a, const fl
   }
 }
 
-#define pffft_zconvolve_no_accu_nosimd FUNC_ZCONVOLVE_NO_ACCU
-void pffft_zconvolve_no_accu_nosimd(SETUP_STRUCT *s, const float *a, const float *b,
+#define pffft_zconvolve_scale_nosimd FUNC_ZCONVOLVE_SCALE
+void pffft_zconvolve_scale_nosimd(const SETUP_STRUCT *s, const float *a, const float *b,
                                     float *ab, float scaling) {
   int NcvecMulTwo = 2*s->Ncvec;  /* int Ncvec = s->Ncvec; */
   int k; /* was i -- but always used "2*i" - except at for() */
 
   if (s->transform == PFFFT_REAL) {
     /* take care of the fftpack ordering */
-    ab[0] += a[0]*b[0]*scaling;
-    ab[NcvecMulTwo-1] += a[NcvecMulTwo-1]*b[NcvecMulTwo-1]*scaling;
+    ab[0] = a[0]*b[0]*scaling;
+    ab[NcvecMulTwo-1] = a[NcvecMulTwo-1]*b[NcvecMulTwo-1]*scaling;
     ++ab; ++a; ++b; NcvecMulTwo -= 2;
   }
   for (k=0; k < NcvecMulTwo; k += 2) {
@@ -1810,14 +1933,65 @@ void pffft_zconvolve_no_accu_nosimd(SETUP_STRUCT *s, const float *a, const float
 }
 
 
+#define pffft_zconvolve_nosimd FUNC_ZCONVOLVE
+void pffft_zconvolve_nosimd(const SETUP_STRUCT *s, const float *a, const float *b,
+                            float *ab) {
+  int NcvecMulTwo = 2*s->Ncvec;  /* int Ncvec = s->Ncvec; */
+  int k; /* was i -- but always used "2*i" - except at for() */
+
+  if (s->transform == PFFFT_REAL) {
+    /* take care of the fftpack ordering */
+    ab[0] = a[0]*b[0];
+    ab[NcvecMulTwo-1] = a[NcvecMulTwo-1]*b[NcvecMulTwo-1];
+    ++ab; ++a; ++b; NcvecMulTwo -= 2;
+  }
+  for (k=0; k < NcvecMulTwo; k += 2) {
+    float ar, ai, br, bi;
+    ar = a[k+0]; ai = a[k+1];
+    br = b[k+0]; bi = b[k+1];
+    VCPLXMUL(ar, ai, br, bi);
+    ab[k+0] = ar;
+    ab[k+1] = ai;
+  }
+}
+
+
+#define pffft_zconvert_zp_nosimd FUNC_ZCONVERT_ZP
+int pffft_zconvert_zp_nosimd(const SETUP_STRUCT *s, const float *in, float *out, float scaling) {
+  int k, N2 = s->Ncvec * 2;
+  float nscaling = scaling / (float)s->N;  /* unit-gain normalization */
+  if (s->transform != PFFFT_REAL) return -1;
+  out[0] = in[0] * nscaling;
+  out[N2-1] = in[N2-1] * nscaling;
+  for (k = 1; k < N2-1; k += 2) {
+    out[k] = in[k] * nscaling;
+    out[k+1] = 0.f;
+  }
+  return 0;
+}
+
+#define pffft_zconvolve_zp_nosimd FUNC_ZCONVOLVE_ZP
+int pffft_zconvolve_zp_nosimd(const SETUP_STRUCT *s, const float *x, const float *hzp, float *ab) {
+  int k, N2 = s->Ncvec * 2;
+  if (s->transform != PFFFT_REAL) return -1;
+  ab[0] = x[0] * hzp[0];
+  ab[N2-1] = x[N2-1] * hzp[N2-1];
+  for (k = 1; k < N2-1; k += 2) {
+    float hr = hzp[k];
+    ab[k] = x[k] * hr;
+    ab[k+1] = x[k+1] * hr;
+  }
+  return 0;
+}
+
 #endif /* #if ( SIMD_SZ == 4 )    * !defined(PFFFT_SIMD_DISABLE) */
 
 
-void FUNC_TRANSFORM_UNORDRD(SETUP_STRUCT *setup, const float *input, float *output, float *work, pffft_direction_t direction) {
+void FUNC_TRANSFORM_UNORDRD(const SETUP_STRUCT *setup, const float *input, float *output, float *work, pffft_direction_t direction) {
   FUNC_TRANSFORM_INTERNAL(setup, input, output, (v4sf*)work, direction, 0);
 }
 
-void FUNC_TRANSFORM_ORDERED(SETUP_STRUCT *setup, const float *input, float *output, float *work, pffft_direction_t direction) {
+void FUNC_TRANSFORM_ORDERED(const SETUP_STRUCT *setup, const float *input, float *output, float *work, pffft_direction_t direction) {
   FUNC_TRANSFORM_INTERNAL(setup, input, output, (v4sf*)work, direction, 1);
 }
 

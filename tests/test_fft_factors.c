@@ -33,7 +33,9 @@ int test_float(int TL)
       fprintf(stderr, "testing float, %s, %s ..\tminimum transform %d; nearest transform for %d is %d (%.2f%% off)\n",
           (!dir_i) ? "FORWARD" : "BACKWARD", (!cplx_i) ? "REAL" : "COMPLEX", N_min, TL, NTL, near_off );
 
-      for (int N = (N_min/2); N <= N_max; N += (N_min/2))
+      /* step 0 when N_min == 1 (complex, SIMD_SZ==1): infinite loop */
+      const int N_step = (N_min/2) ? (N_min/2) : 1;
+      for (int N = (N_min/2); N <= N_max; N += N_step)
       {
         int R = N, f2 = 0, f3 = 0, f5 = 0, tmp_f;
         const int factorizable = pffft_is_valid_size(N, cplx);
@@ -86,7 +88,9 @@ int test_double(int TL)
       fprintf(stderr, "testing double, %s, %s ..\tminimum transform %d; nearest transform for %d is %d (%.2f%% off)\n",
           (!dir_i) ? "FORWARD" : "BACKWARD", (!cplx_i) ? "REAL" : "COMPLEX", N_min, TL, NTL, near_off );
 
-      for (int N = (N_min/2); N <= N_max; N += (N_min/2))
+      /* step 0 when N_min == 1 (complex, SIMD_SZ==1): infinite loop */
+      const int N_step = (N_min/2) ? (N_min/2) : 1;
+      for (int N = (N_min/2); N <= N_max; N += N_step)
       {
         int R = N, f2 = 0, f3 = 0, f5 = 0, tmp_f;
         const int factorizable = pffftd_is_valid_size(N, cplx);

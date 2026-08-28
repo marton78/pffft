@@ -336,6 +336,20 @@ public:
           AlignedVector<Scalar> & spectrum_internal_ab,
           const Scalar scaling );
 
+  // unscaled variant of the above
+  AlignedVector<Scalar> & convolve(
+          const AlignedVector<Scalar> & spectrum_internal_a,
+          const AlignedVector<Scalar> & spectrum_internal_b,
+          AlignedVector<Scalar> & spectrum_internal_ab );
+
+  int zconvertZP(const AlignedVector<Scalar> & spectrum_internal_in,
+                 AlignedVector<Scalar> & spectrum_internal_out,
+                 const Scalar scaling );
+
+  int convolveZP(const AlignedVector<Scalar> & spectrum_internal_x,
+                 const AlignedVector<Scalar> & spectrum_internal_hzp,
+                 AlignedVector<Scalar> & spectrum_internal_ab );
+
 
   ////////////////////////////////////////////
   ////
@@ -380,6 +394,25 @@ public:
                    const Scalar* spectrum_internal_b,
                    Scalar* spectrum_internal_ab,
                    const Scalar scaling);
+
+  // unscaled variant of the above: spectrum_internal_ab = a * b
+  Scalar* convolve(const Scalar* spectrum_internal_a,
+                   const Scalar* spectrum_internal_b,
+                   Scalar* spectrum_internal_ab);
+
+  // zero-phase helpers for REAL transforms; return 0 on success,
+  // nonzero for COMPLEX transforms. zconvertZP() normalizes by 1/N:
+  // with scaling == 1, transform(x, FORWARD) -> convolveZP() ->
+  // transform(.., BACKWARD) yields the circular convolution of x
+  // with the filter at unit gain. See pffft_zconvert_zp() /
+  // pffft_zconvolve_zp() for the layout contract.
+  int zconvertZP(const Scalar* spectrum_internal_in,
+                 Scalar* spectrum_internal_out,
+                 const Scalar scaling);
+
+  int convolveZP(const Scalar* spectrum_internal_x,
+                 const Scalar* spectrum_internal_hzp,
+                 Scalar* spectrum_internal_ab);
 
   Scalar* convolveAccumulate(const Scalar* spectrum_internal_a,
                              const Scalar* spectrum_internal_b,
@@ -486,7 +519,26 @@ public:
                 Scalar* dft_ab,
                 const Scalar scaling)
   {
-    pffft_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
+    pffft_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
+  }
+
+  void convolve(const Scalar* dft_a,
+                const Scalar* dft_b,
+                Scalar* dft_ab)
+  {
+    pffft_zconvolve(self, dft_a, dft_b, dft_ab);
+  }
+
+  int zconvertZP(const Scalar* in, Scalar* out, const Scalar scaling)
+  {
+    return pffft_zconvert_zp(self, in, out, scaling);
+  }
+
+  int convolveZP(const Scalar* dft_x,
+                 const Scalar* dft_hzp,
+                 Scalar* dft_ab)
+  {
+    return pffft_zconvolve_zp(self, dft_x, dft_hzp, dft_ab);
   }
 };
 
@@ -542,7 +594,26 @@ public:
                 Scalar* dft_ab,
                 const Scalar scaling)
   {
-    pffft_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
+    pffft_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
+  }
+
+  void convolve(const Scalar* dft_a,
+                const Scalar* dft_b,
+                Scalar* dft_ab)
+  {
+    pffft_zconvolve(self, dft_a, dft_b, dft_ab);
+  }
+
+  int zconvertZP(const Scalar* in, Scalar* out, const Scalar scaling)
+  {
+    return pffft_zconvert_zp(self, in, out, scaling);
+  }
+
+  int convolveZP(const Scalar* dft_x,
+                 const Scalar* dft_hzp,
+                 Scalar* dft_ab)
+  {
+    return pffft_zconvolve_zp(self, dft_x, dft_hzp, dft_ab);
   }
 };
 
@@ -613,7 +684,25 @@ public:
                 Scalar* dft_ab,
                 const Scalar scaling)
   {
-    pffftd_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
+    pffftd_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
+  }
+
+  void convolve(const Scalar* dft_a,
+                const Scalar* dft_b,
+                Scalar* dft_ab)
+  {
+    pffftd_zconvolve(self, dft_a, dft_b, dft_ab);
+  }
+  int zconvertZP(const Scalar* in, Scalar* out, const Scalar scaling)
+  {
+    return pffftd_zconvert_zp(self, in, out, scaling);
+  }
+
+  int convolveZP(const Scalar* dft_x,
+                 const Scalar* dft_hzp,
+                 Scalar* dft_ab)
+  {
+    return pffftd_zconvolve_zp(self, dft_x, dft_hzp, dft_ab);
   }
 };
 
@@ -676,7 +765,25 @@ public:
                 Scalar* dft_ab,
                 const Scalar scaling)
   {
-    pffftd_zconvolve_no_accu(self, dft_a, dft_b, dft_ab, scaling);
+    pffftd_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
+  }
+
+  void convolve(const Scalar* dft_a,
+                const Scalar* dft_b,
+                Scalar* dft_ab)
+  {
+    pffftd_zconvolve(self, dft_a, dft_b, dft_ab);
+  }
+  int zconvertZP(const Scalar* in, Scalar* out, const Scalar scaling)
+  {
+    return pffftd_zconvert_zp(self, in, out, scaling);
+  }
+
+  int convolveZP(const Scalar* dft_x,
+                 const Scalar* dft_hzp,
+                 Scalar* dft_ab)
+  {
+    return pffftd_zconvolve_zp(self, dft_x, dft_hzp, dft_ab);
   }
 };
 
@@ -842,6 +949,41 @@ Fft<T>::convolve(
   return spectrum_internal_ab;
 }
 
+template<typename T>
+inline AlignedVector< typename Fft<T>::Scalar > &
+Fft<T>::convolve(
+    const AlignedVector<Scalar> & spectrum_internal_a,
+    const AlignedVector<Scalar> & spectrum_internal_b,
+    AlignedVector<Scalar> & spectrum_internal_ab )
+{
+  convolve( spectrum_internal_a.data(), spectrum_internal_b.data(),
+            spectrum_internal_ab.data() );
+  return spectrum_internal_ab;
+}
+
+template<typename T>
+inline int
+Fft<T>::zconvertZP(
+    const AlignedVector<Scalar> & spectrum_internal_in,
+    AlignedVector<Scalar> & spectrum_internal_out,
+    const Scalar scaling )
+{
+  return zconvertZP( spectrum_internal_in.data(),
+                     spectrum_internal_out.data(), scaling );
+}
+
+template<typename T>
+inline int
+Fft<T>::convolveZP(
+    const AlignedVector<Scalar> & spectrum_internal_x,
+    const AlignedVector<Scalar> & spectrum_internal_hzp,
+    AlignedVector<Scalar> & spectrum_internal_ab )
+{
+  return convolveZP( spectrum_internal_x.data(),
+                     spectrum_internal_hzp.data(),
+                     spectrum_internal_ab.data() );
+}
+
 
 template<typename T>
 inline typename Fft<T>::Complex *
@@ -921,6 +1063,37 @@ Fft<T>::convolve(const Scalar* dft_a,
   assert(isValid());
   setup.convolve(dft_a, dft_b, dft_ab, scaling);
   return dft_ab;
+}
+
+template<typename T>
+inline typename pffft::Fft<T>::Scalar*
+Fft<T>::convolve(const Scalar* dft_a,
+                 const Scalar* dft_b,
+                 Scalar* dft_ab)
+{
+  assert(isValid());
+  setup.convolve(dft_a, dft_b, dft_ab);
+  return dft_ab;
+}
+
+template<typename T>
+inline int
+Fft<T>::zconvertZP(const Scalar* spectrum_internal_in,
+                   Scalar* spectrum_internal_out,
+                   const Scalar scaling)
+{
+  assert(isValid());
+  return setup.zconvertZP(spectrum_internal_in, spectrum_internal_out, scaling);
+}
+
+template<typename T>
+inline int
+Fft<T>::convolveZP(const Scalar* dft_x,
+                   const Scalar* dft_hzp,
+                   Scalar* dft_ab)
+{
+  assert(isValid());
+  return setup.convolveZP(dft_x, dft_hzp, dft_ab);
 }
 
 template<typename T>
