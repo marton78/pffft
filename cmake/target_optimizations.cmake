@@ -60,6 +60,7 @@ elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64" OR CMAKE_SYSTEM_PROCESSOR MATCH
         set(GCC_EXTRA_VALUES "" CACHE INTERNAL "List of possible additional options")
     endif()
 elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "armv7l")
+    set(PFFFT_TARGET_IS_ARMV7 TRUE)
     set(GCC_MARCH_DESC "native/ARMwNEON:armv7-a")
     set(GCC_MARCH_VALUES "none;native;armv7-a" CACHE INTERNAL "List of possible architectures")
     set(GCC_EXTRA_VALUES "none;neon_vfpv4;neon_rpi3_a53;neon_rpi4_a72" CACHE INTERNAL "List of possible additional options")
@@ -152,6 +153,29 @@ if (PFFFT_TARGET_IS_X86)
                        " use -DTARGET_C_ARCH=${_pffft_fma_arch} for ~40% fewer FP ops"
                        " in the convolution loops (requires Haswell/Piledriver or later)")
     endif()
+endif()
+
+######################################################
+# ARMv7: gcc moves 128-bit NEON vectors in 64-bit pieces.
+#
+# Not a gcc bug. float32x4_t is specified to be laid out as a NEON register
+# stored with VSTM, which on big-endian differs from what VST1 produces, so for
+# a plain v4sf array access gcc restricts itself to the layout-compatible forms:
+# vld1.64/vst1.64, or a vldr/vstr pair whenever a nonzero immediate offset is
+# needed, since vld1.64 has no offset addressing mode. Any loop touching a
+# pointer more than once per iteration hits the latter. clang takes a different
+# position and uses vld1.32 for the same code. See GCC PR43725 comment 1.
+#
+# Measured with gcc 12.2 over the whole float translation unit: 1600 vldr/vstr
+# and 344 vld1/vst1, against clang 14's 181 and 797 -- about twice the
+# load/store operations for the same bytes, spread over ~19 functions. No flag
+# changes it (14 combinations tried), and gcc 16.1.0 behaves like 12.2. The
+# alternative to switching compilers would be to load/store through
+# vld1q_f32()/vst1q_f32() intrinsics, which this library does not do.
+if (PFFFT_TARGET_IS_ARMV7 AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    message(STATUS "pffft: gcc moves 128-bit NEON vectors in 64-bit pieces on ARMv7"
+                   " (see GCC PR43725), roughly doubling load/store work across the"
+                   " transform; clang is recommended here (CC=clang CXX=clang++)")
 endif()
 
 ######################################################

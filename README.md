@@ -10,6 +10,7 @@
 - [Brief Description](#brief-description)
 - [Why does it exist?](#why-does-it-exist)
 - [CMake](#cmake)
+- [How to set the compiler](#how-to-set-the-compiler)
 - [Performance and architecture notes](#performance-and-architecture-notes)
 - [Using pffft in your CMake project](#using-pffft-in-your-cmake-project)
 - [History / Origin / Changes](#history--origin--changes)
@@ -217,6 +218,33 @@ AMD Piledriver CPU, so enabling it unconditionally would break older hardware.
 
 Note that FMA changes results by up to one ULP, since it rounds once where the
 separate multiply and add round twice.
+
+### ARMv7 (32-bit ARM): prefer clang over gcc
+
+On 32-bit ARM, **gcc emits very inefficient assembly**, with a lot more
+operations that clang does. Measured over the whole float translation unit,
+both at `-O3 -march=armv7-a -mfpu=neon`:
+
+| | 64-bit `vldr`/`vstr` | 128-bit `vld1`/`vst1` |
+| --- | --- | --- |
+| gcc 12.2 | 1600 | 344 |
+| clang 14 | 181 | 797 |
+
+GCC's bad code generation affects roughly 19 functions, including the hot ones
+(`pffft_real_finalize`, `pffft_real_preprocess`, `pffft_cplx_finalize`,
+`pffft_zreorder`, `passf4_ps`, `radf4_ps`, ...). This caveat applies to all versions
+including GCC 16.1 (newest at time of writing), so this is not about old toolchains.
+
+There is a GCC [ticket](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=43725)
+reporting this since 2010 and it hasn't been fixed since. No flag changes it
+(fourteen combinations were tried, including `-mtune=cortex-a9/a15`, `-mcpu=...`,
+`-mfpu=neon-vfpv4`, `-mvectorize-with-neon-quad`, `-m[no-]unaligned-access`, `-O2`,
+and the Raspberry Pi 3/4 presets). It doesn't seem like this problem is ever going
+to be fixed, see [this comment](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=43725#c1)
+by the ARM maintainer. So we recommend to **use Clang when targeting ARMv7**.
+
+`cmake` prints a reminder when it sees gcc targeting ARMv7. Note that this applies
+only to 32-bit ARM, on AArch64 both compilers are fine.
 
 ### WebAssembly: SIMD backend and Relaxed SIMD
 
