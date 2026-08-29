@@ -47,6 +47,7 @@ string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" CMAKE_SYSTEM_PROCESSOR_LOWER)
 if ( (CMAKE_SYSTEM_PROCESSOR_LOWER STREQUAL "i686") OR (CMAKE_SYSTEM_PROCESSOR_LOWER STREQUAL "x86_64")
     # On Windows CMake emits "AMD64" (64-bit) or "x86" (32-bit) rather than the above
     OR (CMAKE_SYSTEM_PROCESSOR_LOWER STREQUAL "amd64") OR (CMAKE_SYSTEM_PROCESSOR_LOWER STREQUAL "x86") )
+    set(PFFFT_TARGET_IS_X86 TRUE)
     set(GCC_MARCH_DESC "native/SSE2:pentium4/SSE3:core2/SSE4:nehalem/AVX:sandybridge/AVX2:haswell")
     set(GCC_MARCH_VALUES "none;native;pentium4;core2;nehalem;sandybridge;haswell" CACHE INTERNAL "List of possible architectures")
     set(GCC_EXTRA_VALUES "" CACHE INTERNAL "List of possible EXTRA options")
@@ -117,6 +118,40 @@ elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     set(TARGET_CXX_EXTRA "none" CACHE STRING "msvc additional options")
 else()
     message(WARNING "unsupported C++ compiler '${CMAKE_CXX_COMPILER_ID}', see https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_COMPILER_ID.html")
+endif()
+
+######################################################
+# x86: FMA is opt-in and easy to miss.
+#
+# The SSE-float and AVX-double VMADD/VMSUB macros lower to true FMA only when
+# the compiler guarantees FMA3 -- gcc/clang via -march=haswell or later, MSVC
+# via /arch:AVX2. Without it every fused op costs a separate multiply plus add,
+# which in the frequency-domain multiply loops means 20 floating point
+# operations per iteration instead of 12 (measured on gcc 12 and clang 14,
+# x86-64 and i686, float and double alike).
+#
+# The default is deliberately left alone: FMA3 needs Haswell (2013) or
+# Piledriver, and raising the baseline would break older CPUs. So just say so.
+if (PFFFT_TARGET_IS_X86)
+    set(_pffft_have_fma FALSE)
+    if (CMAKE_C_COMPILER_ID MATCHES "MSVC")
+        set(_pffft_fma_arch "AVX2")
+        if ("${TARGET_C_ARCH}" MATCHES "AVX2|AVX512|AVX10")
+            set(_pffft_have_fma TRUE)
+        endif()
+    else()
+        set(_pffft_fma_arch "haswell")
+        # "native" is resolved by the compiler on the build machine, so whether
+        # it implies FMA is unknown here -- stay quiet rather than guess wrong
+        if ( ("${TARGET_C_ARCH}" STREQUAL "haswell") OR ("${TARGET_C_ARCH}" STREQUAL "native") )
+            set(_pffft_have_fma TRUE)
+        endif()
+    endif()
+    if (NOT _pffft_have_fma)
+        message(STATUS "pffft: TARGET_C_ARCH='${TARGET_C_ARCH}' has no FMA;"
+                       " use -DTARGET_C_ARCH=${_pffft_fma_arch} for ~40% fewer FP ops"
+                       " in the convolution loops (requires Haswell/Piledriver or later)")
+    endif()
 endif()
 
 ######################################################

@@ -190,6 +190,34 @@ the Relaxed SIMD option and the non-CMake build flags.
 Compiler- and architecture-specific tips for getting the best performance out
 of pffft.
 
+### x86: enable FMA
+
+On x86 the fused multiply-add paths are **opt-in**, and the default build does
+not get them. `VMADD`/`VMSUB` -- used by the complex multiply at the heart of
+`pffft_zconvolve*()` and of every radix codelet -- lower to a real FMA
+instruction only when the compiler guarantees FMA3:
+
+| compiler | how to enable |
+| --- | --- |
+| gcc / clang | `-DTARGET_C_ARCH=haswell` (or a later `-march` value) |
+| MSVC | `-DTARGET_C_ARCH=AVX2` |
+
+Without it, each fused operation costs a separate multiply plus add. Measured
+on the `pffft_zconvolve_accumulate()` inner loop, identical for gcc 12 and
+clang 14, x86-64 and i686, float (SSE) and double (AVX): **20 floating point
+operations per iteration instead of 12**.
+
+```
+cmake -DTARGET_C_ARCH=haswell -DTARGET_CXX_ARCH=haswell ..
+```
+
+This is not the default on purpose: FMA3 requires an Intel Haswell (2013) or
+AMD Piledriver CPU, so enabling it unconditionally would break older hardware.
+`cmake` prints a reminder when the selected x86 architecture has no FMA.
+
+Note that FMA changes results by up to one ULP, since it rounds once where the
+separate multiply and add round twice.
+
 ### WebAssembly: SIMD backend and Relaxed SIMD
 
 pffft has a dedicated WASM SIMD backend using native `wasm_simd128.h`
