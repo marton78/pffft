@@ -338,6 +338,85 @@ static int test_zconvolve_unscaled(int N)
   return retError;
 }
 
+/* pffft_zconvolve_accumulate() is public API with no coverage in this
+   suite and no caller anywhere in the library, so nothing exercised it
+   at all -- which is how a misspelled guard around an alternative
+   implementation of this very loop went unnoticed for years.
+
+   Invariant: the destination must end up as its previous content plus
+   what pffft_zconvolve_scale() writes for the same inputs, which is an
+   independently written loop. Pre-filling the destination with distinct
+   nonzero values makes a short trip count or a dropped tail fail too.
+   The accumulate fuses its multiply-add where the hardware allows, so
+   this is a 1-ULP comparison rather than a bit-exact one. */
+static int test_zconvolve_accumulate(int N, int cplx)
+{
+  int j, retError = 0;
+  const int nf = ( cplx ? 2 : 1 ) * N;
+  const pffft_scalar scaling = (pffft_scalar)0.375;
+#ifdef PFFFT_ENABLE_FLOAT
+  typedef PFFFT_Setup setup_t;
+#define ZT_NEW_SETUP     pffft_new_setup
+#define ZT_DESTROY_SETUP pffft_destroy_setup
+#define ZT_TRANSFORM     pffft_transform
+#define ZT_ZCONV_SCALE   pffft_zconvolve_scale
+#define ZT_ZCONV_ACC     pffft_zconvolve_accumulate
+#define ZT_MALLOC        pffft_aligned_malloc
+#define ZT_FREE          pffft_aligned_free
+#else
+  typedef PFFFTD_Setup setup_t;
+#define ZT_NEW_SETUP     pffftd_new_setup
+#define ZT_DESTROY_SETUP pffftd_destroy_setup
+#define ZT_TRANSFORM     pffftd_transform
+#define ZT_ZCONV_SCALE   pffftd_zconvolve_scale
+#define ZT_ZCONV_ACC     pffftd_zconvolve_accumulate
+#define ZT_MALLOC        pffftd_aligned_malloc
+#define ZT_FREE          pffftd_aligned_free
+#endif
+  setup_t *s;
+  pffft_scalar *X, *H, *A, *B, *C, *C0, *D, *W;
+
+  s = ZT_NEW_SETUP(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
+  assert(s);
+  X  = (pffft_scalar*)ZT_MALLOC(nf * sizeof(pffft_scalar));
+  H  = (pffft_scalar*)ZT_MALLOC(nf * sizeof(pffft_scalar));
+  A  = (pffft_scalar*)ZT_MALLOC(nf * sizeof(pffft_scalar));
+  B  = (pffft_scalar*)ZT_MALLOC(nf * sizeof(pffft_scalar));
+  C  = (pffft_scalar*)ZT_MALLOC(nf * sizeof(pffft_scalar));
+  C0 = (pffft_scalar*)ZT_MALLOC(nf * sizeof(pffft_scalar));
+  D  = (pffft_scalar*)ZT_MALLOC(nf * sizeof(pffft_scalar));
+  W  = (pffft_scalar*)ZT_MALLOC(nf * sizeof(pffft_scalar));
+
+  for ( j = 0; j < nf; ++j ) {
+    X[j] = (pffft_scalar)(sin(0.37*j) + 0.5*cos(1.71*j + 0.3));
+    H[j] = (pffft_scalar)(cos(0.11*j) - 0.25*sin(0.53*j));
+  }
+  ZT_TRANSFORM(s, X, A, W, PFFFT_FORWARD);
+  ZT_TRANSFORM(s, H, B, W, PFFFT_FORWARD);
+
+  for ( j = 0; j < nf; ++j )
+    C0[j] = C[j] = (pffft_scalar)(1000.0 + j);
+
+  ZT_ZCONV_ACC(s, A, B, C, scaling);
+  ZT_ZCONV_SCALE(s, A, B, D, scaling);
+
+  for ( j = 0; j < nf; ++j ) {
+    const double got  = (double)C[j];
+    const double want = (double)C0[j] + (double)D[j];
+    if ( fabs(got - want) > 1e-5 * (fabs(want) + 1.0) ) {
+      printf("zconvolve_accumulate %s fft %d: element %d : got %g, expected %g\n",
+             (cplx ? "cplx" : "real"), N, j, got, want);
+      retError = 1;
+      break;
+    }
+  }
+
+  ZT_FREE(X); ZT_FREE(H); ZT_FREE(A); ZT_FREE(B);
+  ZT_FREE(C); ZT_FREE(C0); ZT_FREE(D); ZT_FREE(W);
+  ZT_DESTROY_SETUP(s);
+  return retError;
+}
+
 /* zero-phase filtering check: a linear-phase FIR centered at t = 0
    with left-hand taps wrapped around the block must produce exactly the
    circular convolution of the wrapped filter with the signal when its
@@ -529,6 +608,7 @@ int main(int argc, char **argv)
 {
   int N, result, resN, resAll, i, k, resNextPw2, resIsPw2, resFFT;
   int resZconv;
+  int resZacc;
   int resZP;
 
   int inp_power_of_two[] = { 1, 2, 3, 4, 5, 6, 7, 8,  9, 511, 512,  513 };
@@ -618,11 +698,20 @@ int main(int argc, char **argv)
   if (!resZconv)
     printf("zconvolve unscaled tests succeeded successfully.\n");
 
+  /* N = 32 is the smallest valid size: Ncvec == 4, i.e. two iterations
+     of the unrolled-by-two inner loop -- the trip-count edge case */
+  resZacc = test_zconvolve_accumulate(32, 0);
+  resZacc |= test_zconvolve_accumulate(32, 1);
+  resZacc |= test_zconvolve_accumulate(256, 0);
+  resZacc |= test_zconvolve_accumulate(256, 1);
+  if (!resZacc)
+    printf("zconvolve accumulate tests succeeded successfully.\n");
+
   resZP = test_zerophase(64);
   if (!resZP)
     printf("zero-phase convolution tests succeeded successfully.\n");
 
-  resAll = resNextPw2 | resIsPw2 | resFFT | resZconv | resZP;
+  resAll = resNextPw2 | resIsPw2 | resFFT | resZconv | resZacc | resZP;
   if (!resAll)
     printf("all tests succeeded successfully.\n");
   else
