@@ -1788,16 +1788,11 @@ void FUNC_ZCONVOLVE_ACCUMULATE(const SETUP_STRUCT *s, const float *a, const floa
   __builtin_prefetch(va+6);
   __builtin_prefetch(vb+6);
   __builtin_prefetch(vab+6);
-# ifndef __clang__
-#   define ZCONVOLVE_USING_INLINE_NEON_ASM
-# endif
 #endif
 
   float ar0, ai0, br0, bi0, abr0, abi0;
-#ifndef ZCONVOLVE_USING_INLINE_ASM
   v4sf vscal = LD_PS1(scaling);
   int i;
-#endif
 
   assert(VALIGNED(a) && VALIGNED(b) && VALIGNED(ab));
   ar0 = ((v4sf_union*)va)[0].f[0];
@@ -1807,46 +1802,6 @@ void FUNC_ZCONVOLVE_ACCUMULATE(const SETUP_STRUCT *s, const float *a, const floa
   abr0 = ((v4sf_union*)vab)[0].f[0];
   abi0 = ((v4sf_union*)vab)[1].f[0];
 
-#ifdef ZCONVOLVE_USING_INLINE_ASM
-  /* inline asm version, unfortunately miscompiled by clang 3.2,
-   * at least on ubuntu.. so this will be restricted to gcc */
-  const float *a_ = a, *b_ = b; float *ab_ = ab;
-  int N = Ncvec;
-  asm volatile("mov         r8, %2                  \n"
-               "vdup.f32    q15, %4                 \n"
-               "1:                                  \n"
-               "pld         [%0,#64]                \n"
-               "pld         [%1,#64]                \n"
-               "pld         [%2,#64]                \n"
-               "pld         [%0,#96]                \n"
-               "pld         [%1,#96]                \n"
-               "pld         [%2,#96]                \n"
-               "vld1.f32    {q0,q1},   [%0,:128]!         \n"
-               "vld1.f32    {q4,q5},   [%1,:128]!         \n"
-               "vld1.f32    {q2,q3},   [%0,:128]!         \n"
-               "vld1.f32    {q6,q7},   [%1,:128]!         \n"
-               "vld1.f32    {q8,q9},   [r8,:128]!          \n"
-
-               "vmul.f32    q10, q0, q4             \n"
-               "vmul.f32    q11, q0, q5             \n"
-               "vmul.f32    q12, q2, q6             \n"
-               "vmul.f32    q13, q2, q7             \n"
-               "vmls.f32    q10, q1, q5             \n"
-               "vmla.f32    q11, q1, q4             \n"
-               "vld1.f32    {q0,q1}, [r8,:128]!     \n"
-               "vmls.f32    q12, q3, q7             \n"
-               "vmla.f32    q13, q3, q6             \n"
-               "vmla.f32    q8, q10, q15            \n"
-               "vmla.f32    q9, q11, q15            \n"
-               "vmla.f32    q0, q12, q15            \n"
-               "vmla.f32    q1, q13, q15            \n"
-               "vst1.f32    {q8,q9},[%2,:128]!    \n"
-               "vst1.f32    {q0,q1},[%2,:128]!    \n"
-               "subs        %3, #2                  \n"
-               "bne         1b                      \n"
-               : "+r"(a_), "+r"(b_), "+r"(ab_), "+r"(N) : "r"(scaling) : "r8", "q0","q1","q2","q3","q4","q5","q6","q7","q8","q9", "q10","q11","q12","q13","q15","memory");
-#else
-  /* default routine, works fine for non-arm cpus with current compilers */
   for (i=0; i < Ncvec; i += 2) {
     v4sf ar, ai, br, bi;
     ar = va[2*i+0]; ai = va[2*i+1];
@@ -1860,7 +1815,6 @@ void FUNC_ZCONVOLVE_ACCUMULATE(const SETUP_STRUCT *s, const float *a, const floa
     vab[2*i+2] = VMADD(ar, vscal, vab[2*i+2]);
     vab[2*i+3] = VMADD(ai, vscal, vab[2*i+3]);
   }
-#endif
   if (s->transform == PFFFT_REAL) {
     ((v4sf_union*)vab)[0].f[0] = abr0 + ar0*br0*scaling;
     ((v4sf_union*)vab)[1].f[0] = abi0 + ai0*bi0*scaling;
@@ -1889,9 +1843,6 @@ void FUNC_ZCONVOLVE_SCALE(const SETUP_STRUCT *s, const float *a, const float *b,
   __builtin_prefetch(va+6);
   __builtin_prefetch(vb+6);
   __builtin_prefetch(vab+6);
-# ifndef __clang__
-#   define ZCONVOLVE_USING_INLINE_NEON_ASM
-# endif
 #endif
 
   assert(VALIGNED(a) && VALIGNED(b) && VALIGNED(ab));
