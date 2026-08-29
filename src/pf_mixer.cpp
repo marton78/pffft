@@ -101,13 +101,13 @@ typedef union v4_union {
 #define VADD(a,b)                 _mm_add_ps(a,b)
 #define VSUB(a,b)                 _mm_sub_ps(a,b)
 /* Fused multiply-add, where the target guarantees a real FMA instruction.
-   x86 needs __FMA__ (gcc/clang -march=haswell or later / -mfma; MSVC has no
-   such macro but /arch:AVX2 enables FMA -- see src/simd/pf_sse1_float.h).
+   On x86 see simd/pf_fma_x86.h for why the test is not just __FMA__.
    On AArch64 the _mm_* names above come from sse2neon.h, whose _mm_fmadd_ps
    maps onto vfmaq_f32; it has no _mm_fnmadd_ps, so VMSUB stays portable there.
    Everything else falls back to a separate multiply and add, exactly what
    these call sites spelled out before. */
-#if defined(__FMA__) || (defined(_MSC_VER) && !defined(__clang__) && defined(__AVX2__))
+#include "simd/pf_fma_x86.h"
+#ifdef PFFFT_X86_HAVE_FMA
 #  include <immintrin.h>
 #  define VMADD(a,b,c)            _mm_fmadd_ps(a,b,c)
 #  define VMSUB(a,b,c)            _mm_fnmadd_ps(a,b,c)

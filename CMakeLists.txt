@@ -141,8 +141,8 @@ if (MINGW)
 endif()
 
 
-set( SIMD_FLOAT_HDRS ${PFFFT_SOURCE_DIR}/src/simd/pf_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_sse1_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_altivec_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_neon_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_wasm_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_scalar_float.h )
-set( SIMD_DOUBLE_HDRS ${PFFFT_SOURCE_DIR}/src/simd/pf_double.h ${PFFFT_SOURCE_DIR}/src/simd/pf_avx_double.h ${PFFFT_SOURCE_DIR}/src/simd/pf_wasm_double.h ${PFFFT_SOURCE_DIR}/src/simd/pf_scalar_double.h )
+set( SIMD_FLOAT_HDRS ${PFFFT_SOURCE_DIR}/src/simd/pf_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_sse1_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_altivec_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_neon_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_wasm_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_scalar_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_fma_x86.h )
+set( SIMD_DOUBLE_HDRS ${PFFFT_SOURCE_DIR}/src/simd/pf_double.h ${PFFFT_SOURCE_DIR}/src/simd/pf_avx_double.h ${PFFFT_SOURCE_DIR}/src/simd/pf_wasm_double.h ${PFFFT_SOURCE_DIR}/src/simd/pf_scalar_double.h ${PFFFT_SOURCE_DIR}/src/simd/pf_fma_x86.h )
 
 if (PFFFT_USE_TYPE_FLOAT)
   set( FLOAT_SOURCES src/pffft.c include/pffft/pffft.h ${SIMD_FLOAT_HDRS} )

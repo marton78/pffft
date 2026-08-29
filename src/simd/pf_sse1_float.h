@@ -58,16 +58,9 @@ typedef union v4sf_union {
 #  define VZERO() _mm_setzero_ps()
 #  define VMUL(a,b) _mm_mul_ps(a,b)
 #  define VADD(a,b) _mm_add_ps(a,b)
-/* Use true fused multiply-add when the target guarantees FMA3.
-   gcc/clang define __FMA__ for -march=haswell and later, or -mfma.
-   MSVC defines no __FMA__ at all, but /arch:AVX2 (and AVX512/AVX10)
-   "enables use of Fused Multiply-Add instructions" and every AVX2 CPU
-   has FMA3, so __AVX2__ is the equivalent gate there. clang-cl also
-   defines _MSC_VER but errors on the intrinsic without the fma target
-   feature, so it is routed through __FMA__ instead.
-   https://learn.microsoft.com/en-us/cpp/build/reference/arch-x64
-   https://learn.microsoft.com/en-us/cpp/preprocessor/predefined-macros */
-#if defined(__FMA__) || (defined(_MSC_VER) && !defined(__clang__) && defined(__AVX2__))
+/* see pf_fma_x86.h for why this is not just defined(__FMA__) */
+#include "pf_fma_x86.h"
+#ifdef PFFFT_X86_HAVE_FMA
 #  include <immintrin.h>
 #  define VMADD(a,b,c) _mm_fmadd_ps(a,b,c)
 #  define VMSUB(a,b,c) _mm_fnmadd_ps(a,b,c)
