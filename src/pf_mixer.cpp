@@ -100,6 +100,24 @@ typedef union v4_union {
 #define VDIV(a,b)                 _mm_div_ps(a,b)
 #define VADD(a,b)                 _mm_add_ps(a,b)
 #define VSUB(a,b)                 _mm_sub_ps(a,b)
+/* Fused multiply-add, where the target guarantees a real FMA instruction.
+   x86 needs __FMA__ (gcc/clang -march=haswell or later / -mfma; MSVC has no
+   such macro but /arch:AVX2 enables FMA -- see src/simd/pf_sse1_float.h).
+   On AArch64 the _mm_* names above come from sse2neon.h, whose _mm_fmadd_ps
+   maps onto vfmaq_f32; it has no _mm_fnmadd_ps, so VMSUB stays portable there.
+   Everything else falls back to a separate multiply and add, exactly what
+   these call sites spelled out before. */
+#if defined(__FMA__) || (defined(_MSC_VER) && !defined(__clang__) && defined(__AVX2__))
+#  include <immintrin.h>
+#  define VMADD(a,b,c)            _mm_fmadd_ps(a,b,c)
+#  define VMSUB(a,b,c)            _mm_fnmadd_ps(a,b,c)
+#elif defined(__aarch64__) || defined(__arm64__)
+#  define VMADD(a,b,c)            _mm_fmadd_ps(a,b,c)
+#  define VMSUB(a,b,c)            _mm_sub_ps(c, _mm_mul_ps(a,b))
+#else
+#  define VMADD(a,b,c)            _mm_add_ps(_mm_mul_ps(a,b), c)
+#  define VMSUB(a,b,c)            _mm_sub_ps(c, _mm_mul_ps(a,b))
+#endif
 #define LD_PS1(s)                 _mm_set1_ps(s)
 #define VLOAD_UNALIGNED(ptr)      _mm_loadu_ps((const float *)(ptr))
 #define VLOAD_ALIGNED(ptr)        _mm_load_ps((const float *)(ptr))
@@ -584,8 +602,8 @@ void shift_limited_unroll_A_sse_inp_c(complexf* in_out, int N_cplx, shift_limite
             // ==  u[0..3] *= (cos_val[0..3] + i * sin_val[0..3]):
             // "out[] = inp[] * vals"
             UNINTERLEAVE2(VLOAD(u), VLOAD(u+1), inp_re, inp_im);  /* inp_re = all reals; inp_im = all imags */
-            product_re = VSUB( VMUL(inp_re, cos_vals), VMUL(inp_im, sin_vals) );
-            product_im = VADD( VMUL(inp_im, cos_vals), VMUL(inp_re, sin_vals) );
+            product_re = VMSUB( inp_im, sin_vals, VMUL(inp_re, cos_vals) );
+            product_im = VMADD( inp_im, cos_vals, VMUL(inp_re, sin_vals) );
             INTERLEAVE2( product_re, product_im, interl_prod_a, interl_prod_b);
             VSTORE(u, interl_prod_a);
             VSTORE(u+1, interl_prod_b);
@@ -597,8 +615,8 @@ void shift_limited_unroll_A_sse_inp_c(complexf* in_out, int N_cplx, shift_limite
             // "vals :=  d[] * starts"
             inp_re = VLOAD(p_trig_cos_tab);
             inp_im = VLOAD(p_trig_sin_tab);
-            cos_vals = VSUB( VMUL(inp_re, cos_starts), VMUL(inp_im, sin_starts) );
-            sin_vals = VADD( VMUL(inp_im, cos_starts), VMUL(inp_re, sin_starts) );
+            cos_vals = VMSUB( inp_im, sin_starts, VMUL(inp_re, cos_starts) );
+            sin_vals = VMADD( inp_im, cos_starts, VMUL(inp_re, sin_starts) );
             ++p_trig_cos_tab;
             ++p_trig_sin_tab;
             B -= 4;
@@ -607,7 +625,7 @@ void shift_limited_unroll_A_sse_inp_c(complexf* in_out, int N_cplx, shift_limite
         /* normalize d->phase_state_i[]/d->phase_state_q[], that magnitude does not fade towards 0 ! */
         /* re-use product_re[]/product_im[] for normalization */
         // "starts := vals := vals / |vals|"
-        product_re = VADD( VMUL(cos_vals, cos_vals), VMUL(sin_vals, sin_vals) );
+        product_re = VMADD( cos_vals, cos_vals, VMUL(sin_vals, sin_vals) );
 #if 0
         // more spikes in spectrum! at PF_SHIFT_LIMITED_UNROLL_SIZE = 64
         // higher spikes in spectrum at PF_SHIFT_LIMITED_UNROLL_SIZE = 16
@@ -697,8 +715,8 @@ void shift_limited_unroll_B_sse_inp_c(complexf* in_out, int N_cplx, shift_limite
             // ==  u[0..3] *= (cos_val[0..3] + i * sin_val[0..3]):
             // "out[] = inp[] * vals"
             UNINTERLEAVE2(VLOAD(u), VLOAD(u+1), inp_re, inp_im);  /* inp_re = all reals; inp_im = all imags */
-            product_re = VSUB( VMUL(inp_re, cos_vals), VMUL(inp_im, sin_vals) );
-            product_im = VADD( VMUL(inp_im, cos_vals), VMUL(inp_re, sin_vals) );
+            product_re = VMSUB( inp_im, sin_vals, VMUL(inp_re, cos_vals) );
+            product_im = VMADD( inp_im, cos_vals, VMUL(inp_re, sin_vals) );
             INTERLEAVE2( product_re, product_im, interl_prod_a, interl_prod_b);
             VSTORE(u, interl_prod_a);
             VSTORE(u+1, interl_prod_b);
@@ -710,8 +728,8 @@ void shift_limited_unroll_B_sse_inp_c(complexf* in_out, int N_cplx, shift_limite
             // "vals :=  d[] * starts"
             product_re = VLOAD(p_trig_tab);
             UNINTERLEAVE2(product_re, product_re, inp_re, inp_im);  /* inp_re = all reals; inp_im = all imags */
-            cos_vals = VSUB( VMUL(inp_re, cos_starts), VMUL(inp_im, sin_starts) );
-            sin_vals = VADD( VMUL(inp_im, cos_starts), VMUL(inp_re, sin_starts) );
+            cos_vals = VMSUB( inp_im, sin_starts, VMUL(inp_re, cos_starts) );
+            sin_vals = VMADD( inp_im, cos_starts, VMUL(inp_re, sin_starts) );
             ++p_trig_tab;
             B -= 4;
         }
@@ -719,7 +737,7 @@ void shift_limited_unroll_B_sse_inp_c(complexf* in_out, int N_cplx, shift_limite
         /* normalize d->phase_state_i[]/d->phase_state_q[], that magnitude does not fade towards 0 ! */
         /* re-use product_re[]/product_im[] for normalization */
         // "starts := vals := vals / |vals|"
-        product_re = VADD( VMUL(cos_vals, cos_vals), VMUL(sin_vals, sin_vals) );
+        product_re = VMADD( cos_vals, cos_vals, VMUL(sin_vals, sin_vals) );
 #if 0
         // more spikes in spectrum! at PF_SHIFT_LIMITED_UNROLL_SIZE = 64
         // higher spikes in spectrum at PF_SHIFT_LIMITED_UNROLL_SIZE = 16
@@ -813,8 +831,8 @@ void shift_limited_unroll_C_sse_inp_c(complexf* in_out, int N_cplx, shift_limite
             // ==  u[0..3] *= (cos_val[0..3] + i * sin_val[0..3]):
             // "out[] = inp[] * vals"
             UNINTERLEAVE2(VLOAD(u), VLOAD(u+1), inp_re, inp_im);  /* inp_re = all reals; inp_im = all imags */
-            product_re = VSUB( VMUL(inp_re, cos_vals), VMUL(inp_im, sin_vals) );
-            product_im = VADD( VMUL(inp_im, cos_vals), VMUL(inp_re, sin_vals) );
+            product_re = VMSUB( inp_im, sin_vals, VMUL(inp_re, cos_vals) );
+            product_im = VMADD( inp_im, cos_vals, VMUL(inp_re, sin_vals) );
             INTERLEAVE2( product_re, product_im, interl_prod_a, interl_prod_b);
             VSTORE(u, interl_prod_a);
             VSTORE(u+1, interl_prod_b);
@@ -826,8 +844,8 @@ void shift_limited_unroll_C_sse_inp_c(complexf* in_out, int N_cplx, shift_limite
             // "vals :=  d[] * starts"
             inp_re = VLOAD(p_trig_tab);
             inp_im = VLOAD(p_trig_tab+1);
-            cos_vals = VSUB( VMUL(inp_re, cos_starts), VMUL(inp_im, sin_starts) );
-            sin_vals = VADD( VMUL(inp_im, cos_starts), VMUL(inp_re, sin_starts) );
+            cos_vals = VMSUB( inp_im, sin_starts, VMUL(inp_re, cos_starts) );
+            sin_vals = VMADD( inp_im, cos_starts, VMUL(inp_re, sin_starts) );
             p_trig_tab += 2;
             B -= 4;
         }
@@ -835,7 +853,7 @@ void shift_limited_unroll_C_sse_inp_c(complexf* in_out, int N_cplx, shift_limite
         /* normalize d->phase_state_i[]/d->phase_state_q[], that magnitude does not fade towards 0 ! */
         /* re-use product_re[]/product_im[] for normalization */
         // "starts := vals := vals / |vals|"
-        product_re = VADD( VMUL(cos_vals, cos_vals), VMUL(sin_vals, sin_vals) );
+        product_re = VMADD( cos_vals, cos_vals, VMUL(sin_vals, sin_vals) );
 #if 0
         // more spikes in spectrum! at PF_SHIFT_LIMITED_UNROLL_SIZE = 64
         // higher spikes in spectrum at PF_SHIFT_LIMITED_UNROLL_SIZE = 16
@@ -1104,8 +1122,8 @@ void shift_recursive_osc_sse_inp_c(complexf* in_out,
         //we multiply two complex numbers - similar to shift_math_cc
         //iof(in_out,PF_SHIFT_RECURSIVE_SIMD_SSE_SZ*i+j) = state.u_cos[j] * inp_i[j] - state.v_sin[j] * inp_q[j];
         //qof(in_out,PF_SHIFT_RECURSIVE_SIMD_SSE_SZ*i+j) = state.v_sin[j] * inp_i[j] + state.u_cos[j] * inp_q[j];
-        product_re = VSUB( VMUL(inp_re, u_cos), VMUL(inp_im, v_sin) );
-        product_im = VADD( VMUL(inp_im, u_cos), VMUL(inp_re, v_sin) );
+        product_re = VMSUB( inp_im, v_sin, VMUL(inp_re, u_cos) );
+        product_im = VMADD( inp_im, u_cos, VMUL(inp_re, v_sin) );
         INTERLEAVE2( product_re, product_im, interl_prod_a, interl_prod_b);
         VSTORE(u, interl_prod_a);
         VSTORE(u+1, interl_prod_b);
@@ -1113,11 +1131,11 @@ void shift_recursive_osc_sse_inp_c(complexf* in_out,
 
         // update complex phasor - like incrementing phase
         // tmp[j] = state.u_cos[j] - k1 * state.v_sin[j];
-        product_re = VSUB( u_cos, VMUL(k1, v_sin) );
+        product_re = VMSUB( k1, v_sin, u_cos );
         // state.v_sin[j] += k2 * tmp[j];
-        v_sin = VADD( v_sin, VMUL(k2, product_re) );
+        v_sin = VMADD( k2, product_re, v_sin );
         // state.u_cos[j] = tmp[j] - k1 * state.v_sin[j];
-        u_cos = VSUB( product_re, VMUL(k1, v_sin) );
+        u_cos = VMSUB( k1, v_sin, product_re );
 
         N_cplx -= 4;
     }

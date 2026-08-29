@@ -80,6 +80,11 @@ typedef float vsfscalar;
 /* multiply a scalar with a vector */
 #define SVMUL(f,v) VMUL(LD_PS1(f),v)
 #endif
+#ifndef SVMADD
+/* fused scalar-times-vector plus/minus a vector: c + f*v and c - f*v */
+#define SVMADD(f,v,c) VMADD(LD_PS1(f),v,c)
+#define SVMSUB(f,v,c) VMSUB(LD_PS1(f),v,c)
+#endif
 
 #endif /* PF_FLT_H */
 
