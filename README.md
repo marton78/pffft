@@ -10,6 +10,7 @@
 - [Brief Description](#brief-description)
 - [Why does it exist?](#why-does-it-exist)
 - [CMake](#cmake)
+- [Performance and architecture notes](#performance-and-architecture-notes)
 - [Using pffft in your CMake project](#using-pffft-in-your-cmake-project)
 - [History / Origin / Changes](#history--origin--changes)
 - [Comparison with other FFTs](#comparison-with-other-ffts)
@@ -180,6 +181,11 @@ ctest
 ```
 
 WASM SIMD is enabled automatically. Emscripten provides NEON-to-WASM SIMD translation via [SIMDe](https://github.com/simd-everywhere/simde) (SIMD Everywhere) compatibility headers, so pffft's NEON code paths are reused for WebAssembly.
+
+## Performance and architecture notes
+
+Compiler- and architecture-specific tips for getting the best performance out
+of pffft.
 
 ## Using pffft in your CMake project
 
