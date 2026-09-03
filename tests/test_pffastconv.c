@@ -843,6 +843,13 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
 
       if ( printDbg || (iMaxSpeedSlowAlgo == i) || (iMaxSpeedFastAlgo == i) )
         printf("max difference for '%s' is %g at sample idx %d of max inp 4093-1 == %f %%\n", convText[yc], maxErr, posMaxErr, maxErr * 100.0 / 4092.0 );
+
+      if ( outMin > 0 && maxErr >= yErrLimit )
+      {
+        printf("algo '%s' (FILTERLEN %d, flags %d): max difference %g at sample %d exceeds err limit %g\n",
+          convText[yc], FILTERLEN, convFlags, maxErr, posMaxErr, yErrLimit );
+        retErr = 1;
+      }
     }
 
     break;
