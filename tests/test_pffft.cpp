@@ -371,7 +371,7 @@ test(int N, bool useComplex, bool useOrdered)
            Ttest< ::std::complex<float> >(N, useOrdered)
 #endif
 #if defined(PFFFT_ENABLE_FLOAT) && defined(PFFFT_ENABLE_DOUBLE)
-        &&
+        |
 #endif
 #ifdef PFFFT_ENABLE_DOUBLE
            Ttest< ::std::complex<double> >(N, useOrdered)
@@ -383,7 +383,7 @@ test(int N, bool useComplex, bool useOrdered)
            Ttest<float>(N, useOrdered)
 #endif
 #if defined(PFFFT_ENABLE_FLOAT) && defined(PFFFT_ENABLE_DOUBLE)
-        &&
+        |
 #endif
 #ifdef PFFFT_ENABLE_DOUBLE
            Ttest<double>(N, useOrdered)

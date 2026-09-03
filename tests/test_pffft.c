@@ -53,11 +53,18 @@ typedef double pffft_scalar;
  * single precision float has 24 bits mantissa
  * => 24 Bits * 6 dB = 144 dB
  * allow a few dB tolerance (even 144 dB looks good on my PC)
+ *
+ * Sizes with factors 3 or 5 need more, inexact twiddle multiplies per
+ * output than powers of two; measured floor is ~136 dB in float (vs 145
+ * for powers of two), so allow 8 dB less there. In double the measured
+ * floor is > 240 dB for every tested size.
  */
 #ifdef PFFFT_ENABLE_FLOAT
 #define EXPECTED_DYN_RANGE  140.0
+#define EXPECTED_DYN_RANGE_NON_POW2  132.0
 #else
 #define EXPECTED_DYN_RANGE  215.0
+#define EXPECTED_DYN_RANGE_NON_POW2  215.0
 #endif
 
 /* maximum allowed phase error in degree */
@@ -80,24 +87,28 @@ int test(int N, int cplx, int useOrdered) {
   pffft_scalar *Y = pffft_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
   pffft_scalar *R = pffft_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
   pffft_scalar *Z = pffft_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
+  pffft_scalar *I = pffft_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
   pffft_scalar *W = pffft_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
 #else
   pffft_scalar *X = pffftd_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
   pffft_scalar *Y = pffftd_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
   pffft_scalar *R = pffftd_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
   pffft_scalar *Z = pffftd_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
+  pffft_scalar *I = pffftd_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
   pffft_scalar *W = pffftd_aligned_malloc((unsigned)Nfloat * sizeof(pffft_scalar));
 #endif
   pffft_scalar amp = (pffft_scalar)1.0;
   double freq, dPhi, phi, phi0;
   double pwr, pwrCar, pwrOther, err, errSum, mag, expextedMag;
   int k, j, m, iter, kmaxOther, retError = 0;
+  int step = N/16;
+  const double expectedDynRange = ( N & (N-1) ) ? EXPECTED_DYN_RANGE_NON_POW2 : EXPECTED_DYN_RANGE;
 
 #ifdef PFFFT_ENABLE_FLOAT
-  assert( pffft_is_power_of_two(N) );
+  assert( pffft_is_valid_size(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL) );
   PFFFT_Setup *s = pffft_new_setup(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
 #else
-  assert( pffftd_is_power_of_two(N) );
+  assert( pffftd_is_valid_size(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL) );
   PFFFTD_Setup *s = pffftd_new_setup(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
 #endif
   assert(s);
@@ -106,7 +117,21 @@ int test(int N, int cplx, int useOrdered) {
     return 1;
   }
 
-  for ( k = m = 0; k < (cplx? N : (1 + N/2) ); k += N/16, ++m )
+  /* bins k = m*N/16 make the test signal 16-periodic, so every butterfly
+     whose input span is a multiple of 16 sees identical inputs and the
+     radix-3/5 codelets' outputs are zero no matter what their twiddle
+     constants are. For non-power-of-two N use a step coprime to N (full
+     period, every stage sees distinct inputs). Powers of two keep N/16,
+     which also visits the DC and Nyquist bins. */
+  if ( N & (N-1) ) {
+    int a, b;
+    do {
+      --step;
+      for ( a = step, b = N; b; ) { int t = a % b; a = b; b = t; }  /* a = gcd(step, N) */
+    } while ( a != 1 );
+  }
+
+  for ( k = m = 0; k < (cplx? N : (1 + N/2) ); k += step, ++m )
   {
     amp = (pffft_scalar)( ( (m % 3) == 0 ) ? 1.0 : 1.1 );
     freq = (k < N/2) ? ((double)k / N) : ((double)(k-N) / N);
@@ -158,6 +183,21 @@ int test(int N, int cplx, int useOrdered) {
       }
 #endif
 
+      /* "input and output may alias": the in-place forward transform
+         must match the out-of-place one bit-exactly */
+      memcpy(I, X, (size_t)Nfloat * sizeof(pffft_scalar));
+#ifdef PFFFT_ENABLE_FLOAT
+      if ( useOrdered ) pffft_transform_ordered(s, I, I, W, PFFFT_FORWARD );
+      else              pffft_transform(s, I, I, W, PFFFT_FORWARD );
+#else
+      if ( useOrdered ) pffftd_transform_ordered(s, I, I, W, PFFFT_FORWARD );
+      else              pffftd_transform(s, I, I, W, PFFFT_FORWARD );
+#endif
+      if ( memcmp(I, useOrdered ? Y : R, (size_t)Nfloat * sizeof(pffft_scalar)) != 0 ) {
+        retError = 1;
+        printf("%s fft %d  bin %d : in-place forward transform differs from out-of-place!\n", (cplx ? "cplx":"real"), N, k);
+      }
+
       pwrOther = -1.0;
       pwrCar = 0;
 
@@ -182,7 +222,7 @@ int test(int N, int cplx, int useOrdered) {
         }
       }
 
-      if ( PWR2LOG(pwrCar) - PWR2LOG(pwrOther) < EXPECTED_DYN_RANGE ) {
+      if ( PWR2LOG(pwrCar) - PWR2LOG(pwrOther) < expectedDynRange ) {
         printf("%s fft %d amp %f iter %d:\n", (cplx ? "cplx":"real"), N, amp, iter);
         printf("  carrier power  at bin %d: %g == %f dB\n", k, pwrCar, PWR2LOG(pwrCar) );
         printf("  carrier mag || at bin %d: %g\n", k, sqrt(pwrCar) );
@@ -226,6 +266,19 @@ int test(int N, int cplx, int useOrdered) {
         pffftd_transform(s, R, Z, W, PFFFT_BACKWARD);
 #endif
 
+      /* in-place backward transform (I holds the forward result) */
+#ifdef PFFFT_ENABLE_FLOAT
+      if ( useOrdered ) pffft_transform_ordered(s, I, I, W, PFFFT_BACKWARD);
+      else              pffft_transform(s, I, I, W, PFFFT_BACKWARD);
+#else
+      if ( useOrdered ) pffftd_transform_ordered(s, I, I, W, PFFFT_BACKWARD);
+      else              pffftd_transform(s, I, I, W, PFFFT_BACKWARD);
+#endif
+      if ( memcmp(I, Z, (size_t)Nfloat * sizeof(pffft_scalar)) != 0 ) {
+        retError = 1;
+        printf("%s fft %d  bin %d : in-place backward transform differs from out-of-place!\n", (cplx ? "cplx":"real"), N, k);
+      }
+
       errSum = 0.0;
       for ( j = 0; j < (cplx ? (2*N) : N); ++j )
       {
@@ -251,6 +304,7 @@ int test(int N, int cplx, int useOrdered) {
   pffft_aligned_free(X);
   pffft_aligned_free(Y);
   pffft_aligned_free(Z);
+  pffft_aligned_free(I);
   pffft_aligned_free(R);
   pffft_aligned_free(W);
 #else
@@ -258,6 +312,7 @@ int test(int N, int cplx, int useOrdered) {
   pffftd_aligned_free(X);
   pffftd_aligned_free(Y);
   pffftd_aligned_free(Z);
+  pffftd_aligned_free(I);
   pffftd_aligned_free(R);
   pffftd_aligned_free(W);
 #endif
@@ -721,27 +776,38 @@ int main(int argc, char **argv)
   if (!resIsPw2)
     printf("tests for pffft_is_power_of_two() succeeded successfully.\n");
 
-  resFFT = 0;
-  for ( N = 32; N <= 65536; N *= 2 )
+  /* powers of two exercise only the radix-2/4 codelets. The remaining
+     sizes cover radix-3 and radix-5 in every position the factorization
+     order {4,2,3,5} can put them: 3*2^k (96, 192), 5*2^k (160), 9*2^k
+     (288, 576, 1152), 15*2^k (480), 25*2^k (800), 81*32 (2592), 125*32
+     (4000) and 375*32 (12000). All are multiples of 32, so they are
+     valid REAL and COMPLEX sizes for every SIMD_SZ. */
   {
-    result = test(N, 1 /* cplx fft */, 1 /* useOrdered */);
-    resN = result;
-    resFFT |= result;
+    static const int sizes[] = { 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536,
+                                 96, 160, 192, 288, 480, 576, 800, 1152, 2592, 4000, 12000 };
+    resFFT = 0;
+    for ( i = 0; i < (int)(sizeof(sizes)/sizeof(sizes[0])); ++i )
+    {
+      N = sizes[i];
+      result = test(N, 1 /* cplx fft */, 1 /* useOrdered */);
+      resN = result;
+      resFFT |= result;
 
-    result = test(N, 0 /* cplx fft */, 1 /* useOrdered */);
-    resN |= result;
-    resFFT |= result;
+      result = test(N, 0 /* cplx fft */, 1 /* useOrdered */);
+      resN |= result;
+      resFFT |= result;
 
-    result = test(N, 1 /* cplx fft */, 0 /* useOrdered */);
-    resN |= result;
-    resFFT |= result;
+      result = test(N, 1 /* cplx fft */, 0 /* useOrdered */);
+      resN |= result;
+      resFFT |= result;
 
-    result = test(N, 0 /* cplx fft */, 0 /* useOrdered */);
-    resN |= result;
-    resFFT |= result;
+      result = test(N, 0 /* cplx fft */, 0 /* useOrdered */);
+      resN |= result;
+      resFFT |= result;
 
-    if (!resN)
-      printf("tests for size %d succeeded successfully.\n", N);
+      if (!resN)
+        printf("tests for size %d succeeded successfully.\n", N);
+    }
   }
 
   if (!resFFT) {
