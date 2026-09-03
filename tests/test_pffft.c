@@ -320,6 +320,37 @@ static int test_zconvolve_unscaled(int N)
     retError = 1;
   }
 
+  /* the header promises "dft_a, dft_b and dft_ab pointers may alias":
+     both in-place forms must match the out-of-place result bit-exactly.
+     The kernels latch the DC/Nyquist lanes before the vector loop and
+     write them back after it, which only works if the compiler is not
+     told (via restrict) that the destination cannot alias the inputs. */
+  memcpy(CNew, SX, N * sizeof(pffft_scalar));
+  ZT_ZCONVOLVE(s, CNew, SH, CNew);
+  if ( memcmp(CNew, CRef, N * sizeof(pffft_scalar)) != 0 ) {
+    printf("real fft %d: in-place zconvolve(a, b, a) differs from out-of-place\n", N);
+    retError = 1;
+  }
+  memcpy(CNew, SH, N * sizeof(pffft_scalar));
+  ZT_ZCONVOLVE(s, SX, CNew, CNew);
+  if ( memcmp(CNew, CRef, N * sizeof(pffft_scalar)) != 0 ) {
+    printf("real fft %d: in-place zconvolve(a, b, b) differs from out-of-place\n", N);
+    retError = 1;
+  }
+  memcpy(CNew, SX, N * sizeof(pffft_scalar));
+  ZT_ZCONV_SCALE(s, CNew, SH, CNew, 1.0);
+  if ( memcmp(CNew, CRef, N * sizeof(pffft_scalar)) != 0 ) {
+    printf("real fft %d: in-place zconvolve_scale(a, b, a) differs from out-of-place\n", N);
+    retError = 1;
+  }
+  memcpy(CNew, SH, N * sizeof(pffft_scalar));
+  ZT_ZCONV_SCALE(s, SX, CNew, CNew, 1.0);
+  if ( memcmp(CNew, CRef, N * sizeof(pffft_scalar)) != 0 ) {
+    printf("real fft %d: in-place zconvolve_scale(a, b, b) differs from out-of-place\n", N);
+    retError = 1;
+  }
+  ZT_ZCONVOLVE(s, SX, SH, CNew);   /* recompute out-of-place for the round trip below */
+
   ZT_TRANSFORM(s, CNew, Y, W, PFFFT_BACKWARD);
   for ( j = 0; j < N-4; ++j ) {
     pffft_scalar expected = (pffft_scalar)(X[j]);
@@ -405,6 +436,33 @@ static int test_zconvolve_accumulate(int N, int cplx)
     const double want = (double)C0[j] + (double)D[j];
     if ( fabs(got - want) > 1e-5 * (fabs(want) + 1.0) ) {
       printf("zconvolve_accumulate %s fft %d: element %d : got %g, expected %g\n",
+             (cplx ? "cplx" : "real"), N, j, got, want);
+      retError = 1;
+      break;
+    }
+  }
+
+  /* documented aliasing: dft_ab == dft_a (accumulate the product into
+     the first operand) and dft_ab == dft_b must both work */
+  memcpy(C, A, nf * sizeof(pffft_scalar));
+  ZT_ZCONV_ACC(s, C, B, C, scaling);
+  for ( j = 0; j < nf; ++j ) {
+    const double got  = (double)C[j];
+    const double want = (double)A[j] + (double)D[j];
+    if ( fabs(got - want) > 1e-5 * (fabs(want) + 1.0) ) {
+      printf("in-place zconvolve_accumulate(a, b, a) %s fft %d: element %d : got %g, expected %g\n",
+             (cplx ? "cplx" : "real"), N, j, got, want);
+      retError = 1;
+      break;
+    }
+  }
+  memcpy(C, B, nf * sizeof(pffft_scalar));
+  ZT_ZCONV_ACC(s, A, C, C, scaling);
+  for ( j = 0; j < nf; ++j ) {
+    const double got  = (double)C[j];
+    const double want = (double)B[j] + (double)D[j];
+    if ( fabs(got - want) > 1e-5 * (fabs(want) + 1.0) ) {
+      printf("in-place zconvolve_accumulate(a, b, b) %s fft %d: element %d : got %g, expected %g\n",
              (cplx ? "cplx" : "real"), N, j, got, want);
       retError = 1;
       break;
