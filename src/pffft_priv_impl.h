@@ -147,11 +147,15 @@ static NEVER_INLINE(void) passf2_ps(int ido, int l1, const v4sf *cc, v4sf *ch, c
 
 /*
   passf3 and passb3 has been merged here, fsign = -1 for passf3, +1 for passb3
+
+  The radix-3/5 twiddle constants are written as full-precision double literals
+  without an 'f' suffix, for when this file is compiled with '#define float double'.
+  In the float build, the values round to the same floats as the old suffixed literals.
 */
 static NEVER_INLINE(void) passf3_ps(int ido, int l1, const v4sf *cc, v4sf *ch,
                                     const float *wa1, const float *wa2, float fsign) {
-  static const float taur = -0.5f;
-  float taui = 0.866025403784439f*fsign;
+  static const float taur = (float)-0.5;                     /* cos(2*pi/3)   */
+  float taui = (float)0.86602540378443864676*fsign;          /* sin(2*pi/3) = sqrt(3)/2 */
   int i, k;
   v4sf tr2, ti2, cr2, ci2, cr3, ci3, dr2, di2, dr3, di3;
   int l1ido = l1*ido;
@@ -256,10 +260,10 @@ static NEVER_INLINE(void) passf4_ps(int ido, int l1, const v4sf *cc, v4sf *ch,
 static NEVER_INLINE(void) passf5_ps(int ido, int l1, const v4sf *cc, v4sf *ch,
                                     const float *wa1, const float *wa2,
                                     const float *wa3, const float *wa4, float fsign) {
-  static const float tr11 = .309016994374947f;
-  const float ti11 = .951056516295154f*fsign;
-  static const float tr12 = -.809016994374947f;
-  const float ti12 = .587785252292473f*fsign;
+  static const float tr11 = (float)0.30901699437494742410;   /* cos(2*pi/5) = (sqrt(5)-1)/4 */
+  const float ti11 = (float)0.95105651629515357212*fsign;    /* sin(2*pi/5) */
+  static const float tr12 = (float)-0.80901699437494742410;  /* cos(4*pi/5) = -(sqrt(5)+1)/4 */
+  const float ti12 = (float)0.58778525229247312917*fsign;    /* sin(4*pi/5) */
 
   /* Local variables */
   int i, k;
@@ -385,8 +389,8 @@ static NEVER_INLINE(void) radb2_ps(int ido, int l1, const v4sf *cc, v4sf *ch, co
 
 static void radf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
                      const float *wa1, const float *wa2) {
-  static const float taur = -0.5f;
-  static const float taui = 0.866025403784439f;
+  static const float taur = (float)-0.5;                     /* cos(2*pi/3)   */
+  static const float taui = (float)0.86602540378443864676;   /* sin(2*pi/3) = sqrt(3)/2 */
   int i, k, ic;
   v4sf ci2, di2, di3, cr2, dr2, dr3, ti2, ti3, tr2, tr3, wr1, wi1, wr2, wi2;
   for (k=0; k<l1; k++) {
@@ -427,9 +431,9 @@ static void radf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT 
 static void radb3_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
                      const float *wa1, const float *wa2)
 {
-  static const float taur = -0.5f;
-  static const float taui = 0.866025403784439f;
-  static const float taui_2 = 1.732050807568878f;
+  static const float taur = (float)-0.5;                     /* cos(2*pi/3)   */
+  static const float taui = (float)0.86602540378443864676;   /* sin(2*pi/3) = sqrt(3)/2 */
+  static const float taui_2 = (float)1.7320508075688772935;  /* 2*sin(2*pi/3) = sqrt(3) */
   int i, k, ic;
   v4sf ci2, ci3, di2, di3, cr2, cr3, dr2, dr3, ti2, tr2;
   for (k=0; k<l1; k++) {
@@ -469,7 +473,7 @@ static void radb3_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch
 static NEVER_INLINE(void) radf4_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf * RESTRICT ch,
                                    const float * RESTRICT wa1, const float * RESTRICT wa2, const float * RESTRICT wa3)
 {
-  static const float minus_hsqt2 = (float)-0.7071067811865475;
+  static const float minus_hsqt2 = (float)-M_SQRT1_2;  /* -sin(pi/4) = -1/sqrt(2) */
   int i, k, l1ido = l1*ido;
   {
     const v4sf *RESTRICT cc_ = cc, * RESTRICT cc_end = cc + l1ido;
@@ -553,7 +557,7 @@ static NEVER_INLINE(void) radf4_ps(int ido, int l1, const v4sf *RESTRICT cc, v4s
 static NEVER_INLINE(void) radb4_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
                                    const float * RESTRICT wa1, const float * RESTRICT wa2, const float *RESTRICT wa3)
 {
-  static const float minus_sqrt2 = (float)-1.414213562373095;
+  static const float minus_sqrt2 = (float)-M_SQRT2;     /* -2*sin(pi/4) = -sqrt(2) */
   static const float two = 2.f;
   int i, k, l1ido = l1*ido;
   v4sf ci2, ci3, ci4, cr2, cr3, cr4, ti1, ti2, ti3, ti4, tr1, tr2, tr3, tr4;
@@ -633,10 +637,10 @@ static NEVER_INLINE(void) radb4_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
 static void radf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
                      const float *wa1, const float *wa2, const float *wa3, const float *wa4)
 {
-  static const float tr11 = .309016994374947f;
-  static const float ti11 = .951056516295154f;
-  static const float tr12 = -.809016994374947f;
-  static const float ti12 = .587785252292473f;
+  static const float tr11 = (float)0.30901699437494742410;   /* cos(2*pi/5) = (sqrt(5)-1)/4 */
+  static const float ti11 = (float)0.95105651629515357212;   /* sin(2*pi/5) */
+  static const float tr12 = (float)-0.80901699437494742410;  /* cos(4*pi/5) = -(sqrt(5)+1)/4 */
+  static const float ti12 = (float)0.58778525229247312917;   /* sin(4*pi/5) */
 
   /* System generated locals */
   int cc_offset, ch_offset;
@@ -720,10 +724,10 @@ static void radf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT 
 static void radb5_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
                   const float *wa1, const float *wa2, const float *wa3, const float *wa4)
 {
-  static const float tr11 = .309016994374947f;
-  static const float ti11 = .951056516295154f;
-  static const float tr12 = -.809016994374947f;
-  static const float ti12 = .587785252292473f;
+  static const float tr11 = (float)0.30901699437494742410;   /* cos(2*pi/5) = (sqrt(5)-1)/4 */
+  static const float ti11 = (float)0.95105651629515357212;   /* sin(2*pi/5) */
+  static const float tr12 = (float)-0.80901699437494742410;  /* cos(4*pi/5) = -(sqrt(5)+1)/4 */
+  static const float ti12 = (float)0.58778525229247312917;   /* sin(4*pi/5) */
 
   int cc_offset, ch_offset;
 
