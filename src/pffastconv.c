@@ -51,7 +51,6 @@ struct PFFASTCONV_Setup
   int filterLen;   /* convolution length */
   int Nfft;        /* FFT/block length */
   int flags;
-  float scale;
 };
 
 
@@ -94,7 +93,6 @@ PFFASTCONV_Setup * pffastconv_new_setup( const float * filterCoeffs, int filterL
     s->filterLen = 2 * filterLen - 1;
   s->Nfft = Nfft;  /* FFT/block length */
   s->flags = flags;
-  s->scale = (float)( 1.0 / Nfft );
 
   memset( s->Xt, 0, (unsigned)Nfft * sizeof(float) );
   if ( flags & PFFASTCONV_CORRELATION ) {
@@ -106,6 +104,17 @@ PFFASTCONV_Setup * pffastconv_new_setup( const float * filterCoeffs, int filterL
   }
 
   pffft_transform(s->st, s->Xt, s->Hf, /* tmp = */ s->Mf, PFFFT_FORWARD);
+
+  /* perform the 1/Nfft normalization of the inverse transform in the
+     filter spectrum, so that the per-block frequency-domain
+     multiply below needs no scaling at all. this is exact, because Nfft
+     comes from pffft_next_power_of_two() and scaling by a power of two
+     commutes with rounding: (X*H)*scale == X*(H*scale). */
+  {
+    const float scale = (float)( 1.0 / Nfft );
+    for ( i = 0; i < Nfft; ++i )
+      s->Hf[i] *= scale;
+  }
 
 #if FASTCONV_DBG_OUT
   printf("\n  fastConvSetup(filterLen = %d, blockLen %d) --> blockLen %d, OutLen = %d\n"
@@ -185,7 +194,7 @@ int pffastconv_apply(PFFASTCONV_Setup * s, const float *input_, int cplxInputLen
         pffft_transform(s->st, s->Xt, s->Xf, /* tmp = */ s->Mf, PFFFT_FORWARD);
       }
 
-      pffft_zconvolve_scale(s->st, s->Xf, s->Hf, /* tmp = */ s->Mf, s->scale);
+      pffft_zconvolve(s->st, s->Xf, s->Hf, /* tmp = */ s->Mf);
 
       if ( flags & PFFASTCONV_DIRECT_OUT )
       {
@@ -235,7 +244,7 @@ int pffastconv_apply(PFFASTCONV_Setup * s, const float *input_, int cplxInputLen
           pffft_transform(s->st, s->Xt, s->Xf, /* tmp = */ s->Mf, PFFFT_FORWARD);
         }
 
-        pffft_zconvolve_scale(s->st, s->Xf, s->Hf, /* tmp = */ s->Mf, s->scale);
+        pffft_zconvolve(s->st, s->Xf, s->Hf, /* tmp = */ s->Mf);
 
         if ( flags & PFFASTCONV_CPLX_INP_OUT )
         {

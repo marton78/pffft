@@ -27,7 +27,7 @@
    Laboratory, the University Corporation for Atmospheric Research,
    nor the names of its sponsors or contributors may be used to
    endorse or promote products derived from this Software without
-   specific prior written permission.  
+   specific prior written permission.
 
    - Redistributions of source code must retain the above copyright
    notices, this list of conditions, and the disclaimer below.
@@ -147,11 +147,15 @@ static NEVER_INLINE(void) passf2_ps(int ido, int l1, const v4sf *cc, v4sf *ch, c
 
 /*
   passf3 and passb3 has been merged here, fsign = -1 for passf3, +1 for passb3
+
+  The radix-3/5 twiddle constants are written as full-precision double literals
+  without an 'f' suffix, for when this file is compiled with '#define float double'.
+  In the float build, the values round to the same floats as the old suffixed literals.
 */
 static NEVER_INLINE(void) passf3_ps(int ido, int l1, const v4sf *cc, v4sf *ch,
                                     const float *wa1, const float *wa2, float fsign) {
-  static const float taur = -0.5f;
-  float taui = 0.866025403784439f*fsign;
+  static const float taur = (float)-0.5;                     /* cos(2*pi/3)   */
+  float taui = (float)0.86602540378443864676*fsign;          /* sin(2*pi/3) = sqrt(3)/2 */
   int i, k;
   v4sf tr2, ti2, cr2, ci2, cr3, ci3, dr2, di2, dr3, di3;
   int l1ido = l1*ido;
@@ -205,7 +209,7 @@ static NEVER_INLINE(void) passf4_ps(int ido, int l1, const v4sf *cc, v4sf *ch,
       ch[1*l1ido + 0] = VADD(tr1, tr4);
       ch[1*l1ido + 1] = VADD(ti1, ti4);
       ch[2*l1ido + 0] = VSUB(tr2, tr3);
-      ch[2*l1ido + 1] = VSUB(ti2, ti3);        
+      ch[2*l1ido + 1] = VSUB(ti2, ti3);
       ch[3*l1ido + 0] = VSUB(tr1, tr4);
       ch[3*l1ido + 1] = VSUB(ti1, ti4);
     }
@@ -254,12 +258,12 @@ static NEVER_INLINE(void) passf4_ps(int ido, int l1, const v4sf *cc, v4sf *ch,
   passf5 and passb5 has been merged here, fsign = -1 for passf5, +1 for passb5
 */
 static NEVER_INLINE(void) passf5_ps(int ido, int l1, const v4sf *cc, v4sf *ch,
-                                    const float *wa1, const float *wa2, 
-                                    const float *wa3, const float *wa4, float fsign) {  
-  static const float tr11 = .309016994374947f;
-  const float ti11 = .951056516295154f*fsign;
-  static const float tr12 = -.809016994374947f;
-  const float ti12 = .587785252292473f*fsign;
+                                    const float *wa1, const float *wa2,
+                                    const float *wa3, const float *wa4, float fsign) {
+  static const float tr11 = (float)0.30901699437494742410;   /* cos(2*pi/5) = (sqrt(5)-1)/4 */
+  const float ti11 = (float)0.95105651629515357212*fsign;    /* sin(2*pi/5) */
+  static const float tr12 = (float)-0.80901699437494742410;  /* cos(4*pi/5) = -(sqrt(5)+1)/4 */
+  const float ti12 = (float)0.58778525229247312917*fsign;    /* sin(4*pi/5) */
 
   /* Local variables */
   int i, k;
@@ -334,7 +338,7 @@ static NEVER_INLINE(void) radf2_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
       for (i=2; i<ido; i+=2) {
         v4sf tr2 = cc[i - 1 + k + l1ido], ti2 = cc[i + k + l1ido];
         v4sf br = cc[i - 1 + k], bi = cc[i + k];
-        VCPLXMULCONJ(tr2, ti2, LD_PS1(wa1[i - 2]), LD_PS1(wa1[i - 1])); 
+        VCPLXMULCONJ(tr2, ti2, LD_PS1(wa1[i - 2]), LD_PS1(wa1[i - 1]));
         ch[i + 2*k] = VADD(bi, ti2);
         ch[2*(k+ido) - i] = VSUB(ti2, bi);
         ch[i - 1 + 2*k] = VADD(br, tr2);
@@ -385,8 +389,8 @@ static NEVER_INLINE(void) radb2_ps(int ido, int l1, const v4sf *cc, v4sf *ch, co
 
 static void radf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
                      const float *wa1, const float *wa2) {
-  static const float taur = -0.5f;
-  static const float taui = 0.866025403784439f;
+  static const float taur = (float)-0.5;                     /* cos(2*pi/3)   */
+  static const float taui = (float)0.86602540378443864676;   /* sin(2*pi/3) = sqrt(3)/2 */
   int i, k, ic;
   v4sf ci2, di2, di3, cr2, dr2, dr3, ti2, ti3, tr2, tr3, wr1, wi1, wr2, wi2;
   for (k=0; k<l1; k++) {
@@ -406,7 +410,7 @@ static void radf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT 
       wr2 = LD_PS1(wa2[i - 2]); wi2 = LD_PS1(wa2[i - 1]);
       dr3 = cc[i - 1 + (k + l1*2)*ido]; di3 = cc[i + (k + l1*2)*ido];
       VCPLXMULCONJ(dr3, di3, wr2, wi2);
-        
+
       cr2 = VADD(dr2, dr3);
       ci2 = VADD(di2, di3);
       ch[i - 1 + 3*k*ido] = VADD(cc[i - 1 + k*ido], cr2);
@@ -427,9 +431,9 @@ static void radf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT 
 static void radb3_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
                      const float *wa1, const float *wa2)
 {
-  static const float taur = -0.5f;
-  static const float taui = 0.866025403784439f;
-  static const float taui_2 = 1.732050807568878f;
+  static const float taur = (float)-0.5;                     /* cos(2*pi/3)   */
+  static const float taui = (float)0.86602540378443864676;   /* sin(2*pi/3) = sqrt(3)/2 */
+  static const float taui_2 = (float)1.7320508075688772935;  /* 2*sin(2*pi/3) = sqrt(3) */
   int i, k, ic;
   v4sf ci2, ci3, di2, di3, cr2, cr3, dr2, dr3, ti2, tr2;
   for (k=0; k<l1; k++) {
@@ -469,10 +473,10 @@ static void radb3_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch
 static NEVER_INLINE(void) radf4_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf * RESTRICT ch,
                                    const float * RESTRICT wa1, const float * RESTRICT wa2, const float * RESTRICT wa3)
 {
-  static const float minus_hsqt2 = (float)-0.7071067811865475;
+  static const float minus_hsqt2 = (float)-M_SQRT1_2;  /* -sin(pi/4) = -1/sqrt(2) */
   int i, k, l1ido = l1*ido;
   {
-    const v4sf *RESTRICT cc_ = cc, * RESTRICT cc_end = cc + l1ido; 
+    const v4sf *RESTRICT cc_ = cc, * RESTRICT cc_end = cc + l1ido;
     v4sf * RESTRICT ch_ = ch;
     while (cc < cc_end) {
       /* this loop represents between 25% and 40% of total radf4_ps cost ! */
@@ -505,20 +509,20 @@ static NEVER_INLINE(void) radf4_ps(int ido, int l1, const v4sf *RESTRICT cc, v4s
 
         cr3 = pc[2*l1ido+0];
         ci3 = pc[2*l1ido+1];
-        wr = LD_PS1(wa2[i-2]); 
+        wr = LD_PS1(wa2[i-2]);
         wi = LD_PS1(wa2[i-1]);
         VCPLXMULCONJ(cr3, ci3, wr, wi);
 
         cr4 = pc[3*l1ido];
         ci4 = pc[3*l1ido+1];
-        wr = LD_PS1(wa3[i-2]); 
+        wr = LD_PS1(wa3[i-2]);
         wi = LD_PS1(wa3[i-1]);
         VCPLXMULCONJ(cr4, ci4, wr, wi);
 
         /* at this point, on SSE, five of "cr2 cr3 cr4 ci2 ci3 ci4" should be loaded in registers */
 
         tr1 = VADD(cr2,cr4);
-        tr4 = VSUB(cr4,cr2); 
+        tr4 = VSUB(cr4,cr2);
         tr2 = VADD(pc[0],cr3);
         tr3 = VSUB(pc[0],cr3);
         ch[i - 1 + 4*k] = VADD(tr1,tr2);
@@ -544,8 +548,8 @@ static NEVER_INLINE(void) radf4_ps(int ido, int l1, const v4sf *RESTRICT cc, v4s
     v4sf tr1 = SVMUL(minus_hsqt2, VSUB(b, a));
     ch[ido-1 + 4*k] = VADD(tr1, c);
     ch[ido-1 + 4*k + 2*ido] = VSUB(c, tr1);
-    ch[4*k + 1*ido] = VSUB(ti1, d); 
-    ch[4*k + 3*ido] = VADD(ti1, d); 
+    ch[4*k + 1*ido] = VSUB(ti1, d);
+    ch[4*k + 3*ido] = VADD(ti1, d);
   }
 } /* radf4 */
 
@@ -553,12 +557,12 @@ static NEVER_INLINE(void) radf4_ps(int ido, int l1, const v4sf *RESTRICT cc, v4s
 static NEVER_INLINE(void) radb4_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
                                    const float * RESTRICT wa1, const float * RESTRICT wa2, const float *RESTRICT wa3)
 {
-  static const float minus_sqrt2 = (float)-1.414213562373095;
+  static const float minus_sqrt2 = (float)-M_SQRT2;     /* -2*sin(pi/4) = -sqrt(2) */
   static const float two = 2.f;
   int i, k, l1ido = l1*ido;
   v4sf ci2, ci3, ci4, cr2, cr3, cr4, ti1, ti2, ti3, ti4, tr1, tr2, tr3, tr4;
   {
-    const v4sf *RESTRICT cc_ = cc, * RESTRICT ch_end = ch + l1ido; 
+    const v4sf *RESTRICT cc_ = cc, * RESTRICT ch_end = ch + l1ido;
     v4sf *ch_ = ch;
     while (ch < ch_end) {
       v4sf a = cc[0], b = cc[4*ido-1];
@@ -571,7 +575,7 @@ static NEVER_INLINE(void) radb4_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
       ch[2*l1ido] = VSUB(tr2, tr3);
       ch[1*l1ido] = VSUB(tr1, tr4);
       ch[3*l1ido] = VADD(tr1, tr4);
-      
+
       cc += 4*ido; ch += ido;
     }
     cc = cc_; ch = ch_;
@@ -630,13 +634,13 @@ static NEVER_INLINE(void) radb4_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
   }
 } /* radb4 */
 
-static void radf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, 
+static void radf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
                      const float *wa1, const float *wa2, const float *wa3, const float *wa4)
 {
-  static const float tr11 = .309016994374947f;
-  static const float ti11 = .951056516295154f;
-  static const float tr12 = -.809016994374947f;
-  static const float ti12 = .587785252292473f;
+  static const float tr11 = (float)0.30901699437494742410;   /* cos(2*pi/5) = (sqrt(5)-1)/4 */
+  static const float ti11 = (float)0.95105651629515357212;   /* sin(2*pi/5) */
+  static const float tr12 = (float)-0.80901699437494742410;  /* cos(4*pi/5) = -(sqrt(5)+1)/4 */
+  static const float ti12 = (float)0.58778525229247312917;   /* sin(4*pi/5) */
 
   /* System generated locals */
   int cc_offset, ch_offset;
@@ -717,13 +721,13 @@ static void radf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT 
 #undef ch_ref
 } /* radf5 */
 
-static void radb5_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch, 
+static void radb5_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
                   const float *wa1, const float *wa2, const float *wa3, const float *wa4)
 {
-  static const float tr11 = .309016994374947f;
-  static const float ti11 = .951056516295154f;
-  static const float tr12 = -.809016994374947f;
-  static const float ti12 = .587785252292473f;
+  static const float tr11 = (float)0.30901699437494742410;   /* cos(2*pi/5) = (sqrt(5)-1)/4 */
+  static const float ti11 = (float)0.95105651629515357212;   /* sin(2*pi/5) */
+  static const float tr12 = (float)-0.80901699437494742410;  /* cos(4*pi/5) = -(sqrt(5)+1)/4 */
+  static const float ti12 = (float)0.58778525229247312917;   /* sin(4*pi/5) */
 
   int cc_offset, ch_offset;
 
@@ -806,8 +810,8 @@ static void radb5_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch
 #undef ch_ref
 } /* radb5 */
 
-static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2, 
-                                      const float *wa, const int *ifac) {  
+static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2,
+                                      const float *wa, const int *ifac) {
   v4sf *in  = (v4sf*)input_readonly;
   v4sf *out = (in == work2 ? work1 : work2);
   int nf = ifac[1], k1;
@@ -853,8 +857,8 @@ static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *w
   return in; /* this is in fact the output .. */
 } /* rfftf1 */
 
-static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2, 
-                                      const float *wa, const int *ifac) {  
+static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2,
+                                      const float *wa, const int *ifac) {
   v4sf *in  = (v4sf*)input_readonly;
   v4sf *out = (in == work2 ? work1 : work2);
   int nf = ifac[1], k1;
@@ -923,7 +927,7 @@ static int decompose(int n, int *ifac, const int *ntryh) {
     }
   }
   ifac[0] = n;
-  ifac[1] = nf;  
+  ifac[1] = nf;
   return nf;
 }
 
@@ -1003,7 +1007,7 @@ static void cffti1_ps(int n, float *wa, int *ifac)
 
 static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2, const float *wa, const int *ifac, int isign) {
   v4sf *in  = (v4sf*)input_readonly;
-  v4sf *out = (in == work2 ? work1 : work2); 
+  v4sf *out = (in == work2 ? work1 : work2);
   int nf = ifac[1], k1;
   int l1 = 1;
   int iw = 0;
@@ -1079,12 +1083,12 @@ SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
   s = (SETUP_STRUCT*)malloc(sizeof(SETUP_STRUCT));
   /* assert((N % 32) == 0); */
   s->N = N;
-  s->transform = transform;  
+  s->transform = transform;
   /* nb of complex simd vectors */
   s->Ncvec = (transform == PFFFT_REAL ? N/2 : N)/SIMD_SZ;
   s->data = (v4sf*)FUNC_ALIGNED_MALLOC(2*s->Ncvec * sizeof(v4sf));
   s->e = (float*)s->data;
-  s->twiddle = (float*)(s->data + (2*s->Ncvec*(SIMD_SZ-1))/SIMD_SZ);  
+  s->twiddle = (float*)(s->data + (2*s->Ncvec*(SIMD_SZ-1))/SIMD_SZ);
 
   for (k=0; k < s->Ncvec; ++k) {
     int i = k/SIMD_SZ;
@@ -1126,7 +1130,7 @@ static void reversed_copy(int N, const v4sf *in, int in_stride, v4sf *out) {
   v4sf g0, g1;
   int k;
   INTERLEAVE2(in[0], in[1], g0, g1); in += in_stride;
-  
+
   *--out = VSWAPHL(g0, g1); /* [g0l, g0h], [g1l g1h] -> [g1l, g0h] */
   for (k=1; k < N; ++k) {
     v4sf h0, h1;
@@ -1179,12 +1183,12 @@ void FUNC_ZREORDER(const SETUP_STRUCT *setup, const float *in, float *out, pffft
     }
   } else {
     if (direction == PFFFT_FORWARD) {
-      for (k=0; k < Ncvec; ++k) { 
+      for (k=0; k < Ncvec; ++k) {
         int kk = (k/4) + (k%4)*(Ncvec/4);
         INTERLEAVE2(vin[k*2], vin[k*2+1], vout[kk*2], vout[kk*2+1]);
       }
     } else {
-      for (k=0; k < Ncvec; ++k) { 
+      for (k=0; k < Ncvec; ++k) {
         int kk = (k/4) + (k%4)*(Ncvec/4);
         UNINTERLEAVE2(vin[kk*2], vin[kk*2+1], vout[k*2], vout[k*2+1]);
       }
@@ -1197,7 +1201,7 @@ void FUNC_CPLX_FINALIZE(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
   v4sf r0, i0, r1, i1, r2, i2, r3, i3;
   v4sf sr0, dr0, sr1, dr1, si0, di0, si1, di1;
   assert(in != out);
-  for (k=0; k < dk; ++k) {    
+  for (k=0; k < dk; ++k) {
     r0 = in[8*k+0]; i0 = in[8*k+1];
     r1 = in[8*k+2]; i1 = in[8*k+3];
     r2 = in[8*k+4]; i2 = in[8*k+5];
@@ -1215,7 +1219,7 @@ void FUNC_CPLX_FINALIZE(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
 
     /*
       transformation for each column is:
-      
+
       [1   1   1   1   0   0   0   0]   [r0]
       [1   0  -1   0   0  -1   0   1]   [r1]
       [1  -1   1  -1   0   0   0   0]   [r2]
@@ -1223,14 +1227,14 @@ void FUNC_CPLX_FINALIZE(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
       [0   0   0   0   1   1   1   1] * [i0]
       [0   1   0  -1   1   0  -1   0]   [i1]
       [0   0   0   0   1  -1   1  -1]   [i2]
-      [0  -1   0   1   1   0  -1   0]   [i3]    
+      [0  -1   0   1   1   0  -1   0]   [i3]
     */
-    
+
     r0 = VADD(sr0, sr1); i0 = VADD(si0, si1);
     r1 = VADD(dr0, di1); i1 = VSUB(di0, dr1);
     r2 = VSUB(sr0, sr1); i2 = VSUB(si0, si1);
     r3 = VSUB(dr0, di1); i3 = VADD(di0, dr1);
-  
+
     *out++ = r0; *out++ = i0; *out++ = r1; *out++ = i1;
     *out++ = r2; *out++ = i2; *out++ = r3; *out++ = i3;
   }
@@ -1241,7 +1245,7 @@ void FUNC_CPLX_PREPROCESS(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
   v4sf r0, i0, r1, i1, r2, i2, r3, i3;
   v4sf sr0, dr0, sr1, dr1, si0, di0, si1, di1;
   assert(in != out);
-  for (k=0; k < dk; ++k) {    
+  for (k=0; k < dk; ++k) {
     r0 = in[8*k+0]; i0 = in[8*k+1];
     r1 = in[8*k+2]; i1 = in[8*k+3];
     r2 = in[8*k+4]; i2 = in[8*k+5];
@@ -1278,7 +1282,7 @@ static ALWAYS_INLINE(void) FUNC_REAL_FINALIZE_4X4(const v4sf *in0, const v4sf *i
   r1 = *in++; i1 = *in++; r2 = *in++; i2 = *in++; r3 = *in++; i3 = *in++;
   VTRANSPOSE4(r0,r1,r2,r3);
   VTRANSPOSE4(i0,i1,i2,i3);
- 
+
   /*
     transformation for each column is:
 
@@ -1289,9 +1293,9 @@ static ALWAYS_INLINE(void) FUNC_REAL_FINALIZE_4X4(const v4sf *in0, const v4sf *i
     [0   0   0   0   1   1   1   1] * [i0]
     [0  -1   0   1  -1   0   1   0]   [i1]
     [0  -1   0   1   1   0  -1   0]   [i2]
-    [0   0   0   0  -1   1  -1   1]   [i3]    
+    [0   0   0   0  -1   1  -1   1]   [i3]
   */
-  
+
   /* cerr << "matrix initial, before e , REAL:\n 1: " << r0 << "\n 1: " << r1 << "\n 1: " << r2 << "\n 1: " << r3 << "\n"; */
   /* cerr << "matrix initial, before e, IMAG :\n 1: " << i0 << "\n 1: " << i1 << "\n 1: " << i2 << "\n 1: " << i3 << "\n"; */
 
@@ -1302,9 +1306,9 @@ static ALWAYS_INLINE(void) FUNC_REAL_FINALIZE_4X4(const v4sf *in0, const v4sf *i
   /* cerr << "matrix initial, real part:\n 1: " << r0 << "\n 1: " << r1 << "\n 1: " << r2 << "\n 1: " << r3 << "\n"; */
   /* cerr << "matrix initial, imag part:\n 1: " << i0 << "\n 1: " << i1 << "\n 1: " << i2 << "\n 1: " << i3 << "\n"; */
 
-  sr0 = VADD(r0,r2); dr0 = VSUB(r0,r2); 
+  sr0 = VADD(r0,r2); dr0 = VSUB(r0,r2);
   sr1 = VADD(r1,r3); dr1 = VSUB(r3,r1);
-  si0 = VADD(i0,i2); di0 = VSUB(i0,i2); 
+  si0 = VADD(i0,i2); di0 = VSUB(i0,i2);
   si1 = VADD(i1,i3); di1 = VSUB(i3,i1);
 
   r0 = VADD(sr0, sr1);
@@ -1360,7 +1364,7 @@ static NEVER_INLINE(void) FUNC_REAL_FINALIZE(int Ncvec, const v4sf *in, v4sf *ou
   xr1= ci.f[0] + s*(ci.f[1]-ci.f[3]);        uout[2].f[0] = xr1;
   xi1=-ci.f[2] - s*(ci.f[1]+ci.f[3]);        uout[3].f[0] = xi1;
   xr3= ci.f[0] - s*(ci.f[1]-ci.f[3]);        uout[6].f[0] = xr3;
-  xi3= ci.f[2] - s*(ci.f[1]+ci.f[3]);        uout[7].f[0] = xi3; 
+  xi3= ci.f[2] - s*(ci.f[1]+ci.f[3]);        uout[7].f[0] = xi3;
 
   for (k=1; k < dk; ++k) {
     v4sf save_next = in[8*k+7];
@@ -1371,7 +1375,7 @@ static NEVER_INLINE(void) FUNC_REAL_FINALIZE(int Ncvec, const v4sf *in, v4sf *ou
 
 }
 
-static ALWAYS_INLINE(void) FUNC_REAL_PREPROCESS_4X4(const v4sf *in, 
+static ALWAYS_INLINE(void) FUNC_REAL_PREPROCESS_4X4(const v4sf *in,
                                              const v4sf *e, v4sf *out, int first) {
   v4sf r0=in[0], i0=in[1], r1=in[2], i1=in[3], r2=in[4], i2=in[5], r3=in[6], i3=in[7];
   /*
@@ -1384,12 +1388,12 @@ static ALWAYS_INLINE(void) FUNC_REAL_PREPROCESS_4X4(const v4sf *in,
     [0   0   0   0   1  -1   1  -1] * [i0]
     [0  -1   1   0   1   0   0   1]   [i1]
     [0   0   0   0   1   1  -1  -1]   [i2]
-    [0   1  -1   0   1   0   0   1]   [i3]    
+    [0   1  -1   0   1   0   0   1]   [i3]
   */
 
-  v4sf sr0 = VADD(r0,r3), dr0 = VSUB(r0,r3); 
+  v4sf sr0 = VADD(r0,r3), dr0 = VSUB(r0,r3);
   v4sf sr1 = VADD(r1,r2), dr1 = VSUB(r1,r2);
-  v4sf si0 = VADD(i0,i3), di0 = VSUB(i0,i3); 
+  v4sf si0 = VADD(i0,i3), di0 = VSUB(i0,i3);
   v4sf si1 = VADD(i1,i2), di1 = VSUB(i1,i2);
 
   r0 = VADD(sr0, sr1);
@@ -1447,7 +1451,7 @@ static NEVER_INLINE(void) FUNC_REAL_PREPROCESS(int Ncvec, const v4sf *in, v4sf *
     [ci2] [0   0   0   0   0  -2   0   2]
     [ci3] [0  -s   0   s   0  -s   0  -s]
   */
-  for (k=1; k < dk; ++k) {    
+  for (k=1; k < dk; ++k) {
     FUNC_REAL_PREPROCESS_4X4(in+8*k, e + k*6, out-1+k*8, 0);
   }
 
@@ -1481,16 +1485,16 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
   /* assert(finput != foutput); */
   if (direction == PFFFT_FORWARD) {
     ib = !ib;
-    if (setup->transform == PFFFT_REAL) { 
+    if (setup->transform == PFFFT_REAL) {
       ib = (rfftf1_ps(Ncvec*2, vinput, buff[ib], buff[!ib],
-                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);      
+                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
       FUNC_REAL_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
     } else {
       v4sf *tmp = buff[ib];
       for (k=0; k < Ncvec; ++k) {
         UNINTERLEAVE2(vinput[k*2], vinput[k*2+1], tmp[k*2], tmp[k*2+1]);
       }
-      ib = (cfftf1_ps(Ncvec, buff[ib], buff[!ib], buff[ib], 
+      ib = (cfftf1_ps(Ncvec, buff[ib], buff[!ib], buff[ib],
                       setup->twiddle, &setup->ifac[0], -1) == buff[0] ? 0 : 1);
       FUNC_CPLX_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
     }
@@ -1498,7 +1502,7 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
       FUNC_ZREORDER(setup, (float*)buff[!ib], (float*)buff[ib], PFFFT_FORWARD);
     } else ib = !ib;
   } else {
-    if (vinput == buff[ib]) { 
+    if (vinput == buff[ib]) {
       ib = !ib; /* may happen when finput == foutput */
     }
     if (ordered) {
@@ -1507,18 +1511,18 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
     }
     if (setup->transform == PFFFT_REAL) {
       FUNC_REAL_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
-      ib = (rfftb1_ps(Ncvec*2, buff[ib], buff[0], buff[1], 
+      ib = (rfftb1_ps(Ncvec*2, buff[ib], buff[0], buff[1],
                       setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
     } else {
       FUNC_CPLX_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
-      ib = (cfftf1_ps(Ncvec, buff[ib], buff[0], buff[1], 
+      ib = (cfftf1_ps(Ncvec, buff[ib], buff[0], buff[1],
                       setup->twiddle, &setup->ifac[0], +1) == buff[0] ? 0 : 1);
       for (k=0; k < Ncvec; ++k) {
         INTERLEAVE2(buff[ib][k*2], buff[ib][k*2+1], buff[ib][k*2], buff[ib][k*2+1]);
       }
     }
   }
-  
+
   if (buff[ib] != voutput) {
     /* extra copy required -- this situation should only happen when finput == foutput */
     assert(finput==foutput);
@@ -1533,9 +1537,9 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
 
 void FUNC_ZCONVOLVE_ACCUMULATE(const SETUP_STRUCT *s, const float *a, const float *b, float *ab, float scaling) {
   int Ncvec = s->Ncvec;
-  const v4sf * RESTRICT va = (const v4sf*)a;
-  const v4sf * RESTRICT vb = (const v4sf*)b;
-  v4sf * RESTRICT vab = (v4sf*)ab;
+  const v4sf *va = (const v4sf*)a;
+  const v4sf *vb = (const v4sf*)b;
+  v4sf *vab = (v4sf*)ab;
 
 #ifdef __arm__
   __builtin_prefetch(va);
@@ -1568,7 +1572,7 @@ void FUNC_ZCONVOLVE_ACCUMULATE(const SETUP_STRUCT *s, const float *a, const floa
   bi0 = ((v4sf_union*)vb)[1].f[0];
   abr0 = ((v4sf_union*)vab)[0].f[0];
   abi0 = ((v4sf_union*)vab)[1].f[0];
- 
+
 #ifdef ZCONVOLVE_USING_INLINE_ASM
   /* inline asm version, unfortunately miscompiled by clang 3.2,
    * at least on ubuntu.. so this will be restricted to gcc */
@@ -1588,11 +1592,11 @@ void FUNC_ZCONVOLVE_ACCUMULATE(const SETUP_STRUCT *s, const float *a, const floa
                "vld1.f32    {q2,q3},   [%0,:128]!         \n"
                "vld1.f32    {q6,q7},   [%1,:128]!         \n"
                "vld1.f32    {q8,q9},   [r8,:128]!          \n"
-               
+
                "vmul.f32    q10, q0, q4             \n"
                "vmul.f32    q11, q0, q5             \n"
-               "vmul.f32    q12, q2, q6             \n" 
-               "vmul.f32    q13, q2, q7             \n"                 
+               "vmul.f32    q12, q2, q6             \n"
+               "vmul.f32    q13, q2, q7             \n"
                "vmls.f32    q10, q1, q5             \n"
                "vmla.f32    q11, q1, q4             \n"
                "vld1.f32    {q0,q1}, [r8,:128]!     \n"
@@ -1631,9 +1635,9 @@ void FUNC_ZCONVOLVE_ACCUMULATE(const SETUP_STRUCT *s, const float *a, const floa
 
 void FUNC_ZCONVOLVE_SCALE(const SETUP_STRUCT *s, const float *a, const float *b, float *ab, float scaling) {
   v4sf vscal = LD_PS1(scaling);
-  const v4sf * RESTRICT va = (const v4sf*)a;
-  const v4sf * RESTRICT vb = (const v4sf*)b;
-  v4sf * RESTRICT vab = (v4sf*)ab;
+  const v4sf *va = (const v4sf*)a;
+  const v4sf *vb = (const v4sf*)b;
+  v4sf *vab = (v4sf*)ab;
   float sar, sai, sbr, sbi;
   const int NcvecMulTwo = 2*s->Ncvec;  /* int Ncvec = s->Ncvec; */
   int k; /* was i -- but always used "2*i" - except at for() */
@@ -1685,9 +1689,9 @@ void FUNC_ZCONVOLVE_SCALE(const SETUP_STRUCT *s, const float *a, const float *b,
 
 
 void FUNC_ZCONVOLVE(const SETUP_STRUCT *s, const float *a, const float *b, float *ab) {
-  const v4sf * RESTRICT va = (const v4sf*)a;
-  const v4sf * RESTRICT vb = (const v4sf*)b;
-  v4sf * RESTRICT vab = (v4sf*)ab;
+  const v4sf *va = (const v4sf*)a;
+  const v4sf *vb = (const v4sf*)b;
+  v4sf *vab = (v4sf*)ab;
   float sar, sai, sbr, sbi;
   const int NcvecMulTwo = 2*s->Ncvec;  /* int Ncvec = s->Ncvec; */
   int k; /* was i -- but always used "2*i" - except at for() */
@@ -1820,12 +1824,12 @@ void pffft_zreorder_nosimd(const SETUP_STRUCT *setup, const float *in, float *ou
   }
   else if (direction == PFFFT_FORWARD) {
     float x_N = in[N-1];
-    for (k=N-1; k > 1; --k) out[k] = in[k-1]; 
+    for (k=N-1; k > 1; --k) out[k] = in[k-1];
     out[0] = in[0];
     out[1] = x_N;
   } else {
     float x_N = in[1];
-    for (k=1; k < N-1; ++k) out[k] = in[k+1]; 
+    for (k=1; k < N-1; ++k) out[k] = in[k+1];
     out[0] = in[0];
     out[N-1] = x_N;
   }
@@ -1851,27 +1855,27 @@ void pffft_transform_internal_nosimd(const SETUP_STRUCT *setup, const float *inp
   if (direction == PFFFT_FORWARD) {
     if (setup->transform == PFFFT_REAL) {
       ib = (rfftf1_ps(Ncvec*2, input, buff[ib], buff[!ib],
-                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);      
+                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
     } else {
-      ib = (cfftf1_ps(Ncvec, input, buff[ib], buff[!ib], 
+      ib = (cfftf1_ps(Ncvec, input, buff[ib], buff[!ib],
                       setup->twiddle, &setup->ifac[0], -1) == buff[0] ? 0 : 1);
     }
     if (ordered) {
       FUNC_ZREORDER(setup, buff[ib], buff[!ib], PFFFT_FORWARD); ib = !ib;
     }
-  } else {    
-    if (input == buff[ib]) { 
+  } else {
+    if (input == buff[ib]) {
       ib = !ib; /* may happen when finput == foutput */
     }
     if (ordered) {
-      FUNC_ZREORDER(setup, input, buff[!ib], PFFFT_BACKWARD); 
+      FUNC_ZREORDER(setup, input, buff[!ib], PFFFT_BACKWARD);
       input = buff[!ib];
     }
     if (setup->transform == PFFFT_REAL) {
-      ib = (rfftb1_ps(Ncvec*2, input, buff[ib], buff[!ib], 
+      ib = (rfftb1_ps(Ncvec*2, input, buff[ib], buff[!ib],
                       setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
     } else {
-      ib = (cfftf1_ps(Ncvec, input, buff[ib], buff[!ib], 
+      ib = (cfftf1_ps(Ncvec, input, buff[ib], buff[!ib],
                       setup->twiddle, &setup->ifac[0], +1) == buff[0] ? 0 : 1);
     }
   }
@@ -2003,7 +2007,7 @@ void FUNC_TRANSFORM_ORDERED(const SETUP_STRUCT *setup, const float *input, float
 /* detect bugs with the vector support macros */
 PFFFT_EXPORT void FUNC_VALIDATE_SIMD_A(void) {
   float f[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
-  v4sf_union a0, a1, a2, a3, t, u; 
+  v4sf_union a0, a1, a2, a3, t, u;
   memcpy(a0.f, f, 4*sizeof(float));
   memcpy(a1.f, f+4, 4*sizeof(float));
   memcpy(a2.f, f+8, 4*sizeof(float));
@@ -2032,9 +2036,9 @@ PFFFT_EXPORT void FUNC_VALIDATE_SIMD_A(void) {
   printf("VSWAPHL(4:7,8:11)=[%2g %2g %2g %2g]\n", t.f[0], t.f[1], t.f[2], t.f[3]);
   assertv4(t, 8, 9, 6, 7);
   VTRANSPOSE4(a0.v, a1.v, a2.v, a3.v);
-  printf("VTRANSPOSE4(0:3,4:7,8:11,12:15)=[%2g %2g %2g %2g] [%2g %2g %2g %2g] [%2g %2g %2g %2g] [%2g %2g %2g %2g]\n", 
-         a0.f[0], a0.f[1], a0.f[2], a0.f[3], a1.f[0], a1.f[1], a1.f[2], a1.f[3], 
-         a2.f[0], a2.f[1], a2.f[2], a2.f[3], a3.f[0], a3.f[1], a3.f[2], a3.f[3]); 
+  printf("VTRANSPOSE4(0:3,4:7,8:11,12:15)=[%2g %2g %2g %2g] [%2g %2g %2g %2g] [%2g %2g %2g %2g] [%2g %2g %2g %2g]\n",
+         a0.f[0], a0.f[1], a0.f[2], a0.f[3], a1.f[0], a1.f[1], a1.f[2], a1.f[3],
+         a2.f[0], a2.f[1], a2.f[2], a2.f[3], a3.f[0], a3.f[1], a3.f[2], a3.f[3]);
   assertv4(a0, 0, 4, 8, 12); assertv4(a1, 1, 5, 9, 13); assertv4(a2, 2, 6, 10, 14); assertv4(a3, 3, 7, 11, 15);
 }
 
@@ -2132,7 +2136,7 @@ PFFFT_EXPORT int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
         fprintf(DbgOut, "}\n" );
       }
       //PFFFT_ASSERT4( C, 32.0F, 34.0F, 36.0F, 38.0F, "VADD(): Out C" );
-      
+
       if ( numAligned >= 1 && numUnaligned >= 4 )
         break;
     }
