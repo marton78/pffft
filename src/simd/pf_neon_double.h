@@ -40,7 +40,7 @@
   NEON 64bit support macros — native AArch64 implementation.
   Packs 4 doubles into a pair of float64x2_t (2x 128-bit NEON registers).
 */
-#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_ENABLE_NEON) && (defined(__aarch64__) || defined(__arm64__))
+#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_ENABLE_NEON) && (defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64))
 
 #pragma message (__FILE__ ": NEON double macros are defined" )
 
