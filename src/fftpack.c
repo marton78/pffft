@@ -2158,7 +2158,7 @@ static void rfftf1(integer n, real *c, real *ch, const real *wa, integer *ifac)
   for (i = 0; i < n; ++i) {
     c[i] = ch[i];
   }
-}
+} /* rfftf1 */
 
 void rfftb(integer n, real *r, real *wsave)
 {
