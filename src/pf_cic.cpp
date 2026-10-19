@@ -70,7 +70,7 @@ void *cicddc_init(int factor) {
     s->gain = 1.0f / SHRT_MAX / sineamp / factor / factor / factor; // compensate for gain of 3 integrators
 
     s->sinetable = (int16_t *)malloc(sinesize2 * sizeof(*s->sinetable));
-    double f = 2.0 * M_PI / (double)SINESIZE;
+    double f = 6.2831853071795864769 / (double)SINESIZE;
     for(i = 0; i < sinesize2; i++) {
         s->sinetable[i] = sineamp * cos(f * i);
     }
