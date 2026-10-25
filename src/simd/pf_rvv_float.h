@@ -55,8 +55,15 @@ typedef union v4sf_union {
 } v4sf_union;
 
 /* Both clang and recent GCC accept __builtin_shufflevector; older GCC
- * only ships __builtin_shuffle. Pick whichever is available. */
-#if defined(__has_builtin) && __has_builtin(__builtin_shufflevector)
+ * only ships __builtin_shuffle. Pick whichever is available. GCC < 10 has
+ * no __has_builtin at all, so it must not appear in the same #if as the
+ * defined() check. */
+#if defined(__has_builtin)
+#  if __has_builtin(__builtin_shufflevector)
+#    define PF_RVV_HAVE_SHUFFLEVECTOR 1
+#  endif
+#endif
+#ifdef PF_RVV_HAVE_SHUFFLEVECTOR
 #  define PF_RVV_SHUF4(a, b, i0, i1, i2, i3) \
      __builtin_shufflevector((a), (b), i0, i1, i2, i3)
 #else
@@ -71,6 +78,7 @@ typedef union v4sf_union {
 #  define VADD(a,b)     ((a) + (b))
 #  define VSUB(a,b)     ((a) - (b))
 #  define VMADD(a,b,c)  ((a) * (b) + (c))
+#  define VMSUB(a,b,c)  ((c) - (a) * (b))
 #  define LD_PS1(p)     ((v4sf){(p), (p), (p), (p)})
 #  define VLOAD_UNALIGNED(ptr)  (*(const v4sf *)(ptr))
 #  define VLOAD_ALIGNED(ptr)    (*(const v4sf *)(ptr))
