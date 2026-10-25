@@ -37,6 +37,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 #include <limits.h>
 
+#ifndef M_PI
+  #define M_PI    3.14159265358979323846  /* pi */
+#endif
+
 
 /*
    ____ ___ ____   ____  ____   ____
@@ -70,7 +74,7 @@ void *cicddc_init(int factor) {
     s->gain = 1.0f / SHRT_MAX / sineamp / factor / factor / factor; // compensate for gain of 3 integrators
 
     s->sinetable = (int16_t *)malloc(sinesize2 * sizeof(*s->sinetable));
-    double f = 6.2831853071795864769 / (double)SINESIZE;
+    double f = 2.0 * M_PI / (double)SINESIZE;
     for(i = 0; i < sinesize2; i++) {
         s->sinetable[i] = sineamp * cos(f * i);
     }
