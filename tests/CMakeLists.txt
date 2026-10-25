@@ -48,6 +48,10 @@ if (PFFFT_USE_TYPE_DOUBLE)
   target_compile_definitions(test_pffft_cpp PRIVATE PFFFT_ENABLE_DOUBLE)
 endif()
 target_link_libraries( test_pffft_cpp  PFFFT ${STDCXXLIB} ${ASANLIB} )
+if (EMSCRIPTEN)
+  # the large-size tests overflow Emscripten's default 64 KB stack
+  target_link_options(test_pffft_cpp PRIVATE "-sSTACK_SIZE=1MB")
+endif()
 
 ######################################################
 
@@ -60,6 +64,10 @@ if (PFFFT_USE_TYPE_DOUBLE)
   target_compile_definitions(test_pffft_cpp_11 PRIVATE PFFFT_ENABLE_DOUBLE)
 endif()
 target_link_libraries( test_pffft_cpp_11  PFFFT ${STDCXXLIB} ${ASANLIB} )
+if (EMSCRIPTEN)
+  # the large-size tests overflow Emscripten's default 64 KB stack
+  target_link_options(test_pffft_cpp_11 PRIVATE "-sSTACK_SIZE=1MB")
+endif()
 
 set_property(TARGET test_pffft_cpp_11 PROPERTY CXX_STANDARD 11)
 set_property(TARGET test_pffft_cpp_11 PROPERTY CXX_STANDARD_REQUIRED ON)
