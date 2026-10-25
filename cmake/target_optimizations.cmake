@@ -67,8 +67,10 @@ elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "armv7l")
 elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
     # RISC-V with the V (vector) extension; rv64gcv enables the standard
     # G+C profile plus V (RVV 1.0). pf_rvv_*.h is gated on __riscv_vector.
-    set(GCC_MARCH_DESC "native/RISCVwRVV:rv64gcv")
-    set(GCC_MARCH_VALUES "none;native;rv64gc;rv64gcv" CACHE INTERNAL "List of possible architectures")
+    # No "native": released GCC has no -march=native on RISC-V. "none" (the
+    # default) probes the target for V instead, see _pffft_riscv_march().
+    set(GCC_MARCH_DESC "RISCVwRVV:rv64gcv/RISCVnoV:rv64gc")
+    set(GCC_MARCH_VALUES "none;rv64gc;rv64gcv" CACHE INTERNAL "List of possible architectures")
     set(GCC_EXTRA_VALUES "" CACHE INTERNAL "List of possible additional options")
 elseif (EMSCRIPTEN)
     # Emscripten WASM SIMD is handled automatically in target_set_c/cxx_arch_flags
@@ -209,13 +211,16 @@ function(_pffft_riscv_march out_march out_has_v)
             "#include <stdio.h>\n"
             "#include <riscv_vector.h>\n"
             "int main(void){ printf(\"%zu\\n\", __riscv_vsetvlmax_e32m1() * 32); return 0; }\n")
-        try_run(_run_res _compile_ok
+        try_run(PFFFT_RVV_PROBE_RUN PFFFT_RVV_PROBE_COMPILED
             "${CMAKE_CURRENT_BINARY_DIR}/rvv_vlen_probe"
             "${_probe}"
             COMPILE_DEFINITIONS "-march=rv64gcv"
             RUN_OUTPUT_VARIABLE _vlen)
-        if (_compile_ok AND _run_res EQUAL 0)
-            string(STRIP "${_vlen}" _vlen)
+        # the output may also hold emulator chatter (qemu warns on stderr
+        # when no vext_spec is given); the VLEN is the last number printed
+        string(REGEX MATCH "[0-9]+[ \t\r\n]*$" _vlen "${_vlen}")
+        string(STRIP "${_vlen}" _vlen)
+        if (PFFFT_RVV_PROBE_COMPILED AND PFFFT_RVV_PROBE_RUN EQUAL 0 AND _vlen)
             set(PFFFT_RVV_HAS_V TRUE CACHE INTERNAL "Target supports the RISC-V V extension")
             set(PFFFT_RVV_VLEN "${_vlen}" CACHE INTERNAL "Detected RISC-V VLEN in bits")
         else()

@@ -264,15 +264,22 @@ If you build for Emscripten without the bundled CMake config (e.g. a raw
 to select the WASM SIMD backend; the previous `PFFFT_ENABLE_NEON` recipe no
 longer enables it and now silently falls back to scalar code.
 
-### Building on RISC-V
+### RISC-V: RVV vector backend
 
-When the host is detected as `riscv64`, the build defaults to
+When the target is detected as `riscv64`, the build defaults to
 `-march=rv64gcv` and defines `PFFFT_ENABLE_RVV`, enabling the
 RVV 1.0 vector backend in `src/simd/pf_rvv_{float,double}.h`. On
 hardware with `VLEN >= 256` (e.g. Spacemit X100) the configure step
 also probes the host VLEN and appends a `zvlNNNb` suffix so the
-compiler can emit single 4-wide double-precision vector ops. To opt
-out, pass `-DPFFFT_USE_SIMD=OFF` or set `-DTARGET_C_ARCH=rv64gc`.
+compiler can emit single 4-wide double-precision vector ops. If the
+target turns out to lack V, the build falls back to `rv64gc` and the
+scalar code. To opt out explicitly, pass `-DPFFFT_USE_SIMD=OFF` or set
+both `-DTARGET_C_ARCH=rv64gc` and `-DTARGET_CXX_ARCH=rv64gc`.
+
+When cross-compiling, the probe runs under `CMAKE_CROSSCOMPILING_EMULATOR`;
+with QEMU, enable V and pick the VLEN explicitly, e.g.
+`-DCMAKE_CROSSCOMPILING_EMULATOR="qemu-riscv64-static;-L;/usr/riscv64-linux-gnu;-cpu;rv64,v=true,vlen=256"`.
+Without an emulator the build assumes V is present.
 
 ## Using pffft in your CMake project
 

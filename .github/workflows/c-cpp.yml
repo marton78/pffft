@@ -45,11 +45,16 @@ jobs:
           -DCMAKE_SYSTEM_PROCESSOR=riscv64 \
           -DCMAKE_C_COMPILER=riscv64-linux-gnu-gcc \
           -DCMAKE_CXX_COMPILER=riscv64-linux-gnu-g++ \
-          -DCMAKE_CROSSCOMPILING_EMULATOR=qemu-riscv64-static \
+          -DCMAKE_FIND_ROOT_PATH=/usr/riscv64-linux-gnu \
+          "-DCMAKE_CROSSCOMPILING_EMULATOR=qemu-riscv64-static;-L;/usr/riscv64-linux-gnu;-cpu;rv64,v=true,vlen=256,vext_spec=v1.0" \
           -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF \
           -DPFFFT_BUILD_TESTS=ON -DPFFFT_BUILD_BENCHMARKS=OFF -DPFFFT_BUILD_EXAMPLES=OFF
     - name: build
-      run: cmake --build build_riscv64
+      # fail unless the RVV backend was actually compiled in
+      run: |
+        cmake --build build_riscv64 2>&1 | tee build_riscv64.log
+        grep -q "RISC-V Vector (RVV) float macros are defined" build_riscv64.log
+        grep -q "RISC-V Vector (RVV) double macros are defined" build_riscv64.log
     - name: test
       run: cd build_riscv64 && ctest --output-on-failure
 
