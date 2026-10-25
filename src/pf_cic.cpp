@@ -37,6 +37,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 #include <limits.h>
 
+#ifndef M_PI
+  #define M_PI    3.14159265358979323846  /* pi */
+#endif
+
 
 /*
    ____ ___ ____   ____  ____   ____
