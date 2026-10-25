@@ -2329,7 +2329,9 @@ PFFFT_EXPORT int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
       fprintf(stderr, "VALIGNED() should have found at least 1 occurence!");
       ++numErrs;
     }
-    if ( numUnaligned < 4 ) {
+    /* backends without alignment requirements (NEON/WASM float) may accept
+       every float address -- then there is no unaligned path to exercise */
+    if ( numUnaligned < 4 && !(VALIGNED(&a[1]) && VALIGNED(&a[2]) && VALIGNED(&a[3])) ) {
       fprintf(stderr, "!VALIGNED() should have found at least 4 occurences!");
       ++numErrs;
     }

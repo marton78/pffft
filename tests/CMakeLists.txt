@@ -100,11 +100,20 @@ if (PFFFT_USE_TYPE_FLOAT)
     COMMAND test_pffft_float
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
+  # self-test of the SIMD macros; passes trivially when SIMD is compiled out
+  add_test(NAME test_simd_float
+    COMMAND test_pffft_float --test-simd
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )
 endif()
 
 if (PFFFT_USE_TYPE_DOUBLE)
   add_test(NAME test_pffft_double
     COMMAND test_pffft_double
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )
+  add_test(NAME test_simd_double
+    COMMAND test_pffft_double --test-simd
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
 endif()
