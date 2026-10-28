@@ -182,7 +182,27 @@ cmake --build .
 ctest
 ```
 
-WASM SIMD is enabled automatically when building with Emscripten; see
+With [WASI-SDK](https://github.com/WebAssembly/wasi-sdk), or any other clang
+toolchain targeting `wasm32`/`wasm64`:
+
+```sh
+cmake -S . -B build \
+  -DCMAKE_TOOLCHAIN_FILE=$WASI_SDK_PATH/share/cmake/wasi-sdk.cmake \
+  -DWASI_SDK_PREFIX=$WASI_SDK_PATH \
+  -DPFFFT_BUILD_TESTS=OFF -DPFFFT_BUILD_BENCHMARKS=OFF -DPFFFT_BUILD_EXAMPLES=OFF
+cmake --build build
+```
+
+The tests, benchmarks and examples don't build out of the box under WASI:
+they call `clock()`, which needs `-D_WASI_EMULATED_PROCESS_CLOCKS` in the C
+flags and `-lwasi-emulated-process-clocks` in the linker flags, and the C++
+tests use exceptions, which WASI-SDK doesn't support by default. With the
+clock flags and `-DCMAKE_CROSSCOMPILING_EMULATOR=wasmtime`, the C tests build
+and pass under [wasmtime](https://wasmtime.dev/).
+
+WASM SIMD is enabled automatically for any WebAssembly target: Emscripten,
+WASI-SDK, or plain clang with `CMAKE_SYSTEM_PROCESSOR` set to `wasm32` or
+`wasm64`. See
 [Performance and architecture notes](#performance-and-architecture-notes) for
 the Relaxed SIMD option and the non-CMake build flags.
 
@@ -259,8 +279,8 @@ intrinsics for both float and double precision.
 >
 > This uses relaxed multiply-add instructions, which the runtime may fuse into a single-rounding FMA, or fall back to a two-rounding multiply followed by add/subtract. It is **off by default** because relaxed SIMD results are not guaranteed bit-identical across engines or hardware (unlike the default WASM SIMD path); enable it only if your application tolerates ULP-level differences between runtimes.
 
-If you build for Emscripten without the bundled CMake config (e.g. a raw
-`emcc`/Makefile/Bazel invocation), compile with `-msimd128 -DPFFFT_ENABLE_WASM=1`
+If you build for WebAssembly without the bundled CMake config (e.g. a raw
+`emcc`/`clang`/Makefile/Bazel invocation), compile with `-msimd128 -DPFFFT_ENABLE_WASM=1`
 to select the WASM SIMD backend; the previous `PFFFT_ENABLE_NEON` recipe no
 longer enables it and now silently falls back to scalar code.
 
@@ -321,7 +341,10 @@ target_link_libraries(my_app PRIVATE PFFFT::PFFFT)
 
 When pffft is the top-level project, these default to `ON`. When included as a subdirectory, they default to `OFF`:
 
-* `PFFFT_BUILD_TESTS` — Build test executables and register CTest tests
+* `PFFFT_BUILD_TESTS` — Build test executables and register CTest tests. These
+  include `test_simd_float`/`test_simd_double`, which run the SIMD backend's
+  self-test (`test_pffft_float --test-simd`); they pass trivially when SIMD is
+  compiled out
 * `PFFFT_BUILD_BENCHMARKS` — Build benchmark executables
 * `PFFFT_BUILD_EXAMPLES` — Build example programs
 
