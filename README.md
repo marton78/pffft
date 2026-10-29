@@ -299,7 +299,10 @@ both `-DTARGET_C_ARCH=rv64gc` and `-DTARGET_CXX_ARCH=rv64gc`.
 When cross-compiling, the probe runs under `CMAKE_CROSSCOMPILING_EMULATOR`;
 with QEMU, enable V and pick the VLEN explicitly, e.g.
 `-DCMAKE_CROSSCOMPILING_EMULATOR="qemu-riscv64-static;-L;/usr/riscv64-linux-gnu;-cpu;rv64,v=true,vlen=256,vext_spec=v1.0"`.
-Without an emulator the build assumes V is present.
+Distributions that build their riscv64 libraries for the RVA23 profile (e.g.
+Ubuntu 26.04) need an RVA23 CPU model for the same, e.g. `-cpu;rva23u64,vlen=256`
+(and `qemu-riscv64` from the `qemu-user` package, which no longer ships a
+`-static` binary there). Without an emulator the build assumes V is present.
 
 ### PowerPC: AltiVec backend
 
