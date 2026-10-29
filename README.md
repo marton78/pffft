@@ -298,8 +298,23 @@ both `-DTARGET_C_ARCH=rv64gc` and `-DTARGET_CXX_ARCH=rv64gc`.
 
 When cross-compiling, the probe runs under `CMAKE_CROSSCOMPILING_EMULATOR`;
 with QEMU, enable V and pick the VLEN explicitly, e.g.
-`-DCMAKE_CROSSCOMPILING_EMULATOR="qemu-riscv64-static;-L;/usr/riscv64-linux-gnu;-cpu;rv64,v=true,vlen=256"`.
+`-DCMAKE_CROSSCOMPILING_EMULATOR="qemu-riscv64-static;-L;/usr/riscv64-linux-gnu;-cpu;rv64,v=true,vlen=256,vext_spec=v1.0"`.
 Without an emulator the build assumes V is present.
+
+### PowerPC: AltiVec backend
+
+The AltiVec backend (`src/simd/pf_altivec_float.h`) is **float only**: there
+is no AltiVec double-precision backend, so double precision runs the scalar
+code on PowerPC. It works on big- and little-endian targets and doesn't need
+VSX. It is selected when the compiler defines `__ALTIVEC__`, which is the
+default on little-endian `ppc64le`; elsewhere pass e.g.
+`-DCMAKE_C_FLAGS=-maltivec`. GCC and clang warn that `vec_lvsl` is deprecated
+on little-endian; this is harmless, the unaligned-load idiom it is used for
+is correct there.
+
+To check that the backend is active, look for "ALTIVEC float macros are
+defined" in the build output, and run `test_pffft_float --test-simd` (also
+registered as the `test_simd_float` ctest test).
 
 ## Using pffft in your CMake project
 
@@ -362,6 +377,8 @@ Git history shows following first commits of the major contributors:
 * Gunj Joshi: April 1, 2025
 * Aleksey Vaneev: December 20, 2025
 * Sergi Granell (xerpi): February 26, 2026
+* Michael Neuling: May 26, 2026
+* Piotr Kubaj: September 29, 2026
 
 There are a few other contributors not listed here.
 
