@@ -42,8 +42,6 @@
 */
 #if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_ENABLE_WASM) && defined(__wasm_simd128__)
 
-#pragma message (__FILE__ ": WASM SIMD double macros are defined" )
-
 #include <wasm_simd128.h>
 
 /* v4sf holds 4 doubles as two WASM SIMD 128-bit registers */

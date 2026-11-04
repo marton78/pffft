@@ -40,8 +40,6 @@
   WebAssembly SIMD 128-bit support macros (4x float32)
 */
 #if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_ENABLE_WASM) && defined(__wasm_simd128__)
-#pragma message( __FILE__ ": WASM SIMD float macros are defined" )
-
 #  include <wasm_simd128.h>
 typedef v128_t v4sf;
 
@@ -101,8 +99,6 @@ typedef union v4sf_union {
 
 #  define VALIGNED(ptr) ((((uintptr_t)(ptr)) & 0x3) == 0)
 
-#else
-/* #pragma message( __FILE__ ": WASM SIMD float macros are not defined" ) */
 #endif
 
 #endif /* PF_WASM_FLT_H */

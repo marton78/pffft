@@ -42,8 +42,6 @@
 */
 #if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_ENABLE_NEON) && (defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64))
 
-#pragma message (__FILE__ ": NEON double macros are defined" )
-
 #include <arm_neon.h>
 
 /* v4sf holds 4 doubles as two NEON 128-bit registers */

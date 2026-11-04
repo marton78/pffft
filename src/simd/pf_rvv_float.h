@@ -42,8 +42,6 @@
   with VL=4, e32, m1 — which works for any VLEN >= 128.
 */
 #if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_ENABLE_RVV) && defined(__riscv_vector)
-#pragma message( __FILE__ ": RISC-V Vector (RVV) float macros are defined" )
-
 typedef float v4sf __attribute__((vector_size(16), aligned(4)));
 typedef int   v4si __attribute__((vector_size(16), aligned(4)));
 
