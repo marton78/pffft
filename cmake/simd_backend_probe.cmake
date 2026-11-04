@@ -102,22 +102,42 @@ function(_pffft_probe_simd_arch target header out_var)
     if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         list(APPEND _probe_flags "-fno-lto")
     endif()
-    try_compile(_ok "${_dir}/build_${out_var}" "${_src}"
-        CMAKE_FLAGS "-DINCLUDE_DIRECTORIES=${CMAKE_CURRENT_SOURCE_DIR}/src"
-        COMPILE_DEFINITIONS ${_probe_flags}
-        OUTPUT_VARIABLE _log
-        COPY_FILE "${_dir}/probe_${out_var}.bin")
-
-    if (NOT _ok)
-        file(WRITE "${_dir}/probe_${out_var}.log" "${_log}")
-        set(_arch "unknown (probe did not compile, see ${_dir}/probe_${out_var}.log)")
-    else()
-        set(_arch "unknown")
-        file(STRINGS "${_dir}/probe_${out_var}.bin" _hits REGEX "PFFFT_SIMD_ARCH\\[[^]]*\\]")
-        if (_hits MATCHES "PFFFT_SIMD_ARCH\\[([^]]*)\\]")
-            set(_arch "${CMAKE_MATCH_1}")
-        endif()
+    # a universal Apple build has one string per slice, in no reliable order;
+    # probe each architecture on its own to report which slice gets what
+    set(_slices "-")
+    list(LENGTH CMAKE_OSX_ARCHITECTURES _n_slices)
+    if (APPLE AND _n_slices GREATER 1)
+        set(_slices ${CMAKE_OSX_ARCHITECTURES})
     endif()
+    set(_results "")
+    foreach(_slice IN LISTS _slices)
+        set(_out "${_dir}/probe_${out_var}")
+        if (NOT _slice STREQUAL "-")
+            set(CMAKE_OSX_ARCHITECTURES "${_slice}")
+            string(APPEND _out "_${_slice}")
+        endif()
+        try_compile(_ok "${_dir}/build_${out_var}" "${_src}"
+            CMAKE_FLAGS "-DINCLUDE_DIRECTORIES=${CMAKE_CURRENT_SOURCE_DIR}/src"
+            COMPILE_DEFINITIONS ${_probe_flags}
+            OUTPUT_VARIABLE _log
+            COPY_FILE "${_out}.bin")
+
+        if (NOT _ok)
+            file(WRITE "${_out}.log" "${_log}")
+            set(_arch "unknown (probe did not compile, see ${_out}.log)")
+        else()
+            set(_arch "unknown")
+            file(STRINGS "${_out}.bin" _hits REGEX "PFFFT_SIMD_ARCH\\[[^]]*\\]")
+            if (_hits MATCHES "PFFFT_SIMD_ARCH\\[([^]]*)\\]")
+                set(_arch "${CMAKE_MATCH_1}")
+            endif()
+        endif()
+        if (NOT _slice STREQUAL "-")
+            string(APPEND _arch " (${_slice})")
+        endif()
+        list(APPEND _results "${_arch}")
+    endforeach()
+    string(REPLACE ";" ", " _arch "${_results}")
 
     set(${_cache} "${_arch}" CACHE INTERNAL "pffft SIMD backend from ${header}")
     set(${_cache}_SIG "${_sig}" CACHE INTERNAL "inputs of the pffft SIMD probe")
