@@ -39,7 +39,7 @@
 /*
   WebAssembly SIMD 128-bit support macros (4x float32)
 */
-#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_ENABLE_WASM) && defined(__wasm_simd128__)
+#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(__wasm_simd128__)
 #  include <wasm_simd128.h>
 typedef v128_t v4sf;
 

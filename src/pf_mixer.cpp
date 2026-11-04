@@ -72,11 +72,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   #include <xmmintrin.h>
   #define HAVE_SSE_INTRINSICS 1
   
-#elif defined(PFFFT_ENABLE_NEON) && defined(__arm__)
-  #include "sse2neon.h"
-  #define HAVE_SSE_INTRINSICS 1
-  
-#elif defined(PFFFT_ENABLE_NEON) && defined(__aarch64__)
+#elif defined(__ARM_NEON)
   #include "sse2neon.h"
   #define HAVE_SSE_INTRINSICS 1
 

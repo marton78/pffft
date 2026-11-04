@@ -40,7 +40,7 @@
   WebAssembly SIMD 128-bit double support macros.
   Packs 4 doubles into a pair of v128_t (2x 128-bit WASM SIMD registers).
 */
-#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_ENABLE_WASM) && defined(__wasm_simd128__)
+#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(__wasm_simd128__)
 
 #include <wasm_simd128.h>
 
