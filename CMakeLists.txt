@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.10)
 project(PRETTY_FAST_FFT)
 
+# prefix this project's messages with [pffft] under cmake --log-context
+list(APPEND CMAKE_MESSAGE_CONTEXT pffft)
+
 include(GNUInstallDirs)
 
 # detect if pffft is the top-level project or built as a dependency

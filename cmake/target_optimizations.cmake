@@ -167,7 +167,7 @@ if (PFFFT_TARGET_IS_X86)
         endif()
     endif()
     if (NOT _pffft_have_fma)
-        message(STATUS "pffft: TARGET_C_ARCH='${TARGET_C_ARCH}' has no FMA;"
+        message(STATUS "TARGET_C_ARCH='${TARGET_C_ARCH}' has no FMA;"
                        " use -DTARGET_C_ARCH=${_pffft_fma_arch} for ~40% fewer FP ops"
                        " in the convolution loops (requires Haswell/Piledriver or later)")
     endif()
@@ -191,7 +191,7 @@ endif()
 # alternative to switching compilers would be to load/store through
 # vld1q_f32()/vst1q_f32() intrinsics, which this library does not do.
 if (PFFFT_TARGET_IS_ARMV7 AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
-    message(STATUS "pffft: gcc moves 128-bit NEON vectors in 64-bit pieces on ARMv7"
+    message(STATUS "gcc moves 128-bit NEON vectors in 64-bit pieces on ARMv7"
                    " (see GCC PR43725), roughly doubling load/store work across the"
                    " transform; clang is recommended here (CC=clang CXX=clang++)")
 endif()
