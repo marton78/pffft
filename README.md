@@ -318,8 +318,8 @@ default on little-endian `ppc64le`; elsewhere pass e.g.
 on little-endian; this is harmless, the unaligned-load idiom it is used for
 is correct there.
 
-To check that the backend is active, look for "ALTIVEC float macros are
-defined" in the build output, and run `test_pffft_float --test-simd` (also
+To check that the backend is active, look for `float: ALTIVEC` in CMake's
+"Detected SIMD backend" line, and run `test_pffft_float --test-simd` (also
 registered as the `test_simd_float` ctest test).
 
 ## Using pffft in your CMake project
