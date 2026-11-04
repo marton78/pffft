@@ -20,6 +20,7 @@ option(PFFFT_USE_TYPE_DOUBLE "activate 'double' precision float?" ON)
 # architecture/optimization options
 option(PFFFT_USE_SIMD        "use SIMD (SSE/AVX/NEON/ALTIVEC) CPU features? - " ON)
 option(PFFFT_USE_SCALAR_VECT "use 4-element vector scalar operations (if no other SIMD)" ON)
+option(PFFFT_USE_HELIUM "use the experimental, unbenchmarked Arm Helium (MVE) backend on Armv8.1-M?" OFF)
 option(PFFFT_USE_WASM_RELAXED_SIMD "use WebAssembly Relaxed SIMD for higher performance? requires a browser/runtime with Relaxed SIMD support" OFF)
 
 # what to install?
@@ -145,7 +146,7 @@ if (MINGW)
 endif()
 
 
-set( SIMD_FLOAT_HDRS ${PFFFT_SOURCE_DIR}/src/simd/pf_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_sse1_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_altivec_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_neon_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_wasm_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_rvv_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_scalar_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_fma_x86.h )
+set( SIMD_FLOAT_HDRS ${PFFFT_SOURCE_DIR}/src/simd/pf_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_sse1_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_altivec_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_neon_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_wasm_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_rvv_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_helium_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_scalar_float.h ${PFFFT_SOURCE_DIR}/src/simd/pf_fma_x86.h )
 set( SIMD_DOUBLE_HDRS ${PFFFT_SOURCE_DIR}/src/simd/pf_double.h ${PFFFT_SOURCE_DIR}/src/simd/pf_avx_double.h ${PFFFT_SOURCE_DIR}/src/simd/pf_wasm_double.h ${PFFFT_SOURCE_DIR}/src/simd/pf_rvv_double.h ${PFFFT_SOURCE_DIR}/src/simd/pf_scalar_double.h ${PFFFT_SOURCE_DIR}/src/simd/pf_fma_x86.h )
 
 if (PFFFT_USE_TYPE_FLOAT)
