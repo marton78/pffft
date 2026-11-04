@@ -57,6 +57,32 @@ jobs:
     - name: test
       run: cd build_riscv64 && ctest --output-on-failure
 
+  build_cortex_m55_qemu:
+    runs-on: ubuntu-26.04
+
+    steps:
+    - uses: actions/checkout@v7
+    - name: install arm-none-eabi toolchain and qemu
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib qemu-system-arm
+    - name: cmake configure
+      run: |
+        cmake -S . -B build_m55 \
+          -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+          -DCMAKE_TOOLCHAIN_FILE=tests/cortex-m55/toolchain.cmake \
+          -DPFFFT_USE_HELIUM=ON \
+          -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF \
+          -DPFFFT_BUILD_TESTS=ON -DPFFFT_BUILD_BENCHMARKS=OFF -DPFFFT_BUILD_EXAMPLES=OFF \
+          | tee configure_m55.log
+        # fail unless the Helium backend is selected
+        grep -q "SIMD backend for PFFFT: float: Helium, double: 4xScalar" configure_m55.log
+    - name: build
+      run: cmake --build build_m55
+    - name: test
+      # the bench_* tests allocate about 1 GiB
+      run: cd build_m55 && ctest --output-on-failure -E "^bench_"
+
   build_w_mipp_ubuntu-amd64:
     runs-on: ubuntu-26.04
 

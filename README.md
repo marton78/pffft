@@ -333,6 +333,17 @@ has not been benchmarked on hardware, so it may well be slower than the scalar
 code; measurements are welcome. Double precision stays scalar, as MVE has no
 double-precision lanes.
 
+The tests can be run on QEMU's Cortex-M55 board with `arm-none-eabi-gcc`
+(with newlib) and `qemu-system-arm`:
+
+```
+cmake -B build_m55 -DCMAKE_TOOLCHAIN_FILE=tests/cortex-m55/toolchain.cmake -DPFFFT_USE_HELIUM=ON
+cmake --build build_m55
+ctest --test-dir build_m55 -E "^bench_"
+```
+
+The `bench_*` tests are excluded because they allocate about 1 GiB.
+
 ## Using pffft in your CMake project
 
 pffft can be included as a dependency in your CMake project via `FetchContent` or `add_subdirectory()`. When used this way, tests, benchmarks, examples, and the standalone `uninstall` helper target are automatically disabled, so pffft won't pollute your build or ctest runner with unnecessary targets or cause target-name collisions.
