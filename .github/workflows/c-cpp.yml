@@ -116,6 +116,8 @@ jobs:
       # must pass. (The harness step-0 loop that used to hang this test
       # under SZ=1 was fixed in tests/test_fft_factors.c.)
       run: cd build_no-simd_novect && ctest -E "convTest|conv2dTest|rfft2d" --output-on-failure
+    - name: ctest
+      run: for d in build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full; do (cd $d && ctest --output-on-failure) || exit 1; done
     - name: compress
       run: tar zcvf pffft_w_mipp_ubuntu-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
     - name: 'Upload Artifact'
@@ -147,6 +149,8 @@ jobs:
       # must pass. (The harness step-0 loop that used to hang this test
       # under SZ=1 was fixed in tests/test_fft_factors.c.)
       run: cd build_no-simd_novect && ctest -E "convTest|conv2dTest|rfft2d" --output-on-failure
+    - name: ctest
+      run: for d in build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full; do (cd $d && ctest --output-on-failure) || exit 1; done
     - name: compress
       run: tar zcvf pffft_ubuntu-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
     - name: 'Upload Artifact'
@@ -265,6 +269,10 @@ jobs:
       # Execute the build.  You can specify a specific target with "--target <NAME>"
       run: cmake --build build_avx2 --config $BUILD_TYPE
 
+    - name: ctest
+      working-directory: ${{runner.workspace}}
+      shell: bash
+      run: for d in build_no-simd build_sse2 build_avx build_avx2; do (cd $d && ctest -C $BUILD_TYPE --output-on-failure) || exit 1; done
     - name: compress
       working-directory: ${{runner.workspace}}
       run: tar zcvf pffft_windows-msvc-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt  build_no-simd build_sse2 build_avx build_avx2
@@ -272,7 +280,7 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: pffft_windows-msvc-amd64
-        path: pffft_windows-msvc-amd64.tar.gz
+        path: ${{runner.workspace}}/pffft_windows-msvc-amd64.tar.gz
 
 
   build_win_mingw:
@@ -298,6 +306,8 @@ jobs:
     - name: Build
       run: cmake --build build_mgw64
 
+    - name: ctest
+      run: for d in build_mgw64; do (cd $d && ctest --output-on-failure) || exit 1; done
     - name: compress
       run: tar zcvf pffft_windows-mingw-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt  build_mgw64
     - name: 'Upload Artifact'
@@ -323,6 +333,8 @@ jobs:
       run: mkdir build_no-simd_full && cmake -S . -B build_no-simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_no-simd_full
     - name: cmake_make_no-simd_scalar_float_double
       run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=ON -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
+    - name: ctest
+      run: for d in build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full; do (cd $d && ctest --output-on-failure) || exit 1; done
     - name: compress
       run: tar zcvf pffft_macos.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
     - name: 'Upload Artifact'
@@ -357,6 +369,8 @@ jobs:
       run: mkdir build_no-simd_full && cmake -S . -B build_no-simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_no-simd_full
     - name: cmake_make_no-simd_scalar_float_double
       run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=ON -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
+    - name: ctest
+      run: for d in build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full; do (cd $d && ctest --output-on-failure) || exit 1; done
     - name: compress
       run: tar zcvf pffft_w_mipp_macos.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
     - name: 'Upload Artifact'
