@@ -3,11 +3,9 @@ project(BENCH_PFFFT)
 
 set(BENCH_ID  "default" CACHE STRING "ID: use single word without spaces. gets part of result filename")
 
-option(BENCH_FAST_MATH  "Build with fast math - non IEEE compliant" ON)
-
 if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
   set(BENCH_ARCH "native" CACHE STRING "target architecture (-march): native/SSE:core2/AVX:sandybridge/ARM-NEON:armv7-a")
-elseif (CMAKE_C_COMPILER_ID STREQUAL "Clang")
+elseif (CMAKE_C_COMPILER_ID MATCHES "Clang")  # Clang and AppleClang
   set(BENCH_ARCH "native" CACHE STRING "target architecture (-march): native/SSE:core2/AVX:sandybridge")
 elseif (CMAKE_C_COMPILER_ID STREQUAL "MSVC")  # others: "Intel"
   set(BENCH_ARCH "AVX" CACHE STRING "target architecture (/arch): SSE2/AVX")
@@ -16,9 +14,7 @@ else()
 endif()
 
 # architecture/optimization options
-option(PFFFT_USE_SIMD        "use SIMD (SSE/AVX/NEON/ALTIVEC) CPU features? - " ON)
-option(DISABLE_SIMD_AVX "disable AVX CPU features? - " OFF)
-option(PFFFT_USE_SIMD_NEON   "force using NEON on ARM? (requires PFFFT_USE_SIMD)" OFF)
+option(PFFFT_USE_SIMD        "use SIMD (SSE/AVX/NEON/ALTIVEC/WASM SIMD/RVV) CPU features?" ON)
 option(PFFFT_USE_SCALAR_VECT "use 4-element vector scalar operations (if no other SIMD)" ON)
 
 option(PFFFT_USE_BENCH_FFTW   "use (system-installed) FFTW3 in fft benchmark?" OFF)
@@ -72,10 +68,7 @@ add_custom_command(OUTPUT "${benchdir}/info.txt"
   COMMAND ${CMAKE_COMMAND} -E echo "C++ Byte Order: ${CMAKE_CXX_BYTE_ORDER}"       >> "${benchdir}/info.txt"
   COMMAND ${CMAKE_COMMAND} -E echo ""                                              >> "${benchdir}/info.txt"
   COMMAND ${CMAKE_COMMAND} -E echo "Architecture:   ${BENCH_ARCH}"                 >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "Fast math:      ${BENCH_FAST_MATH}"            >> "${benchdir}/info.txt"
   COMMAND ${CMAKE_COMMAND} -E echo "config PFFFT_USE_SIMD=${PFFFT_USE_SIMD}"                   >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "config DISABLE_SIMD_AVX=${DISABLE_SIMD_AVX}"   >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "config PFFFT_USE_SIMD_NEON=${PFFFT_USE_SIMD_NEON}"         >> "${benchdir}/info.txt"
   COMMAND ${CMAKE_COMMAND} -E echo "config PFFFT_USE_SCALAR_VECT=${PFFFT_USE_SCALAR_VECT}"     >> "${benchdir}/info.txt"
   COMMAND ${CMAKE_COMMAND} -E echo "config PFFFT_USE_BENCH_FFTW=${PFFFT_USE_BENCH_FFTW}"       >> "${benchdir}/info.txt"
   COMMAND ${CMAKE_COMMAND} -E echo "config PFFFT_USE_BENCH_GREEN=${PFFFT_USE_BENCH_GREEN}"     >> "${benchdir}/info.txt"
@@ -127,14 +120,11 @@ add_custom_target(build_float
   COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" ${CMAKE_PLATFORM_OPT}
                         "${CMAKE_MAKE_OPT}"
                         -DCMAKE_BUILD_TYPE=Release
-                        "-DARCH=${BENCH_ARCH}"
-                        -DUSE_FAST_MATH=${BENCH_FAST_MATH}
+                        "-DTARGET_C_ARCH=${BENCH_ARCH}"
+                        "-DTARGET_CXX_ARCH=${BENCH_ARCH}"
                         -DPFFFT_USE_TYPE_FLOAT=ON
                         -DPFFFT_USE_TYPE_DOUBLE=OFF
-                        -DUSE_FLOAT_PREC=ON
                         -DPFFFT_USE_SIMD=${PFFFT_USE_SIMD}
-                        -DDISABLE_SIMD_AVX=${DISABLE_SIMD_AVX}
-                        -DPFFFT_USE_SIMD_NEON=${PFFFT_USE_SIMD_NEON}
                         -DPFFFT_USE_SCALAR_VECT=${PFFFT_USE_SCALAR_VECT}
                         -DPFFFT_USE_BENCH_FFTW=${PFFFT_USE_BENCH_FFTW}
                         -DPFFFT_USE_BENCH_GREEN=${PFFFT_USE_BENCH_GREEN}
@@ -153,14 +143,11 @@ add_custom_target(build_double
   COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" ${CMAKE_PLATFORM_OPT}
                         "${CMAKE_MAKE_OPT}"
                         -DCMAKE_BUILD_TYPE=Release
-                        "-DARCH=${BENCH_ARCH}"
-                        -DUSE_FAST_MATH=${BENCH_FAST_MATH}
+                        "-DTARGET_C_ARCH=${BENCH_ARCH}"
+                        "-DTARGET_CXX_ARCH=${BENCH_ARCH}"
                         -DPFFFT_USE_TYPE_FLOAT=OFF
                         -DPFFFT_USE_TYPE_DOUBLE=ON
-                        -DUSE_FLOAT_PREC=OFF
                         -DPFFFT_USE_SIMD=${PFFFT_USE_SIMD}
-                        -DDISABLE_SIMD_AVX=${DISABLE_SIMD_AVX}
-                        -DPFFFT_USE_SIMD_NEON=${PFFFT_USE_SIMD_NEON}
                         -DPFFFT_USE_SCALAR_VECT=${PFFFT_USE_SCALAR_VECT}
                         -DPFFFT_USE_BENCH_FFTW=${PFFFT_USE_BENCH_FFTW}
                         -DPFFFT_USE_BENCH_GREEN=${PFFFT_USE_BENCH_GREEN}
@@ -176,14 +163,14 @@ add_custom_target(build_double
 
 add_custom_target(bench_float
   COMMAND ${CMAKE_COMMAND} -E echo "start benchmark for float"
-  COMMAND "${builddir_flt}/${BUILD_DIR_TO_EXE}bench_pffft_float${CMAKE_EXECUTABLE_SUFFIX}"
+  COMMAND "${builddir_flt}/benchmarks/${BUILD_DIR_TO_EXE}bench_pffft_float${CMAKE_EXECUTABLE_SUFFIX}"
   DEPENDS "${benchdir_flt}/directory.txt" build_float
   WORKING_DIRECTORY "${benchdir_flt}"
 )
 
 add_custom_target(bench_double
   COMMAND ${CMAKE_COMMAND} -E echo "start benchmark for double"
-  COMMAND "${builddir_dbl}/${BUILD_DIR_TO_EXE}bench_pffft_double${CMAKE_EXECUTABLE_SUFFIX}"
+  COMMAND "${builddir_dbl}/benchmarks/${BUILD_DIR_TO_EXE}bench_pffft_double${CMAKE_EXECUTABLE_SUFFIX}"
   DEPENDS "${benchdir_dbl}/directory.txt" build_double
   WORKING_DIRECTORY "${benchdir_dbl}"
 )
