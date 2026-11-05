@@ -36,3 +36,11 @@ void *_sbrk(ptrdiff_t incr) {
   if (brk + incr > limit) { errno = ENOMEM; return (void *)-1; }
   char *prev = brk; brk += incr; return prev;
 }
+
+/* Some newlib builds (e.g. Ubuntu's 4.6) reference _getentropy from libc,
+   which rdimon does not provide. The board has no entropy source. */
+int _getentropy(void *buf, size_t len) {
+  (void)buf; (void)len;
+  errno = ENOSYS;
+  return -1;
+}
