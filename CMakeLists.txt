@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.10)
 project(PRETTY_FAST_FFT)
 
+# prefix this project's messages with [pffft] under cmake --log-context
+list(APPEND CMAKE_MESSAGE_CONTEXT pffft)
+
 include(GNUInstallDirs)
 
 # detect if pffft is the top-level project or built as a dependency
@@ -65,6 +68,7 @@ endif()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 include(cmake/target_optimizations.cmake)
 include(cmake/compiler_warnings.cmake)
+include(cmake/simd_backend_probe.cmake)
 find_package(PAPI)
 find_package(MIPP)
 if (MIPP_FOUND)
@@ -180,6 +184,7 @@ target_set_c_arch_flags(PFFFT)
 if (NOT PFFFT_USE_SIMD)
   target_compile_definitions(PFFFT PRIVATE PFFFT_SIMD_DISABLE=1)
 endif()
+pffft_report_simd_backend(PFFFT)
 target_link_libraries( PFFFT ${ASANLIB} ${MATHLIB} )
 target_include_directories(PFFFT
   PUBLIC

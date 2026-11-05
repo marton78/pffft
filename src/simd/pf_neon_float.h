@@ -36,9 +36,11 @@
 /*
   ARM NEON support macros
 */
-#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_ENABLE_NEON) && (defined(__arm__) || defined(__aarch64__) || defined(__arm64__))
-#pragma message( __FILE__ ": ARM NEON macros are defined" )
-
+/* The architecture alone does not imply NEON: it is optional on ARMv7 and can
+   be disabled on AArch64 (+nosimd). The compiler defines __ARM_NEON when it may
+   emit NEON; not the legacy __ARM_NEON__, which Apple clang keeps defining with
+   +nosimd. MSVC defines only _M_ARM64. */
+#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && (defined(__ARM_NEON) || defined(_M_ARM64))
 #  include <arm_neon.h>
 typedef float32x4_t v4sf;
 
@@ -111,8 +113,6 @@ typedef union v4sf_union {
 
 #  define VALIGNED(ptr) ((((uintptr_t)(ptr)) & 0x3) == 0)
 
-#else
-/* #pragma message( __FILE__ ": ARM NEON macros are not defined" ) */
 #endif
 
 #endif /* PF_NEON_FLT_H */

@@ -42,9 +42,7 @@
   instructions with VL=4, e64, m1 (e.g. the Spacemit X-class cores); with
   VLEN=128 it splits each operation in two.
 */
-#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_ENABLE_RVV) && defined(__riscv_vector) && (__riscv_v_elen >= 64)
-#pragma message( __FILE__ ": RISC-V Vector (RVV) double macros are defined" )
-
+#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(__riscv_vector) && (__riscv_v_elen >= 64)
 typedef double   v4sf __attribute__((vector_size(32), aligned(8)));
 typedef long int v4si __attribute__((vector_size(32), aligned(8)));
 

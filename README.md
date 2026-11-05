@@ -140,9 +140,13 @@ Some of the options:
 * `PFFFT_USE_TYPE_DOUBLE` to activate 'double' precision float (default: ON)
 * `PFFFT_USE_SIMD` to use SIMD (SSE/AVX/NEON/ALTIVEC/WASM SIMD/RVV) CPU features? (default: ON)
 * `DISABLE_SIMD_AVX` to disable AVX CPU features (default: OFF)
-* `PFFFT_USE_SIMD_NEON` to force using NEON on ARM (requires PFFFT_USE_SIMD) (default: OFF)
 * `PFFFT_USE_SCALAR_VECT` to use 4-element vector scalar operations (if no other SIMD) (default: ON)
 * `PFFFT_USE_WASM_RELAXED_SIMD` to use WebAssembly Relaxed SIMD multiply-add instructions, which may be fused when supported by the runtime (default: OFF)
+
+The SIMD backend follows the compiler's target flags: NEON is used whenever
+the compiler enables it (by default on AArch64; on 32-bit ARM e.g. with
+`-mfpu=neon`, or one of the `TARGET_C_EXTRA=neon_*` presets), WASM SIMD with
+`-msimd128`, and RVV with a `-march` that includes `v`.
 
 Options can be passed to `cmake` at command line, e.g.
 ```
@@ -280,14 +284,13 @@ intrinsics for both float and double precision.
 > This uses relaxed multiply-add instructions, which the runtime may fuse into a single-rounding FMA, or fall back to a two-rounding multiply followed by add/subtract. It is **off by default** because relaxed SIMD results are not guaranteed bit-identical across engines or hardware (unlike the default WASM SIMD path); enable it only if your application tolerates ULP-level differences between runtimes.
 
 If you build for WebAssembly without the bundled CMake config (e.g. a raw
-`emcc`/`clang`/Makefile/Bazel invocation), compile with `-msimd128 -DPFFFT_ENABLE_WASM=1`
-to select the WASM SIMD backend; the previous `PFFFT_ENABLE_NEON` recipe no
-longer enables it and now silently falls back to scalar code.
+`emcc`/`clang`/Makefile/Bazel invocation), compile with `-msimd128` to select
+the WASM SIMD backend.
 
 ### RISC-V: RVV vector backend
 
 When the target is detected as `riscv64`, the build defaults to
-`-march=rv64gcv` and defines `PFFFT_ENABLE_RVV`, enabling the
+`-march=rv64gcv`, enabling the
 RVV 1.0 vector backend in `src/simd/pf_rvv_{float,double}.h`. On
 hardware with `VLEN >= 256` (e.g. Spacemit X100) the configure step
 also probes the host VLEN and appends a `zvlNNNb` suffix so the
@@ -315,8 +318,8 @@ default on little-endian `ppc64le`; elsewhere pass e.g.
 on little-endian; this is harmless, the unaligned-load idiom it is used for
 is correct there.
 
-To check that the backend is active, look for "ALTIVEC float macros are
-defined" in the build output, and run `test_pffft_float --test-simd` (also
+To check that the backend is active, look for `float: ALTIVEC` in CMake's
+"Detected SIMD backend" line, and run `test_pffft_float --test-simd` (also
 registered as the `test_simd_float` ctest test).
 
 ## Using pffft in your CMake project

@@ -167,7 +167,7 @@ if (PFFFT_TARGET_IS_X86)
         endif()
     endif()
     if (NOT _pffft_have_fma)
-        message(STATUS "pffft: TARGET_C_ARCH='${TARGET_C_ARCH}' has no FMA;"
+        message(STATUS "TARGET_C_ARCH='${TARGET_C_ARCH}' has no FMA;"
                        " use -DTARGET_C_ARCH=${_pffft_fma_arch} for ~40% fewer FP ops"
                        " in the convolution loops (requires Haswell/Piledriver or later)")
     endif()
@@ -191,7 +191,7 @@ endif()
 # alternative to switching compilers would be to load/store through
 # vld1q_f32()/vst1q_f32() intrinsics, which this library does not do.
 if (PFFFT_TARGET_IS_ARMV7 AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
-    message(STATUS "pffft: gcc moves 128-bit NEON vectors in 64-bit pieces on ARMv7"
+    message(STATUS "gcc moves 128-bit NEON vectors in 64-bit pieces on ARMv7"
                    " (see GCC PR43725), roughly doubling load/store work across the"
                    " transform; clang is recommended here (CC=clang CXX=clang++)")
 endif()
@@ -206,8 +206,7 @@ endif()
 #     so the compiler can emit single-instruction 4-wide double ops
 #     instead of splitting them into VLEN_min=128 pieces;
 #   - if compile or run fails, the target lacks V; we fall back to
-#     plain rv64gc and the caller is expected to skip PFFFT_ENABLE_RVV
-#     so the headers stay on the scalar path.
+#     plain rv64gc, so the headers stay on the scalar path.
 #
 # The probe runs natively or under CMAKE_CROSSCOMPILING_EMULATOR (e.g.
 # qemu-riscv64-static). When neither applies (bare cross-compile) we
@@ -250,17 +249,10 @@ function(_pffft_riscv_march out_march out_has_v)
     endif()
 endfunction()
 
-# Matches RISC-V march strings that include the V extension. Examples:
-#   rv64gcv, rv64gcv_zvl256b, rv64imafdcv, rv32gc_v, rv64gc_v_zvl128b.
-# Deliberately does NOT match plain rv64gc / rv64imafdc — the leading
-# "rv" alone is not enough to claim the V extension.
-set(PFFFT_RVV_MARCH_REGEX "rv[0-9]+[a-z_]*v($|_)")
-
 function(target_set_c_arch_flags target)
     # WebAssembly SIMD (Emscripten or WASI-SDK / plain clang)
     if (PFFFT_TARGET_IS_WASM)
         target_compile_options(${target} PRIVATE "-msimd128")
-        target_compile_definitions(${target} PRIVATE PFFFT_ENABLE_WASM=1)
         if (PFFFT_USE_WASM_RELAXED_SIMD)
             message(STATUS "WebAssembly target: enabling WASM SIMD + Relaxed SIMD for C target ${target}")
             target_compile_options(${target} PRIVATE "-mrelaxed-simd")
@@ -277,19 +269,15 @@ function(target_set_c_arch_flags target)
             _pffft_riscv_march(_rvv_march _rvv_has_v)
             target_compile_options(${target} PRIVATE "-march=${_rvv_march}")
             if (_rvv_has_v)
-                target_compile_definitions(${target} PRIVATE PFFFT_ENABLE_RVV=1)
-                message(STATUS "RISC-V detected: defaulting C target ${target} to -march=${_rvv_march} with PFFFT_ENABLE_RVV")
+                message(STATUS "RISC-V detected: defaulting C target ${target} to -march=${_rvv_march}")
             else()
                 message(STATUS "RISC-V detected (no V extension): defaulting C target ${target} to -march=${_rvv_march}")
             endif()
             return()
-        elseif ("${TARGET_C_ARCH}" MATCHES "${PFFFT_RVV_MARCH_REGEX}")
-            target_compile_definitions(${target} PRIVATE PFFFT_ENABLE_RVV=1)
-            message(STATUS "RISC-V detected: enabling PFFFT_ENABLE_RVV for C target ${target}")
         endif()
     endif()
     if ( ("${TARGET_C_ARCH}" STREQUAL "") OR ("${TARGET_C_ARCH}" STREQUAL "none") )
-        message(STATUS "C ARCH for target ${target} is not set!")
+        message(STATUS "TARGET_C_ARCH not set for target ${target}, using default")
     else()
         if ( (CMAKE_C_COMPILER_ID STREQUAL "GNU") OR (CMAKE_C_COMPILER_ID STREQUAL "Clang") OR (CMAKE_C_COMPILER_ID STREQUAL "AppleClang") )
             target_compile_options(${target} PRIVATE "-march=${TARGET_C_ARCH}")
@@ -303,7 +291,7 @@ function(target_set_c_arch_flags target)
     endif()
 
     if ( ("${TARGET_C_EXTRA}" STREQUAL "") OR ("${TARGET_C_EXTRA}" STREQUAL "none") )
-        message(STATUS "C additional options for target ${target} is not set!")
+        message(STATUS "TARGET_C_EXTRA not set for target ${target}, using default")
     else()
         if ( (CMAKE_C_COMPILER_ID STREQUAL "GNU") OR (CMAKE_C_COMPILER_ID STREQUAL "Clang") OR (CMAKE_C_COMPILER_ID STREQUAL "AppleClang"))
             target_compile_options(${target} PRIVATE "${GCC_EXTRA_OPT_${TARGET_C_EXTRA}}")
@@ -316,18 +304,12 @@ function(target_set_c_arch_flags target)
         endif()
     endif()
 
-    # Enable NEON on ARM: either explicitly requested via TARGET_C_EXTRA, or auto-detected on aarch64/arm64
-    if ( ("${TARGET_C_EXTRA}" MATCHES "^neon_.*") OR (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64") OR (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64"))
-        message(STATUS "setting PFFFT_ENABLE_NEON for C target ${target}")
-        target_compile_definitions(${target} PRIVATE PFFFT_ENABLE_NEON=1)
-    endif()
 endfunction()
 
 function(target_set_cxx_arch_flags target)
     # WebAssembly SIMD (Emscripten or WASI-SDK / plain clang)
     if (PFFFT_TARGET_IS_WASM)
         target_compile_options(${target} PRIVATE "-msimd128")
-        target_compile_definitions(${target} PRIVATE PFFFT_ENABLE_WASM=1)
         if (PFFFT_USE_WASM_RELAXED_SIMD)
             message(STATUS "WebAssembly target: enabling WASM SIMD + Relaxed SIMD for C++ target ${target}")
             target_compile_options(${target} PRIVATE "-mrelaxed-simd")
@@ -341,19 +323,15 @@ function(target_set_cxx_arch_flags target)
             _pffft_riscv_march(_rvv_march _rvv_has_v)
             target_compile_options(${target} PRIVATE "-march=${_rvv_march}")
             if (_rvv_has_v)
-                target_compile_definitions(${target} PRIVATE PFFFT_ENABLE_RVV=1)
-                message(STATUS "RISC-V detected: defaulting C++ target ${target} to -march=${_rvv_march} with PFFFT_ENABLE_RVV")
+                message(STATUS "RISC-V detected: defaulting C++ target ${target} to -march=${_rvv_march}")
             else()
                 message(STATUS "RISC-V detected (no V extension): defaulting C++ target ${target} to -march=${_rvv_march}")
             endif()
             return()
-        elseif ("${TARGET_CXX_ARCH}" MATCHES "${PFFFT_RVV_MARCH_REGEX}")
-            target_compile_definitions(${target} PRIVATE PFFFT_ENABLE_RVV=1)
-            message(STATUS "RISC-V detected: enabling PFFFT_ENABLE_RVV for C++ target ${target}")
         endif()
     endif()
     if ( ("${TARGET_CXX_ARCH}" STREQUAL "") OR ("${TARGET_CXX_ARCH}" STREQUAL "none") )
-        message(STATUS "C++ ARCH for target ${target} is not set!")
+        message(STATUS "TARGET_CXX_ARCH not set for target ${target}, using default")
     else()
         if ( (CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang") OR (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang") )
             target_compile_options(${target} PRIVATE "-march=${TARGET_CXX_ARCH}")
@@ -366,7 +344,7 @@ function(target_set_cxx_arch_flags target)
         endif()
     endif()
     if ( ("${TARGET_CXX_EXTRA}" STREQUAL "") OR ("${TARGET_CXX_EXTRA}" STREQUAL "none") )
-        message(STATUS "C++ additional options for target ${target} is not set!")
+        message(STATUS "TARGET_CXX_EXTRA not set for target ${target}, using default")
     else()
         if ( (CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang") OR (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang") )
             target_compile_options(${target} PRIVATE "${GCC_EXTRA_OPT_${TARGET_CXX_EXTRA}}")
@@ -377,11 +355,6 @@ function(target_set_cxx_arch_flags target)
         else()
             message(WARNING "unsupported C compiler '${CMAKE_C_COMPILER_ID}' for target_set_c_arch_flags(), see https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_COMPILER_ID.html")
         endif()
-    endif()
-    # Enable NEON on ARM: either explicitly requested via TARGET_CXX_EXTRA, or auto-detected on aarch64/arm64
-    if ( ("${TARGET_CXX_EXTRA}" MATCHES "^neon_.*") OR (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64") OR (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64"))
-        message(STATUS "setting PFFFT_ENABLE_NEON for C++ target ${target}")
-        target_compile_definitions(${target} PRIVATE PFFFT_ENABLE_NEON=1)
     endif()
 endfunction()
 
