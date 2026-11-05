@@ -322,6 +322,28 @@ To check that the backend is active, look for `float: ALTIVEC` in CMake's
 "Detected SIMD backend" line, and run `test_pffft_float --test-simd` (also
 registered as the `test_simd_float` ctest test).
 
+### Arm Cortex-M: experimental Helium backend
+
+On Cortex-M cores pffft runs its portable scalar code by default. Armv8.1-M
+cores with Helium (MVE), such as Cortex-M55 and Cortex-M85, can use the
+**experimental** float backend in `src/simd/pf_helium_float.h` with
+`-DPFFFT_USE_HELIUM=ON` (outside CMake: `-DPFFFT_ENABLE_HELIUM` with
+`-mcpu=cortex-m55` or similar). It is tested for correctness under QEMU, but
+has not been benchmarked on hardware, so it may well be slower than the scalar
+code; measurements are welcome. Double precision stays scalar, as MVE has no
+double-precision lanes.
+
+The tests can be run on QEMU's Cortex-M55 board with `arm-none-eabi-gcc`
+(with newlib) and `qemu-system-arm`:
+
+```
+cmake -B build_m55 -DCMAKE_TOOLCHAIN_FILE=tests/cortex-m55/toolchain.cmake -DPFFFT_USE_HELIUM=ON
+cmake --build build_m55
+ctest --test-dir build_m55 -E "^bench_"
+```
+
+The `bench_*` tests are excluded because they allocate about 1 GiB.
+
 ## Using pffft in your CMake project
 
 pffft can be included as a dependency in your CMake project via `FetchContent` or `add_subdirectory()`. When used this way, tests, benchmarks, examples, and the standalone `uninstall` helper target are automatically disabled, so pffft won't pollute your build or ctest runner with unnecessary targets or cause target-name collisions.
