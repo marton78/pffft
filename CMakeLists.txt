@@ -332,7 +332,7 @@ if (INSTALL_TARGETS)
 
   write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/pffft-config-version.cmake"
-    VERSION 1.2.0
+    VERSION 1.3.0
     COMPATIBILITY SameMajorVersion
   )
 
