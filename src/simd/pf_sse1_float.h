@@ -36,9 +36,8 @@
 /*
   SSE1 support macros
 */
-/* we test _M_ARM64EC before _M_X64 because when _M_ARM64EC is defined, the microsoft compiler also defines _M_X64 */
-#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && !defined(_M_ARM64EC) && (defined(__x86_64__) || defined(__SSE__) || defined(_M_X64) || \
-    (defined(_M_IX86_FP) && _M_IX86_FP >= 1))
+#include "pf_fma_x86.h" /* PFFFT_X86_HAVE_SSE */
+#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_X86_HAVE_SSE)
 
 #include <xmmintrin.h>
 typedef __m128 v4sf;
@@ -58,7 +57,6 @@ typedef union v4sf_union {
 #  define VMUL(a,b) _mm_mul_ps(a,b)
 #  define VADD(a,b) _mm_add_ps(a,b)
 /* see pf_fma_x86.h for why this is not just defined(__FMA__) */
-#include "pf_fma_x86.h"
 #ifdef PFFFT_X86_HAVE_FMA
 #  include <immintrin.h>
 #  define VMADD(a,b,c) _mm_fmadd_ps(a,b,c)

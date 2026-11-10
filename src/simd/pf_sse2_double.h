@@ -36,20 +36,11 @@
 #ifndef PF_SSE2_DBL_H
 #define PF_SSE2_DBL_H
 
-//detect sse2 support under MSVC
-#if defined ( _M_IX86_FP )
-#  if _M_IX86_FP == 2
-#    if !defined(__SSE2__)
-#      define __SSE2__
-#    endif
-#  endif
-#endif
-
 /*
   SSE2 64bit support macros
 */
-/* we test _M_ARM64EC before _M_X64 because when _M_ARM64EC is defined, the microsoft compiler also defines _M_X64 */
-#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && !defined(_M_ARM64EC) && (defined( __SSE4_2__ ) |  defined( __SSE4_1__ ) || defined( __SSE3__ ) || defined( __SSE2__ ) || defined ( __x86_64__ ) || defined( _M_AMD64 ) || defined( _M_X64 ) || defined( __amd64 ))
+#include "pf_fma_x86.h" /* PFFFT_X86_HAVE_SSE2 */
+#if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && defined(PFFFT_X86_HAVE_SSE2)
 #include <emmintrin.h>
 
 typedef struct {
