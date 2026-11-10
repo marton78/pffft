@@ -34,6 +34,33 @@
 #define PF_FMA_X86_H
 
 /*
+  x86 target features, defined in one place for every file that picks an
+  SSE code path (pf_sse1_float.h, pf_sse2_double.h, pf_mixer.cpp).
+
+  Does the compiler target SSE, so that the _mm_*_ps intrinsics may be
+  used? And SSE2 for the _mm_*_pd ones?
+
+  - x86_64 always has SSE and SSE2. gcc and clang define __x86_64__,
+    MSVC defines _M_X64.
+
+  - 32-bit x86 has them only if the compiler targets them: gcc and clang
+    define __SSE__ / __SSE2__ (e.g. -msse2, -march=pentium4; not for the
+    -march=i686 default of some systems), MSVC sets _M_IX86_FP to 1 for
+    /arch:SSE and to 2 for /arch:SSE2 and above.
+
+  - ARM64EC: MSVC defines _M_X64 there too, but the target is ARM, so it
+    is excluded.
+*/
+#if !defined(_M_ARM64EC) && (defined(__x86_64__) || defined(_M_X64) || \
+    defined(__SSE__) || (defined(_M_IX86_FP) && _M_IX86_FP >= 1))
+#  define PFFFT_X86_HAVE_SSE 1
+#endif
+#if !defined(_M_ARM64EC) && (defined(__x86_64__) || defined(_M_X64) || \
+    defined(__SSE2__) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2))
+#  define PFFFT_X86_HAVE_SSE2 1
+#endif
+
+/*
   Does this x86 target guarantee FMA3, so that _mm*_fmadd_ps/_pd and
   _mm*_fnmadd_ps/_pd may be emitted?
 
