@@ -671,7 +671,7 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
         tdref = td;
         if (printDbg) {
           printf("convolution '%s' took: %f ms\n", convText[yi], td*1000.0);
-          printf("  convolution '%s' output size %" PRId64 " == (cplx) len %d + %" PRId64 "\n", convText[yi], outN[yi], len / cplxFactor, outN[yi] - len / cplxFactor);
+          printf("  convolution '%s' output size %ld == (cplx) len %d + %ld\n", convText[yi], (long)outN[yi], len / cplxFactor, (long)(outN[yi] - len / cplxFactor));
         }
         aSpeedFactor[yi] = 1.0;
         /*  */
@@ -686,7 +686,7 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
         /* yErrLimit = 0.01F; */
         if (testOutLen) {
           if (1) {
-            printf("reference output len = %" PRId64 " smp\n", outN[0]);
+            printf("reference output len = %ld smp\n", (long)outN[0]);
             printf("reference output range |%.1f ..%.1f| = %.1f ==> err limit = %f\n", yRangeMin, yRangeMax, yRangeMax - yRangeMin, yErrLimit);
           }
           printFirst( Yvals, "Yref", 64, 8 );
@@ -697,7 +697,7 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
         aSpeedFactor[yi] = tdref / td;
         if (printDbg) {
           printf("\nconvolution '%s' took: %f ms == %f %% == %f X\n", convText[yi], td*1000.0, td * 100 / tdref, tdref / td);
-          printf("  convolution '%s' output size %" PRId64 " == (cplx) len %d + %" PRId64 "\n", convText[yi], outN[yi], len / cplxFactor, outN[yi] - len / cplxFactor);
+          printf("  convolution '%s' output size %ld == (cplx) len %d + %ld\n", convText[yi], (long)outN[yi], len / cplxFactor, (long)(outN[yi] - len / cplxFactor));
         }
       }
     }
@@ -811,11 +811,11 @@ int test(int FILTERLEN, int convFlags, const int testOutLen, int printDbg, int p
       {
         if (!iPrintedRefOutLen)
         {
-          printf("reference output size = %" PRId64 ", delta to (cplx) input length = %" PRId64 " smp\n", outN[0], (len / cplxFactor) - outN[0]);
+          printf("reference output size = %ld, delta to (cplx) input length = %ld smp\n", (long)outN[0], (long)((len / cplxFactor) - outN[0]));
           iPrintedRefOutLen = 1;
         }
-        printf("output size doesn't match!: ref (FILTERLEN %d) returned %" PRId64 " smp, '%s' returned %" PRId64 " smp : delta = %" PRId64 " smp\n",
-          FILTERLEN, outN[0], convText[yc], outN[yc], outN[yc] - outN[0] );
+        printf("output size doesn't match!: ref (FILTERLEN %d) returned %ld smp, '%s' returned %ld smp : delta = %ld smp\n",
+          FILTERLEN, (long)outN[0], convText[yc], (long)outN[yc], (long)(outN[yc] - outN[0]) );
         retErr = 1;
       }
 
