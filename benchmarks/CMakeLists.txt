@@ -160,7 +160,7 @@ if (PFFFT_USE_TYPE_FLOAT)
 
   target_link_libraries(pf_conv_dispatcher pf_conv_arch_none pf_conv_arch_dflt)
 
-  if ((CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64") OR (CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64"))
+  if (PFFFT_TARGET_IS_X86 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
 
     if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         set(PF_CONV_ARCHES "sse3;sse4;avx;avx2")
@@ -177,7 +177,7 @@ if (PFFFT_USE_TYPE_FLOAT)
         target_compile_definitions(pf_conv_dispatcher PRIVATE CONV_ARCH_MSVC_AMD64)
     else()
         set(PF_CONV_ARCHES "")
-        message(WARNING "unknown compiler ${CMAKE_CXX_COMPILER_ID} on CMAKE_SYSTEM_PROCESSOR ${CMAKE_SYSTEM_PROCESSOR}: can't do architecture specific compilation")
+        message(WARNING "unknown compiler ${CMAKE_CXX_COMPILER_ID} on target processor ${PFFFT_TARGET_PROCESSOR}: can't do architecture specific compilation")
     endif()
 
   elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
@@ -210,7 +210,7 @@ if (PFFFT_USE_TYPE_FLOAT)
     endif()
 
   else()
-      message(STATUS "bench_pf_conv_float: no architecture-specific variants for CMAKE_SYSTEM_PROCESSOR '${CMAKE_SYSTEM_PROCESSOR}', benchmarking the default build only")
+      message(STATUS "bench_pf_conv_float: no architecture-specific variants for target processor '${PFFFT_TARGET_PROCESSOR}', benchmarking the default build only")
   endif()
 
   foreach (arch_opt ${PF_CONV_ARCHES})
