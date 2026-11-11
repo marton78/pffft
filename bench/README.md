@@ -1,0 +1,225 @@
+# bench_fft: the FFT benchmark
+
+`bench_fft` measures what one FFT costs, for pffft and other FFT libraries,
+side by side in one process, on this computer, an Android phone attached with
+adb, or an iPhone attached to a Mac. It answers three questions:
+
+1. How fast is pffft compared with other FFT libraries?
+2. How does the cost change with the length n: are powers of two much cheaper
+   than other lengths, and where do the caches show?
+3. Did a change make pffft faster or slower?
+
+## Quick start
+
+`bench_fft` is built with the benchmarks, which are on by default:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target bench_fft --config Release
+build/bench/bench_fft --sizes 1024,1152 --prec f32 --xform real
+```
+```
+f32 real: CPU cycles per transform, fastest batch
+        n        pffft      pffftu     fftpack     kissfft   pocketfft       green        vdsp
+     1024       1680.4      1495.0      5384.2     12022.8      4799.9      4738.0      1219.2
+     1152*      2085.2      1876.4      8006.6     13214.8      6420.1           -           -
+```
+
+`*` marks lengths that are not powers of two; `-` means the engine does not
+support the length. Without options bench_fft runs the default sweep: powers
+of two, 3·2^k and 5·2^k from 32 to 262144, both precisions, real and complex.
+`--help` lists the options, `--list` the engines of the build. With Visual
+Studio or Xcode, which build several configurations, the program is
+`build/bench/Release/bench_fft`.
+
+The Python tools (Python 3.9 or later, standard library only) build bench_fft
+for a target in `build_bench_cache/`, run it there and handle the results:
+
+```sh
+python3 bench/run.py -o local.csv                   # this computer, default sweep
+python3 bench/run.py --fftw -o local.csv            # also FFTW, built by bench/build_fftw.py
+python3 bench/run.py --target android --fftw -o android.csv
+python3 bench/run.py --target ios --fftw -o ios.csv
+python3 bench/run.py -- --sizes 1024,4096 --prec f32 --trials 3   # after --: bench_fft options
+python3 bench/compare.py master .                   # the working tree against master
+python3 bench/compare.py c14802c master --target android
+uv run --with matplotlib python3 bench/plot.py local.csv android.csv -o devices.png
+uv run --with matplotlib python3 bench/plot.py --ns local.csv -o local-ns.png   # time, not cycles
+```
+
+- **run.py** prints the tables and saves the CSV with `-o`. bench_fft options
+  after `--` take the form `--opt value`.
+- **compare.py** builds both revisions as shared libraries with their own
+  CMake (any revision from `fde5014` on; `.` is the working tree), loads both
+  into one bench_fft and prints the cost of A and B per case, and "B vs A":
+  B's cost relative to A's, the median over 3 launches of 2 trials each
+  (`--launches`, `--trials`), with its range. Negative means B is faster.
+  `--fftw` adds FFTW as a reference. `compare.py X X` shows the noise floor.
+  Each revision builds with its own defaults, so v1.0.0 and v1.1.0 get no
+  NEON on arm64.
+- **plot.py** draws the cost per transform divided by n·log2(n) against n: a
+  panel per precision and transform kind, a line per engine through the powers
+  of two, markers at other lengths. Hollow markers show what vdsp and green,
+  which do only powers of two, cost at the next power of two. Dotted lines mark
+  where 4 arrays of n samples fill a cache (a rough guide), if the CSV header
+  gives cache sizes and all files give the same. Several files are overlaid,
+  one line style each. Cycles where every row has them, else ns; `--ns`
+  forces ns. It needs matplotlib 3.7 or later.
+
+With everything built, the default sweep took 37 s on an Apple M2. With
+`--fftw` it took 2 min 21 s there, 4 min 11 s on an Android phone (MT6878) and
+2 min 39 s on an iPhone 11 Pro; compare.py took 36 s, 75 s and 49 s. Building
+FFTW the first time takes about 2 minutes per target.
+
+## How it measures, and why
+
+- **CPU cycles, not time.** Where the system lets a program count its own
+  cycles (macOS, iOS, Linux, Android), costs are in cycles per transform.
+  While the data fits in the caches, cycles do not change when the clock is
+  throttled; the M2's clock ranged from 0.6 to 3.4 GHz during tests, which is
+  what made time-based results noisy. Time (ns) is recorded too, and is all
+  there is on Windows or when the CSV header says `counter: none`.
+- **The fastest of many short batches.** A batch runs forward+backward pairs
+  for about 300 µs (`--batch-us`). Interference only ever adds time, so the
+  fastest batch estimates the true cost. Short batches also keep a fanless
+  device from heating up.
+- **Everything in one process, interleaved.** The engines of a case take turns
+  batch by batch in random order, for 100 rounds or about 1 s. Whatever the
+  machine does hits all of them alike. Another pffft revision is one more
+  engine, loaded as a shared library (`--lib LABEL=PATH`).
+- **Trials.** Where the arrays and tables land in memory moves results by up
+  to ±0.5% near the L1 size, and by up to ±2.5% at small n, where an engine
+  can gain just from being created after another. `--trials T` repeats each
+  case with fresh engines, created in a random order, and arrays shifted by
+  random amounts; tables show the median. Use `--trials 3` for figures you
+  publish: a single trial can spike.
+- **Clean batches.** Apple systems cannot pin a thread to a core: bench_fft
+  asks for the performance cores, and a batch that touched an efficiency core
+  counts for time but not for cycles (bench_fft says how many did). On Linux
+  and Android the thread is pinned to the fastest core (`--cpu N` picks
+  another), and cycles are counted only when it is pinned. Linux allows
+  counting only with `kernel.perf_event_paranoid` at 2 or lower (Debian and
+  Ubuntu set more; `sudo sysctl kernel.perf_event_paranoid=2`) and, in a
+  container, a seccomp profile that allows `perf_event_open`.
+- **Self-check.** Before timing, every engine must transform random data
+  correctly; one that fails is dropped with a message, and bench_fft exits
+  with a nonzero status.
+
+With `compare.py master master` (3 launches of 2 trials), two copies of the
+same library differed by at most 0.49% for n ≥ 128 on the M2 (0.06% on
+average) and by at most 0.93% below. In earlier runs with 5 trials in one
+launch it was 0.36% with 8 busy processes running, 0.62% on the iPhone and
+0.75% on the Android phone (1.31% out of cache). Under the same 8 busy
+processes, three runs of the old benchmark spread by 11% (pffft, f32 real,
+n = 1024, MFLOPS), three runs of bench_fft by 0.001% (cycles). A real change
+stands out: from c14802c to master, f32 real n = 1024 gets 6.0 to 6.3% cheaper
+on the M2 and the Android phone, 9.4% on the iPhone.
+
+What it cannot do:
+
+- **Out of cache**, memory takes the same time at any clock, so cycles depend
+  on the clock there. The CSV has both; for large n check the ns too.
+- **Small n.** Up to a few hundred, single trials of identical code differ by
+  up to about ±2.5%, and medians by up to 1%. Trust a difference there only
+  when it is larger than the range of `compare.py X X` at that n.
+- **vdsp f32** counts too few cycles, for reasons unknown: on the iPhone, real
+  n = 1024 costs 1984 cycles against pffft's 1886, but 986 ns against 709.
+  Compare vdsp in time, with longer batches, for example
+  `bench_fft --sizes 1024,4096 --prec f32 --engines pffft,vdsp --show ns --batch-us 3000`.
+  plot.py uses cycles whenever every row has them, so it flatters vdsp:
+  use `plot.py --ns`.
+
+## Engines
+
+| Engine | Library | Precisions | Lengths | Notes |
+|---|---|---|---|---|
+| `pffft` | this tree, `pffft_transform_ordered` | f32, f64 | 2^a·3^b·5^c; real: multiple of 32, complex: of 16 | |
+| `pffftu` | this tree, `pffft_transform` | f32, f64 | as pffft | unordered output, as for convolution |
+| `pffft@L`, `pffftu@L` | a pffft shared library, `--lib L=PATH` | those it has | as pffft | what compare.py measures |
+| `fftpack` | `src/fftpack.c` | f32, f64 | any | |
+| `fftw-est`, `fftw-meas` | FFTW 3.3.10 from `FFTW3_ROOT` | f32, f64 | any; `fftw-meas` up to `--fftw-measure-max` (65536) | FFTW_ESTIMATE and FFTW_MEASURE plans |
+| `kissfft` | submodule `kissfft` | f32 | any (real: even) | |
+| `pocketfft` | submodule `pocketfft` | f32, f64 | any | |
+| `green` | submodule `greenffts` | f32 | powers of two | |
+| `vdsp` | Apple Accelerate | f32, f64 | powers of two | Apple only; compare in ns |
+| `mkl` | Intel oneMKL | f32, f64 | any | not yet run with bench_fft |
+
+Every library is built from source, except vDSP, which is part of the
+operating system, and MKL, a vendor binary. FFTW is never taken from the
+system: a package manager may build it without SIMD (Homebrew's on Apple
+Silicon has none), which would understate it. `bench/build_fftw.py` builds it
+with NEON, or SSE2, AVX and AVX2 on x86-64, plus AVX-512 where the CPU has it
+(pffft has no AVX-512 code); `run.py --fftw` and `compare.py --fftw` call it
+for their target. For a CMake build:
+
+```sh
+python3 bench/build_fftw.py --prefix build_bench_cache/fftw-local
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPFFFT_USE_BENCH_FFTW=ON \
+      -DFFTW3_ROOT=$PWD/build_bench_cache/fftw-local
+```
+
+## Devices
+
+**Android:** `adb` on the PATH, the phone attached with USB debugging allowed,
+and an Android NDK: `$ANDROID_NDK`, `$ANDROID_NDK_HOME`, or the newest in the
+`ndk/` directory of `$ANDROID_HOME`, `~/Library/Android/sdk` or
+`~/Android/Sdk`. `--target android:SERIAL` picks one of several phones. A run
+copies its files to `/data/local/tmp/pffft-bench/` and deletes the directory
+at the end, so run one at a time per phone. `--fftw` needs an arm64-v8a phone.
+Cycles need perf_event access from the adb shell (the CSV header then says
+`counter: perf_event`); the phone tested here (Android 16) allowed it as it
+came. With `counter: none` the results are in ns.
+
+**iOS:** a Mac with Xcode, and the iPhone attached, paired and in Developer
+Mode (`xcrun devicectl list devices` shows it). `--target ios:DEVICE` takes a
+UDID, identifier or name. Signing needs a development certificate in the
+keychain and the wildcard profile "iOS Team Provisioning Profile: \*" that
+lists the phone; Xcode makes it when it signs any app for that phone with
+automatic signing. Keep the phone unlocked while it runs. The app,
+`com.example.pffft.bench`, stays installed; remove it with
+`xcrun devicectl device uninstall app --device UDID com.example.pffft.bench`.
+
+## CSV
+
+`bench_fft --csv FILE` writes the results; with `--csv -` they go to stdout
+between the lines `#BEGIN-CSV` and `#END-CSV`. `bench/results.py` reads them.
+
+```
+# pffft-bench 1
+# date: 2026-11-11T19:57:30Z
+# os: macOS 26.5.2
+...
+engine,prec,xform,n,trial,pairs,batches,clean,ns,ns_median,cycles,cycles_median,instructions,mflops
+pffft,f32,real,1024,0,304,100,100,480.127,493.970,1681.586,1682.602,10811.535,53319.3
+```
+
+The `#` lines describe the machine and the run (date in UTC, os, cpu,
+counter, the known cache sizes, compiler, pffft_simd, trials, seed, ...).
+There is one row per engine, precision (`f32`, `f64`), transform kind
+(`real`, `cplx`), `n` and trial:
+
+| Column | Meaning |
+|---|---|
+| `pairs` | forward+backward pairs per batch |
+| `batches`, `clean` | batches run; batches counted in cycles (all on the fast cores) |
+| `ns`, `ns_median` | time per transform: fastest batch, median batch |
+| `cycles`, `cycles_median` | the same in CPU cycles, over clean batches; empty without a counter or a clean batch |
+| `instructions` | per transform, in the fastest clean batch |
+| `mflops` | (5 complex, 2.5 real) · n · log2(n) / `ns` · 1000 |
+
+## CMake options and tests
+
+| Option | Default | Effect |
+|---|---|---|
+| `PFFFT_BUILD_BENCHMARKS` | ON if pffft is the top-level project | builds bench_fft, and the mixer and convolution benchmarks in `benchmarks/` |
+| `PFFFT_USE_TYPE_FLOAT`, `PFFFT_USE_TYPE_DOUBLE` | ON | the precisions bench_fft has |
+| `PFFFT_USE_FFTPACK` | ON | `fftpack` |
+| `PFFFT_USE_BENCH_KISS`, `_POCKET`, `_GREEN` | ON | `kissfft`, `pocketfft`, `green`, if the submodule is there (`git submodule update --init`) |
+| `PFFFT_USE_BENCH_VDSP` | ON (Apple only) | `vdsp` |
+| `PFFFT_USE_BENCH_FFTW` | OFF | `fftw-est`, `fftw-meas`; needs `FFTW3_ROOT`, a prefix made by `build_fftw.py` |
+| `PFFFT_USE_BENCH_MKL` | OFF | `mkl`; MKL's libraries and `<mkl/mkl_dfti.h>` must be on the compiler's paths |
+
+`ctest --test-dir build -R bench_fft` (with Visual Studio or Xcode add
+`-C Release`) runs the two smoke tests, `bench_fft_smoke` (table, n = 64, 96,
+128) and `bench_fft_csv` (CSV, n = 64, 96): every engine's self-check and a
+short timing, under a second each.
