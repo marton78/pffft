@@ -210,7 +210,7 @@ if (PFFFT_USE_TYPE_FLOAT)
     endif()
 
   else()
-      message(WARNING "this is unforseen CMAKE_SYSTEM_PROCESSOR ${CMAKE_SYSTEM_PROCESSOR}: can't do architecture specific compilation")
+      message(STATUS "bench_pf_conv_float: no architecture-specific variants for CMAKE_SYSTEM_PROCESSOR '${CMAKE_SYSTEM_PROCESSOR}', benchmarking the default build only")
   endif()
 
   foreach (arch_opt ${PF_CONV_ARCHES})

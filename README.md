@@ -148,9 +148,15 @@ Some of the options:
   e.g. `neon_vfpv4` or `neon_rpi4_a72` (32-bit ARM NEON), or `apple_m1`
 
 The SIMD backend follows the compiler's target flags: NEON is used whenever
-the compiler enables it (by default on AArch64; on 32-bit ARM e.g. with
-`-mfpu=neon`, or one of the `TARGET_C_EXTRA=neon_*` presets), WASM SIMD with
-`-msimd128`, and RVV with a `-march` that includes `v`.
+the compiler enables it (by default on AArch64 and on Android's armeabi-v7a;
+on other 32-bit ARM targets e.g. with `-mfpu=neon`, or one of the
+`TARGET_C_EXTRA=neon_*` presets), WASM SIMD with `-msimd128`, and RVV with a
+`-march` that includes `v`. pffft builds with the toolchain's target flags.
+On WebAssembly it adds `-msimd128` (and `-mrelaxed-simd` with
+`PFFFT_USE_WASM_RELAXED_SIMD`), on RISC-V the `-march` described below unless
+`TARGET_C_ARCH` is set; otherwise a SIMD instruction set is enabled with the
+compiler's own flags, e.g. through `TARGET_C_ARCH` / `TARGET_C_EXTRA`. `cmake`
+prints the backend it detected.
 
 Options can be passed to `cmake` at command line, e.g.
 ```
