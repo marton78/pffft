@@ -41,70 +41,77 @@ set(GCC_EXTRA_OPT_neon_vfpv4    "-mfloat-abi=hard" "-mfpu=neon-vfpv4")
 set(GCC_EXTRA_OPT_neon_rpi3_a53 "-mfloat-abi=hard" "-mfpu=neon-vfpv4" "-mtune=cortex-a53")
 set(GCC_EXTRA_OPT_neon_rpi4_a72 "-mfloat-abi=hard" "-mfpu=neon-fp-armv8" "-mtune=cortex-a72")
 set(GCC_EXTRA_OPT_apple_m1      "-mcpu=apple-m1")
-set(GCC_EXTRA_OPT_ios_arm64     "-arch arm64")
 
+# pffft is compiled with the toolchain's default target flags, plus
+# TARGET_C_ARCH / TARGET_C_EXTRA if set. On WebAssembly, and on RISC-V while
+# TARGET_C_ARCH is unset, target_set_c_arch_flags() adds its own flags
+# instead (see the list below).
+# pf_float.h / pf_double.h select the
+# SIMD backend from the compiler's predefined macros (__SSE__, __ARM_NEON,
+# __ALTIVEC__, ...), and pffft_report_simd_backend() prints which one. E.g.
+# the Android NDK enables NEON for armeabi-v7a by default, so pffft uses NEON
+# there; Debian's armhf gcc needs -mfpu=neon or a neon_* preset for it.
+#
+# These targets get extra handling, recognised by CMAKE_SYSTEM_PROCESSOR:
+#   - WebAssembly: target_set_c_arch_flags() adds -msimd128 for WASM SIMD,
+#     and -mrelaxed-simd with PFFFT_USE_WASM_RELAXED_SIMD, in place of
+#     TARGET_C_ARCH / TARGET_C_EXTRA. Checked first, as Emscripten's
+#     toolchain file reports "x86".
+#   - x86: the FMA reminder below, and the /arch choices offered for MSVC.
+#   - 32-bit ARM A-profile, i.e. Cortex-A cores: the note on gcc's NEON
+#     loads and stores below.
+# RISC-V gets its -march from a probe in target_set_c_arch_flags(), unless
+# TARGET_C_ARCH is set.
+#
+# CMAKE_SYSTEM_PROCESSOR is whatever the platform or toolchain file calls the
+# target: uname -m on Linux ("x86_64", "i686", "armv7l"), uname -p on FreeBSD
+# ("amd64", "i386"), "AMD64" / "x86" on Windows, "armv7-a" / "i686" for the
+# Android NDK, "armv8l" for 32-bit ARM code on a 64-bit Linux kernel.
+# Caveat: Visual Studio builds for -A ARM64 / -A ARM64EC without a
+# toolchain file keep the host's "AMD64" here, so they count as x86.
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" CMAKE_SYSTEM_PROCESSOR_LOWER)
-# WebAssembly: Emscripten, or a plain clang / WASI-SDK toolchain targeting wasm32/wasm64.
-# Checked first, as Emscripten's toolchain file reports CMAKE_SYSTEM_PROCESSOR "x86".
 if (EMSCRIPTEN OR (CMAKE_SYSTEM_PROCESSOR_LOWER MATCHES "^wasm"))
     set(PFFFT_TARGET_IS_WASM TRUE)
-    # WASM SIMD is handled automatically in target_set_c/cxx_arch_flags
-    set(GCC_MARCH_DESC "wasm-simd")
-    set(GCC_MARCH_VALUES "none" CACHE INTERNAL "List of possible architectures")
-    set(GCC_EXTRA_VALUES "" CACHE INTERNAL "List of possible additional options")
-elseif ( (CMAKE_SYSTEM_PROCESSOR_LOWER STREQUAL "i686") OR (CMAKE_SYSTEM_PROCESSOR_LOWER STREQUAL "x86_64")
-    # On Windows CMake emits "AMD64" (64-bit) or "x86" (32-bit) rather than the above
-    OR (CMAKE_SYSTEM_PROCESSOR_LOWER STREQUAL "amd64") OR (CMAKE_SYSTEM_PROCESSOR_LOWER STREQUAL "x86") )
+elseif (CMAKE_SYSTEM_PROCESSOR_LOWER MATCHES "^(x86|x86_64|x64|amd64|i[3-6]86)$")
     set(PFFFT_TARGET_IS_X86 TRUE)
-    set(GCC_MARCH_DESC "native/SSE2:pentium4/SSE3:core2/SSE4:nehalem/AVX:sandybridge/AVX2:haswell")
-    set(GCC_MARCH_VALUES "none;native;pentium4;core2;nehalem;sandybridge;haswell" CACHE INTERNAL "List of possible architectures")
-    set(GCC_EXTRA_VALUES "" CACHE INTERNAL "List of possible EXTRA options")
-    set(MSVC_ARCH_VALUES "none;SSE2;AVX;AVX2;AVX512" CACHE INTERNAL "List of possible MSVC /arch values")
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
-    set(GCC_MARCH_DESC "native/ARMwNEON:armv8-a")
-    set(GCC_MARCH_VALUES "none;native;armv8-a" CACHE INTERNAL "List of possible architectures")
-    if (APPLE)
-        set(GCC_EXTRA_VALUES "none;apple_m1;ios_arm64" CACHE INTERNAL "List of possible additional options")
-    else()
-        set(GCC_EXTRA_VALUES "" CACHE INTERNAL "List of possible additional options")
-    endif()
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "armv7l")
+elseif (CMAKE_SYSTEM_PROCESSOR_LOWER MATCHES "^armv7(-?a|h?l)?$|^armv8l$")
     set(PFFFT_TARGET_IS_ARMV7 TRUE)
-    set(GCC_MARCH_DESC "native/ARMwNEON:armv7-a")
-    set(GCC_MARCH_VALUES "none;native;armv7-a" CACHE INTERNAL "List of possible architectures")
-    set(GCC_EXTRA_VALUES "none;neon_vfpv4;neon_rpi3_a53;neon_rpi4_a72" CACHE INTERNAL "List of possible additional options")
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
-    # RISC-V with the V (vector) extension; rv64gcv enables the standard
-    # G+C profile plus V (RVV 1.0). pf_rvv_*.h is gated on __riscv_vector.
-    # No "native": released GCC has no -march=native on RISC-V. "none" (the
-    # default) probes the target for V instead, see _pffft_riscv_march().
-    set(GCC_MARCH_DESC "RISCVwRVV:rv64gcv/RISCVnoV:rv64gc")
-    set(GCC_MARCH_VALUES "none;rv64gc;rv64gcv" CACHE INTERNAL "List of possible architectures")
-    set(GCC_EXTRA_VALUES "" CACHE INTERNAL "List of possible additional options")
-else()
-    message(WARNING "unsupported CMAKE_SYSTEM_PROCESSOR '${CMAKE_SYSTEM_PROCESSOR}'")
-    # other PROCESSORs could be "ppc", "ppc64",  "arm" - or something else?!
-    set(GCC_MARCH_DESC "native")
-    set(GCC_MARCH_VALUES "none;native" CACHE INTERNAL "List of possible architectures")
-    set(GCC_EXTRA_VALUES "" CACHE INTERNAL "List of possible additional options")
 endif()
 
 # cmake options - depending on C/C++ compiler
-# how are chances, that C and C++ compilers are from different vendors?
-if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
-    set(TARGET_C_ARCH "none" CACHE STRING "gcc target C architecture (-march): ${GCC_MARCH_DESC}")
-    set_property(CACHE TARGET_C_ARCH PROPERTY STRINGS ${GCC_MARCH_VALUES})
-    if ( NOT (GCC_EXTRA_VALUES STREQUAL "") )
-        set(TARGET_C_EXTRA "none" CACHE STRING "gcc additional options for C")
-        set_property(CACHE TARGET_C_EXTRA PROPERTY STRINGS ${GCC_EXTRA_VALUES})
+# TARGET_C_ARCH takes any -march value of the compiler as free text;
+# TARGET_C_EXTRA offers the presets defined above, each for its own target.
+# HELPSTRING and STRINGS are set explicitly, as set(... CACHE ...) keeps
+# those of an existing build directory.
+set(GCC_EXTRA_VALUES "none;neon_vfpv4;neon_rpi3_a53;neon_rpi4_a72;apple_m1")
+set(MSVC_ARCH_VALUES "none;SSE2;AVX;AVX2;AVX512")
+set(_pffft_march_desc "target architecture (-march), e.g. native, haswell, armv7-a, rv64gcv; none: the compiler's default")
+set(_pffft_extra_desc "preset of additional options: neon_vfpv4, neon_rpi3_a53, neon_rpi4_a72 for 32-bit ARM hard-float; apple_m1 for Apple arm64; none")
+
+# _pffft_gcc_clang_options(<C|CXX> <display name>)
+# WebAssembly gets neither option, as target_set_c_arch_flags() applies its
+# own flags there.
+macro(_pffft_gcc_clang_options lang langname)
+    if (NOT PFFFT_TARGET_IS_WASM)
+        # A build directory configured by an older pffft holds a list of
+        # choices for TARGET_<lang>_ARCH. CMake has no way to remove a single
+        # cache property, so the entry is recreated with its current value.
+        get_property(_pffft_has_list CACHE TARGET_${lang}_ARCH PROPERTY STRINGS SET)
+        if (_pffft_has_list)
+            get_property(_pffft_value CACHE TARGET_${lang}_ARCH PROPERTY VALUE)
+            unset(TARGET_${lang}_ARCH CACHE)
+            set(TARGET_${lang}_ARCH "${_pffft_value}" CACHE STRING "")
+        endif()
+        set(TARGET_${lang}_ARCH "none" CACHE STRING "")
+        set_property(CACHE TARGET_${lang}_ARCH PROPERTY HELPSTRING "gcc/clang ${langname} ${_pffft_march_desc}")
+        set(TARGET_${lang}_EXTRA "none" CACHE STRING "")
+        set_property(CACHE TARGET_${lang}_EXTRA PROPERTY HELPSTRING "gcc/clang ${langname} ${_pffft_extra_desc}")
+        set_property(CACHE TARGET_${lang}_EXTRA PROPERTY STRINGS ${GCC_EXTRA_VALUES})
     endif()
-elseif (CMAKE_C_COMPILER_ID STREQUAL "Clang" OR CMAKE_C_COMPILER_ID STREQUAL "AppleClang")
-    set(TARGET_C_ARCH "none" CACHE STRING "clang target C architecture (-march): ${GCC_MARCH_DESC}")
-    set_property(CACHE TARGET_C_ARCH PROPERTY STRINGS ${GCC_MARCH_VALUES})
-    if ( NOT (GCC_EXTRA_VALUES STREQUAL "") )
-        set(TARGET_C_EXTRA "none" CACHE STRING "gcc additional options for C")
-        set_property(CACHE TARGET_C_EXTRA PROPERTY STRINGS ${GCC_EXTRA_VALUES})
-    endif()
+endmacro()
+
+if (CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+    _pffft_gcc_clang_options(C "C")
 elseif (CMAKE_C_COMPILER_ID MATCHES "MSVC")
     set(TARGET_C_ARCH "none" CACHE STRING "msvc target C architecture (/arch): SSE2/AVX/AVX2/AVX512")
     if (PFFFT_TARGET_IS_X86)
@@ -115,20 +122,8 @@ else()
     message(WARNING "unsupported C compiler '${CMAKE_C_COMPILER_ID}', see https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_COMPILER_ID.html")
 endif()
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set(TARGET_CXX_ARCH "none" CACHE STRING "gcc target C++ architecture (-march): ${GCC_MARCH_DESC}")
-    set_property(CACHE TARGET_CXX_ARCH PROPERTY STRINGS ${GCC_MARCH_VALUES})
-    if ( NOT (GCC_EXTRA_VALUES STREQUAL "") )
-        set(TARGET_CXX_EXTRA "none" CACHE STRING "gcc additional options for C++")
-        set_property(CACHE TARGET_CXX_EXTRA PROPERTY STRINGS ${GCC_EXTRA_VALUES})
-    endif()
-elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-    set(TARGET_CXX_ARCH "none" CACHE STRING "clang target C++ architecture (-march): ${GCC_MARCH_DESC}")
-    set_property(CACHE TARGET_CXX_ARCH PROPERTY STRINGS ${GCC_MARCH_VALUES})
-    if ( NOT (GCC_EXTRA_VALUES STREQUAL "") )
-        set(TARGET_CXX_EXTRA "none" CACHE STRING "clang additional options for C++")
-        set_property(CACHE TARGET_CXX_EXTRA PROPERTY STRINGS ${GCC_EXTRA_VALUES})
-    endif()
+if (CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+    _pffft_gcc_clang_options(CXX "C++")
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     set(TARGET_CXX_ARCH "none" CACHE STRING "msvc target C++ architecture (/arch): SSE2/AVX/AVX2/AVX512")
     if (PFFFT_TARGET_IS_X86)
