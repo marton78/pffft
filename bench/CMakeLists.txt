@@ -1,211 +1,143 @@
-cmake_minimum_required(VERSION 3.10)
-project(BENCH_PFFFT)
+# bench_fft, the FFT benchmark: pffft, other FFT libraries and other builds of
+# pffft, measured side by side in one process. See README.md in this directory.
+#
+# engines.c holds the adapters to all the libraries and is compiled once per
+# precision. A HAVE_<LIBRARY> definition tells it that a library is there.
 
-set(BENCH_ID  "default" CACHE STRING "ID: use single word without spaces. gets part of result filename")
-
-if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
-  set(BENCH_ARCH "native" CACHE STRING "target architecture (-march): native/SSE:core2/AVX:sandybridge/ARM-NEON:armv7-a")
-elseif (CMAKE_C_COMPILER_ID MATCHES "Clang")  # Clang and AppleClang
-  set(BENCH_ARCH "native" CACHE STRING "target architecture (-march): native/SSE:core2/AVX:sandybridge")
-elseif (CMAKE_C_COMPILER_ID STREQUAL "MSVC")  # others: "Intel"
-  set(BENCH_ARCH "AVX" CACHE STRING "target architecture (/arch): SSE2/AVX")
-else()
-  set(BENCH_ARCH "" CACHE STRING "target architecture - use full compiler option!")
+set(bench_precisions "")
+if (PFFFT_USE_TYPE_FLOAT)
+  list(APPEND bench_precisions F32)
+endif()
+if (PFFFT_USE_TYPE_DOUBLE)
+  list(APPEND bench_precisions F64)
 endif()
 
-# architecture/optimization options
-option(PFFFT_USE_SIMD        "use SIMD (SSE/AVX/NEON/ALTIVEC/WASM SIMD/RVV) CPU features?" ON)
-option(PFFFT_USE_SCALAR_VECT "use 4-element vector scalar operations (if no other SIMD)" ON)
+# filled in by the libraries below
+set(bench_defs "")      # definitions for the engines of every precision
+set(bench_defs_F32 "")  # definitions for the engines of one precision
+set(bench_defs_F64 "")
+set(bench_incs "")      # include directories for the engines
+set(bench_libs PFFFT)   # libraries of bench_fft; those that are CMake targets
+                        # also give the engines their include directories
 
-option(PFFFT_USE_BENCH_FFTW   "use (system-installed) FFTW3 in fft benchmark?" OFF)
-option(PFFFT_USE_BENCH_GREEN  "use Green FFT in fft benchmark? - if exists in subdir" ON)
-option(PFFFT_USE_BENCH_KISS   "use KissFFT in fft benchmark? - if exists in subdir" ON)
-option(PFFFT_USE_BENCH_POCKET "use PocketFFT in fft benchmark? - if exists in subdir" ON)
-option(PFFFT_USE_BENCH_MKL    "use Intel MKL in fft benchmark? needs to be installed" OFF)
+######################################################
 
-
-set(OSSTR "")
-if (WIN32)
-  set(OSSTR "Win32")
-endif (WIN32)
-if (UNIX)
-  set(OSSTR "Unix")
-endif (UNIX)
-
-set(BUILD_DIR_TO_EXE "")
-set(CMAKE_PLATFORM_OPT "")
-set(CMAKE_MAKE_OPT "")
-if (MSVC)
-  set(BUILD_DIR_TO_EXE "Release/")
-  set(CMAKE_PLATFORM_OPT "-A \"${CMAKE_GENERATOR_PLATFORM}\"")
-  set(CMAKE_MAKE_OPT "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}")
+if (PFFFT_USE_FFTPACK)
+  # not linked as a library: engines.c includes src/fftpack.c, to give the
+  # functions of each precision their own names
+  list(APPEND bench_defs HAVE_FFTPACK)
 endif()
 
-
-set(benchdir "${CMAKE_BINARY_DIR}/bench_${BENCH_ID}")
-set(benchdir_flt "${CMAKE_BINARY_DIR}/bench_${BENCH_ID}/float")
-set(benchdir_dbl "${CMAKE_BINARY_DIR}/bench_${BENCH_ID}/double")
-set(builddir_flt "${CMAKE_BINARY_DIR}/build_${BENCH_ID}_float")
-set(builddir_dbl "${CMAKE_BINARY_DIR}/build_${BENCH_ID}_double")
-
-add_custom_command(OUTPUT "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E make_directory "${benchdir}"
-  COMMAND ${CMAKE_COMMAND} -E echo "benchmark ${BENCH_ID}"   > "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "CMake major:    ${CMAKE_MAJOR_VERSION}"        >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "CMake minor:    ${CMAKE_MINOR_VERSION}"        >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "OS:             ${OSSTR}"                      >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "System:         ${CMAKE_SYSTEM_NAME}"          >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "System CPU:     ${CMAKE_SYSTEM_PROCESSOR}"     >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "System Version: ${CMAKE_HOST_SYSTEM_VERSION}"  >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "C   Compiler:   ${CMAKE_C_COMPILER_ID}"        >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "C   Version:    ${CMAKE_C_COMPILER_VERSION}"   >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "C++ Compiler:   ${CMAKE_CXX_COMPILER_ID}"      >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "C++ Version:    ${CMAKE_CXX_COMPILER_VERSION}" >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "MSVC Version:   ${MSVC_VERSION}"               >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "MSVC Toolset:   ${MSVC_TOOLSET_VERSION}"       >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "Exe Suffix:     ${CMAKE_EXECUTABLE_SUFFIX}"    >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "C   Byte Order: ${CMAKE_C_BYTE_ORDER}"         >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "C++ Byte Order: ${CMAKE_CXX_BYTE_ORDER}"       >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo ""                                              >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "Architecture:   ${BENCH_ARCH}"                 >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "config PFFFT_USE_SIMD=${PFFFT_USE_SIMD}"                   >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "config PFFFT_USE_SCALAR_VECT=${PFFFT_USE_SCALAR_VECT}"     >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "config PFFFT_USE_BENCH_FFTW=${PFFFT_USE_BENCH_FFTW}"       >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "config PFFFT_USE_BENCH_GREEN=${PFFFT_USE_BENCH_GREEN}"     >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "config PFFFT_USE_BENCH_KISS=${PFFFT_USE_BENCH_KISS}"       >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "config PFFFT_USE_BENCH_POCKET=${PFFFT_USE_BENCH_POCKET}"   >> "${benchdir}/info.txt"
-  COMMAND ${CMAKE_COMMAND} -E echo "config PFFFT_USE_BENCH_MKL=${PFFFT_USE_BENCH_MKL}"         >> "${benchdir}/info.txt"
-)
-
-if (UNIX)
-  add_custom_command(OUTPUT "${benchdir}/unix_info.txt"
-    COMMAND ${CMAKE_COMMAND} -E touch "${benchdir}/unix_info.txt"
-    COMMAND bash "-c" "${CMAKE_CURRENT_SOURCE_DIR}/unix_info.sh"
-    DEPENDS "${benchdir}/info.txt"
-    WORKING_DIRECTORY ${benchdir}
-  )
-else()
-  add_custom_command(OUTPUT "${benchdir}/unix_info.txt"
-    COMMAND ${CMAKE_COMMAND} -E touch "${benchdir}/unix_info.txt"
-    DEPENDS "${benchdir}/info.txt"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  )
+# Green, Kiss and Pocket FFT are git submodules: git submodule update --init
+# Their CMakeLists.txt ask for CMake 2.8, which CMake 4 rejects, so they get
+# the policies of this project instead.
+if (NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
 endif()
 
+# bench_submodule(<directory> <library target> <definition>)
+macro(bench_submodule dir lib definition)
+  if (EXISTS "${PFFFT_SOURCE_DIR}/${dir}/CMakeLists.txt")
+    add_subdirectory("${PFFFT_SOURCE_DIR}/${dir}" "${CMAKE_CURRENT_BINARY_DIR}/${dir}")
+    list(APPEND bench_defs ${definition})
+    list(APPEND bench_libs ${lib})
+  else()
+    message(WARNING "${lib} not found in subdir ${dir}: fetch it with 'git submodule update --init'")
+  endif()
+endmacro()
 
-add_custom_command(OUTPUT "${builddir_flt}/directory.txt"
-  COMMAND ${CMAKE_COMMAND} -E make_directory "${builddir_flt}"
-  COMMAND ${CMAKE_COMMAND} -E touch "${builddir_flt}/directory.txt"
-)
+if (PFFFT_USE_BENCH_GREEN AND PFFFT_USE_TYPE_FLOAT)  # single precision only
+  # only its library: its test programs do not compile with current compilers
+  # and its tests need Octave
+  bench_submodule(greenffts/src GreenFFT HAVE_GREEN_FFTS)
+endif()
+if (PFFFT_USE_BENCH_KISS AND PFFFT_USE_TYPE_FLOAT)  # built for single precision
+  bench_submodule(kissfft KissFFT HAVE_KISS_FFT)
+endif()
+if (PFFFT_USE_BENCH_POCKET)
+  bench_submodule(pocketfft PocketFFT HAVE_POCKET_FFT)
+endif()
 
-add_custom_command(OUTPUT "${builddir_dbl}/directory.txt"
-  COMMAND ${CMAKE_COMMAND} -E make_directory "${builddir_dbl}"
-  COMMAND ${CMAKE_COMMAND} -E touch "${builddir_dbl}/directory.txt"
-)
+if (PFFFT_USE_BENCH_FFTW)
+  # Never a system FFTW: how a package was built (with SIMD or without) would
+  # decide how FFTW compares.
+  set(FFTW3_ROOT "" CACHE PATH "FFTW3 install prefix with include/ and lib/, made by bench/build_fftw.py")
+  if (NOT FFTW3_ROOT)
+    message(FATAL_ERROR "PFFFT_USE_BENCH_FFTW needs FFTW3_ROOT: python3 bench/build_fftw.py --prefix <dir>, then -DFFTW3_ROOT=<dir>")
+  endif()
+  if (NOT "${FFTW3_ROOT}" STREQUAL "${BENCH_FFTW3_ROOT_SEARCHED}")
+    # search again: the results in the cache belong to another FFTW3_ROOT
+    unset(FFTW3_INCLUDE_DIR CACHE)
+    unset(FFTW3_LIBRARY_F32 CACHE)
+    unset(FFTW3_LIBRARY_F64 CACHE)
+    set(BENCH_FFTW3_ROOT_SEARCHED "${FFTW3_ROOT}" CACHE INTERNAL "FFTW3_ROOT of the cached FFTW3 search results")
+  endif()
+  # a cross build has the prefix outside its sysroot
+  set(bench_fftw_where PATHS "${FFTW3_ROOT}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+  find_path(FFTW3_INCLUDE_DIR fftw3.h ${bench_fftw_where} PATH_SUFFIXES include)
+  find_library(FFTW3_LIBRARY_F32 fftw3f ${bench_fftw_where} PATH_SUFFIXES lib)
+  find_library(FFTW3_LIBRARY_F64 fftw3 ${bench_fftw_where} PATH_SUFFIXES lib)
+  foreach (prec ${bench_precisions})
+    if (FFTW3_INCLUDE_DIR AND FFTW3_LIBRARY_${prec})
+      list(APPEND bench_defs_${prec} HAVE_FFTW)
+      list(APPEND bench_libs "${FFTW3_LIBRARY_${prec}}")
+      list(APPEND bench_incs "${FFTW3_INCLUDE_DIR}")
+    else()
+      message(WARNING "PFFFT_USE_BENCH_FFTW: FFTW3_ROOT=${FFTW3_ROOT} has no FFTW3 for ${prec} (fftw3.h, and libfftw3f for F32 or libfftw3 for F64), so bench_fft gets no fftw engines for ${prec}. python3 bench/build_fftw.py --prefix <dir> builds both precisions.")
+    endif()
+  endforeach()
+endif()
 
-add_custom_command(OUTPUT "${benchdir_flt}/directory.txt"
-  COMMAND ${CMAKE_COMMAND} -E make_directory "${benchdir_flt}"
-  COMMAND ${CMAKE_COMMAND} -E touch "${benchdir_flt}/directory.txt"
-)
+if (APPLE AND PFFFT_USE_BENCH_VDSP)
+  list(APPEND bench_defs HAVE_VECLIB)
+  list(APPEND bench_libs "-framework Accelerate")
+endif()
 
-add_custom_command(OUTPUT "${benchdir_dbl}/directory.txt"
-  COMMAND ${CMAKE_COMMAND} -E make_directory "${benchdir_dbl}"
-  COMMAND ${CMAKE_COMMAND} -E touch "${benchdir_dbl}/directory.txt"
-)
+if (PFFFT_USE_BENCH_MKL)
+  if (NOT PFFFT_TARGET_IS_X86)
+    message(WARNING "using Intel MKL on '${PFFFT_TARGET_PROCESSOR}' might fail.")
+  endif()
+  message(STATUS "In case compiling/linking with Intel MKL fails, check bench/CMakeLists.txt or deactivate PFFFT_USE_BENCH_MKL")
+  list(APPEND bench_defs HAVE_MKL)
+  list(APPEND bench_libs mkl_intel_lp64 mkl_sequential -lmkl_core)
+endif()
 
+######################################################
 
+# what the other C targets of the project get, too
+function(bench_target_setup target)
+  target_compile_definitions(${target} PRIVATE _USE_MATH_DEFINES)
+  target_activate_c_compiler_warnings(${target})
+  if (PFFFT_USE_DEBUG_ASAN)
+    target_compile_options(${target} PRIVATE "-fsanitize=address")
+  endif()
+endfunction()
 
-add_custom_target(build_float
-  COMMAND ${CMAKE_COMMAND} -E echo "start cmake for float in ${builddir_flt}"
-  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" ${CMAKE_PLATFORM_OPT}
-                        "${CMAKE_MAKE_OPT}"
-                        -DCMAKE_BUILD_TYPE=Release
-                        "-DTARGET_C_ARCH=${BENCH_ARCH}"
-                        "-DTARGET_CXX_ARCH=${BENCH_ARCH}"
-                        -DPFFFT_USE_TYPE_FLOAT=ON
-                        -DPFFFT_USE_TYPE_DOUBLE=OFF
-                        -DPFFFT_USE_SIMD=${PFFFT_USE_SIMD}
-                        -DPFFFT_USE_SCALAR_VECT=${PFFFT_USE_SCALAR_VECT}
-                        -DPFFFT_USE_BENCH_FFTW=${PFFFT_USE_BENCH_FFTW}
-                        -DPFFFT_USE_BENCH_GREEN=${PFFFT_USE_BENCH_GREEN}
-                        -DPFFFT_USE_BENCH_KISS=${PFFFT_USE_BENCH_KISS}
-                        -DPFFFT_USE_BENCH_POCKET=${PFFFT_USE_BENCH_POCKET}
-                        -DPFFFT_USE_BENCH_MKL=${PFFFT_USE_BENCH_MKL}
-                        "${CMAKE_SOURCE_DIR}/.."
-  # COMMAND ${CMAKE_COMMAND} -E echo "start cmake --build . for float in ${builddir_flt}"
-  COMMAND ${CMAKE_COMMAND} --build . --config Release
-  DEPENDS "${builddir_flt}/directory.txt"
-  WORKING_DIRECTORY "${builddir_flt}"
-)
+set(bench_objects "")
+foreach (prec ${bench_precisions})
+  add_library(bench_engines_${prec} OBJECT engines.c)
+  bench_target_setup(bench_engines_${prec})
+  target_compile_definitions(bench_engines_${prec} PRIVATE BENCH_PREC_${prec} ${bench_defs} ${bench_defs_${prec}})
+  # Before CMake 3.12 an object library cannot link to libraries, so it does
+  # not get their include directories and definitions that way.
+  foreach (lib ${bench_libs})
+    if (TARGET "${lib}")
+      target_include_directories(bench_engines_${prec} PRIVATE $<TARGET_PROPERTY:${lib},INTERFACE_INCLUDE_DIRECTORIES>)
+      target_compile_definitions(bench_engines_${prec} PRIVATE $<TARGET_PROPERTY:${lib},INTERFACE_COMPILE_DEFINITIONS>)
+    endif()
+  endforeach()
+  # last, so that nothing in a system include directory hides a header from above
+  target_include_directories(bench_engines_${prec} PRIVATE ${bench_incs})
+  list(APPEND bench_objects $<TARGET_OBJECTS:bench_engines_${prec}>)
+endforeach()
 
-add_custom_target(build_double
-  COMMAND ${CMAKE_COMMAND} -E echo "start cmake for double in ${builddir_dbl}"
-  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" ${CMAKE_PLATFORM_OPT}
-                        "${CMAKE_MAKE_OPT}"
-                        -DCMAKE_BUILD_TYPE=Release
-                        "-DTARGET_C_ARCH=${BENCH_ARCH}"
-                        "-DTARGET_CXX_ARCH=${BENCH_ARCH}"
-                        -DPFFFT_USE_TYPE_FLOAT=OFF
-                        -DPFFFT_USE_TYPE_DOUBLE=ON
-                        -DPFFFT_USE_SIMD=${PFFFT_USE_SIMD}
-                        -DPFFFT_USE_SCALAR_VECT=${PFFFT_USE_SCALAR_VECT}
-                        -DPFFFT_USE_BENCH_FFTW=${PFFFT_USE_BENCH_FFTW}
-                        -DPFFFT_USE_BENCH_GREEN=${PFFFT_USE_BENCH_GREEN}
-                        -DPFFFT_USE_BENCH_KISS=${PFFFT_USE_BENCH_KISS}
-                        -DPFFFT_USE_BENCH_POCKET=${PFFFT_USE_BENCH_POCKET}
-                        -DPFFFT_USE_BENCH_MKL=${PFFFT_USE_BENCH_MKL}
-                        "${CMAKE_SOURCE_DIR}/.."
-  COMMAND ${CMAKE_COMMAND} -E echo "start cmake --build . for double in ${builddir_dbl}"
-  COMMAND ${CMAKE_COMMAND} --build . --config Release
-  DEPENDS "${builddir_dbl}/directory.txt"
-  WORKING_DIRECTORY "${builddir_dbl}"
-)
-
-add_custom_target(bench_float
-  COMMAND ${CMAKE_COMMAND} -E echo "start benchmark for float"
-  COMMAND "${builddir_flt}/benchmarks/${BUILD_DIR_TO_EXE}bench_pffft_float${CMAKE_EXECUTABLE_SUFFIX}"
-  DEPENDS "${benchdir_flt}/directory.txt" build_float
-  WORKING_DIRECTORY "${benchdir_flt}"
-)
-
-add_custom_target(bench_double
-  COMMAND ${CMAKE_COMMAND} -E echo "start benchmark for double"
-  COMMAND "${builddir_dbl}/benchmarks/${BUILD_DIR_TO_EXE}bench_pffft_double${CMAKE_EXECUTABLE_SUFFIX}"
-  DEPENDS "${benchdir_dbl}/directory.txt" build_double
-  WORKING_DIRECTORY "${benchdir_dbl}"
-)
-
-add_custom_target(bench ALL
-  COMMAND ${CMAKE_COMMAND} -E echo ""
-  COMMAND ${CMAKE_COMMAND} -E tar cvz "bench_${BENCH_ID}.tgz" ${benchdir}
-  COMMAND ${CMAKE_COMMAND} -E echo ""
-  COMMAND ${CMAKE_COMMAND} -E echo "now mail result file bench_${BENCH_ID}.tgz"
-  # DEPENDS "${benchdir}/info.txt" "${benchdir}/unix_info.txt"
-  DEPENDS "${benchdir}/info.txt" bench_float bench_double "${benchdir}/unix_info.txt"
-  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-)
-
-add_custom_target(bench_float_tar
-  COMMAND ${CMAKE_COMMAND} -E echo ""
-  COMMAND ${CMAKE_COMMAND} -E tar cvz "bench_${BENCH_ID}.tgz" ${benchdir}
-  COMMAND ${CMAKE_COMMAND} -E echo ""
-  COMMAND ${CMAKE_COMMAND} -E echo "now mail result file bench_${BENCH_ID}.tgz"
-  DEPENDS "${benchdir}/info.txt" bench_float "${benchdir}/unix_info.txt"
-  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-)
-
-add_custom_target(bench_double_tar
-  COMMAND ${CMAKE_COMMAND} -E echo ""
-  COMMAND ${CMAKE_COMMAND} -E tar cvz "bench_${BENCH_ID}.tgz" ${benchdir}
-  COMMAND ${CMAKE_COMMAND} -E echo ""
-  COMMAND ${CMAKE_COMMAND} -E echo "now mail result file bench_${BENCH_ID}.tgz"
-  DEPENDS "${benchdir}/info.txt" bench_double "${benchdir}/unix_info.txt"
-  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-)
-
-add_custom_target(clean_results
-  COMMAND ${CMAKE_COMMAND} -E remove_directory "${builddir_flt}"
-  COMMAND ${CMAKE_COMMAND} -E remove_directory "${builddir_dbl}"
-  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-)
-
+add_executable(bench_fft bench_fft.c platform.c bench.h ${bench_objects})
+bench_target_setup(bench_fft)
+foreach (prec ${bench_precisions})
+  target_compile_definitions(bench_fft PRIVATE BENCH_HAVE_${prec})
+endforeach()
+target_link_libraries(bench_fft ${bench_libs} ${ASANLIB} ${MATHLIB})
+if (APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux|Android")
+  # where platform.c uses dlopen; elsewhere -ldl may not exist (newlib)
+  target_link_libraries(bench_fft ${CMAKE_DL_LIBS})
+endif()

@@ -29,12 +29,15 @@ option(INSTALL_PFDSP      "install pfdsp to CMAKE_INSTALL_PREFIX?" OFF)
 option(INSTALL_PFFASTCONV "install pffastconv to CMAKE_INSTALL_PREFIX?" OFF)
 
 # test options
-option(PFFFT_USE_BENCH_FFTW   "use (system-installed) FFTW3 in fft benchmark?" OFF)
+option(PFFFT_USE_BENCH_FFTW   "use FFTW3 from FFTW3_ROOT (see bench/build_fftw.py) in fft benchmark?" OFF)
 option(PFFFT_USE_BENCH_GREEN  "use Green FFT in fft benchmark? - if exists in subdir" ON)
 option(PFFFT_USE_BENCH_KISS   "use KissFFT in fft benchmark? - if exists in subdir" ON)
 option(PFFFT_USE_BENCH_POCKET "use PocketFFT in fft benchmark? - if exists in subdir" ON)
 option(PFFFT_USE_BENCH_MKL    "use Intel MKL in fft benchmark? needs to be installed" OFF)
 option(PFFFT_USE_FFTPACK      "compile and use FFTPACK in fft benchmark & validation?" ON)
+if (APPLE)
+  option(PFFFT_USE_BENCH_VDSP "use vDSP of Apple's Accelerate framework in fft benchmark?" ON)
+endif()
 
 option(PFFFT_USE_DEBUG_ASAN  "use GCC's address sanitizer?" OFF)
 
@@ -248,31 +251,6 @@ endif()
 
 ######################################################
 
-if ((PFFFT_BUILD_TESTS OR PFFFT_BUILD_BENCHMARKS) AND PFFFT_USE_FFTPACK)
-
-  # float / single precision
-  add_library(FFTPACK_FLOAT STATIC src/fftpack.c src/fftpack.h)
-  target_compile_definitions(FFTPACK_FLOAT PRIVATE _USE_MATH_DEFINES)
-  target_activate_c_compiler_warnings(FFTPACK_FLOAT)
-  target_link_libraries( FFTPACK_FLOAT ${MATHLIB} )
-  target_include_directories(FFTPACK_FLOAT
-    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-  )
-
-  # double precision
-  add_library(FFTPACK_DOUBLE STATIC src/fftpack.c src/fftpack.h)
-  target_compile_definitions(FFTPACK_DOUBLE PRIVATE _USE_MATH_DEFINES)
-  target_compile_definitions(FFTPACK_DOUBLE PUBLIC FFTPACK_DOUBLE_PRECISION)
-  target_activate_c_compiler_warnings(FFTPACK_DOUBLE)
-  target_link_libraries( FFTPACK_DOUBLE ${MATHLIB} )
-  target_include_directories(FFTPACK_DOUBLE
-    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-  )
-
-endif()
-
-######################################################
-
 if (PFFFT_USE_TYPE_FLOAT)
   # only 'float' supported in PFFASTCONV
   add_library(PFFASTCONV src/pffastconv.c include/pffft/pffastconv.h include/pffft/pffft.h )
@@ -359,7 +337,8 @@ if (PFFFT_BUILD_TESTS)
 endif()
 
 if (PFFFT_BUILD_BENCHMARKS)
-  add_subdirectory(benchmarks)
+  add_subdirectory(bench)       # bench_fft: the FFT benchmark
+  add_subdirectory(benchmarks)  # mixer and convolution benchmarks
 endif()
 
 if (PFFFT_BUILD_EXAMPLES)
