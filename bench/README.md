@@ -54,7 +54,7 @@ python3 bench/compare.py c14802c master --target android -o cmp.csv
 uv run --with matplotlib python3 bench/plot.py local.csv -o local.png
 uv run --with matplotlib python3 bench/plot.py local.csv --engines pffft -o pffft.png
 uv run --with matplotlib python3 bench/plot.py local.csv android.csv -o devices.png
-uv run --with matplotlib python3 bench/plot.py cmp.csv -o cmp.png          # B vs A
+uv run --with matplotlib python3 bench/plot.py mac-cmp.csv ios-cmp.csv --names 1.1.0,1.3.1 -o cmp.png
 ```
 
 - **run.py** prints the tables and saves the CSV with `-o`. bench_fft options
@@ -62,8 +62,9 @@ uv run --with matplotlib python3 bench/plot.py cmp.csv -o cmp.png          # B v
 - **compare.py** builds both revisions as shared libraries with their own
   CMake (any revision from `fde5014` on; `.` is the working tree), loads both
   into one bench_fft and prints the cost of A and B per case, and "B vs A":
-  B's cost relative to A's, the median over 3 launches of 2 trials each
-  (`--launches`, `--trials`), with its range. Negative means B is faster.
+  B's speed-up over A (A's cost over B's), the median over 3 launches of 2
+  trials each (`--launches`, `--trials`), with its range. Positive means B is
+  faster.
   `--fftw` adds FFTW as a reference. `compare.py X X` shows the noise floor.
   `-o` saves the measurements of all launches as one CSV, for plot.py.
   Each revision builds with its own defaults, so v1.0.0 and v1.1.0 get no
@@ -78,9 +79,10 @@ uv run --with matplotlib python3 bench/plot.py cmp.csv -o cmp.png          # B v
   rough guide), if the CSV header gives cache sizes and all files give the
   same. `--engines` picks engines. `--gflops` plots GFLOPS, from time, which
   depend on the clock (and is what there is without a cycle counter); use it
-  to compare devices. Several files are overlaid, one marker shape each. A CSV
-  of `compare.py -o` gives B vs A per n, with the range over launches and
-  trials. It needs matplotlib 3.7 or later.
+  to compare devices. Several files are overlaid, one marker shape each. CSVs
+  of `compare.py -o` give B's speed-up over A per n, higher is better, with
+  the range over launches and trials, one color per file (device); `--names
+  1.1.0,1.3.1` names the revisions. It needs matplotlib 3.7 or later.
 
 With everything built, the default sweep took 37 s on an Apple M2. With
 `--fftw` it took 2 min 21 s there, 4 min 11 s on an Android phone (MT6878) and

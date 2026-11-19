@@ -12,8 +12,10 @@ A panel per (precision, transform kind), with n on the x axis:
   green) get there, dotted, the flops of n at the cost of the next power of
   two, as if their user padded. With --gflops, or where cycles were not
   counted, GFLOPS (flops per ns), which depend on the clock;
-- for a CSV that compare.py wrote (-o): B vs A in percent, the median and the
-  range over all launches and trials.
+- for CSVs that compare.py wrote (-o): B's speed-up over A in percent,
+  higher is better, the median and the range over all launches and trials;
+  several files (devices) share the panels, one color each. --names A,B
+  names the revisions.
 
 Several files (two devices, say) are overlaid, one marker shape per file.
 Without -o the figure opens in a window. Needs matplotlib 3.7 or later.
@@ -56,9 +58,13 @@ def bytes_label(b: int) -> str:
     return f"{b / 2**20:g} MiB" if b >= 2**20 else f"{b / 2**10:g} KiB"
 
 
+DEVICES = {"iPhone12,3": "iPhone 11 Pro (A13)", "iPhone12,1": "iPhone 11 (A13)", "MT6878": "MediaTek MT6878"}
+
+
 def machine(meta) -> str:
-    os_name = meta.get("os", "")
-    return ", ".join(x for x in (meta.get("cpu"), os_name) if x) or "unknown machine"
+    """The device, by a readable name where known, and its system."""
+    cpu = meta.get("cpu")
+    return ", ".join(x for x in (DEVICES.get(cpu, cpu), meta.get("os")) if x) or "unknown machine"
 
 
 def style_axes(ax) -> None:
@@ -303,88 +309,102 @@ def plot_engines(args, files, plt) -> None:
                         label=f"{name}: {machine(meta)}") for k, (name, meta, _) in enumerate(files)]
     layout.key(keys, key_ncol)
 
-    title = (f"{label_for(engines[0])} speed" if single else "FFT speed") + "; higher is faster"
+    title = (f"{label_for(engines[0])} speed" if single else "FFT speed")
+    if len(files) == 1:
+        title += f" on {DEVICES.get(files[0][1].get('cpu'), files[0][1].get('cpu', '?'))}"
+    title += "; higher is faster"
     if field == "cycles":
         sub = ("flops per CPU cycle: 5·n·log₂n per complex transform, 2.5·n·log₂n per real one, "
                "÷ cycles per transform")
     else:
         sub = "GFLOPS: 5·n·log₂n per complex transform, 2.5·n·log₂n per real one, ÷ time per transform"
     sub += f"; fastest batch{', median of %d trials' % trials if trials > 1 else ''}"
-    if len(files) == 1:
-        sub = f"{machine(files[0][1])}  ·  " + sub
+    if len(files) == 1 and files[0][1].get("os"):  # the device is in the title
+        sub = f"{files[0][1]['os']}  ·  " + sub
     layout.header(title, sub, [] if single else handles, ncol)
     save(args, fig, plt)
 
 
 def plot_compare(args, files, plt) -> None:
-    """B vs A, from a CSV of compare.py."""
+    """B vs A from CSVs of compare.py: the change in speed, higher is better,
+    one color per file (device)."""
     from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
     from matplotlib.ticker import FuncFormatter, MaxNLocator
 
-    if len(files) != 1:
-        sys.exit("plot.py: a CSV of compare.py is plotted alone")
-    _, meta, rows = files[0]
     a, b = "pffft@A", "pffft@B"
-    present, precs, xforms = panels(rows)
-    layout = Layout(plt, precs, xforms, 0, 1)
+    names = dict(zip("AB", args.names.split(","))) if args.names else {}
+    for k in "AB":
+        names.setdefault(k, files[0][1].get(k, k))
+    every = [r for _, _, rows in files for r in rows]
+    present, precs, xforms = panels(every)
+    layout = Layout(plt, precs, xforms, 1, 1)
     fig, axes = layout.fig, layout.axes
+    colors = [SERIES["pffft"], "#eb6834", "#1baf7a", "#6250d6"]  # all-pairs separable up to three
+    marks = ["o", "s", "D", "^"]
+    other_n = False
     for (i, prec), (j, xform) in itertools.product(enumerate(precs), enumerate(xforms)):
         ax = axes[i][j]
         style_axes(ax)
         if (prec, xform) not in present:
             ax.set_visible(False)
             continue
-        sizes = sorted({r["n"] for r in rows if (r["prec"], r["xform"]) == (prec, xform)})
-        pts = []
-        for n in sizes:
-            same = [r for r in rows if (r["prec"], r["xform"], r["n"]) == (prec, xform, n)]
-            field = "cycles" if all(r["cycles"] is not None for r in same if r["engine"] in (a, b)) else "ns"
-            va = [r[field] for r in same if r["engine"] == a and r[field] is not None]
-            vb = [r[field] for r in same if r["engine"] == b and r[field] is not None]
-            if va and len(va) == len(vb):
-                pts.append((n, *results.summary([(y / x - 1) * 100 for x, y in zip(va, vb)])))
-        if not pts:
-            continue
-        ax.axhline(0, color=INK2, lw=1, zorder=2)
-        for n, med, lo, hi in pts:
-            c = FASTER if hi < 0 else SLOWER if lo > 0 else MUTED
-            mark = "o" if results.is_pow2(n) else "^"
-            ax.vlines(n, lo, hi, color=c, lw=2, alpha=0.35, zorder=3, capstyle="round")
-            ax.plot([n], [med], marker=mark, ms=7 if mark == "^" else 6, color=c, mec=SURFACE, mew=1.2, zorder=4)
-        # label the largest gain, and the largest loss if there is one
-        best = min(pts, key=lambda p: p[1])
-        worst = max(pts, key=lambda p: p[1])
-        for n, med, lo, hi in {best, worst}:
-            if med <= -1 and (n, med) == best[:2] or med >= 1:
-                ax.annotate(f"{med:+.1f}%".replace("-", "\u2212"), (n, med), xytext=(7, 0), textcoords="offset points",
-                            va="center", fontsize=8, color=INK, fontweight="bold")
-        size_axis(ax, sizes)
-        lo = min(p[2] for p in pts)
-        hi = max(p[3] for p in pts)
-        pad = 0.08 * max(hi - lo, 2)
-        ax.set_ylim(min(lo, 0) - pad, max(hi, 0) + pad)
+        ax.axhline(0, color=INK2, lw=0.9, zorder=2)
+        lows, highs, all_sizes = [0.0], [0.0], set()
+        for k, (_, meta, rows) in enumerate(files):
+            c, mark = colors[k % len(colors)], marks[k % len(marks)]
+            pts = ([], [])
+            for n in sorted({r["n"] for r in rows if (r["prec"], r["xform"]) == (prec, xform)}):
+                same = [r for r in rows if (r["prec"], r["xform"], r["n"]) == (prec, xform, n)]
+                field = "cycles" if all(r["cycles"] is not None for r in same if r["engine"] in (a, b)) else "ns"
+                va = [r[field] for r in same if r["engine"] == a and r[field] is not None]
+                vb = [r[field] for r in same if r["engine"] == b and r[field] is not None]
+                if va and len(va) == len(vb):
+                    # speed is flops / cost, so B's speed-up is cost A / cost B
+                    pts[0 if results.is_pow2(n) else 1].append(
+                        (n, *results.summary([(x / y - 1) * 100 for x, y in zip(va, vb)])))
+                    all_sizes.add(n)
+            for group, ls, lw, alpha in ((0, "-", 2.0, 0.16), (1, (0, (3.5, 2)), 1.2, 0.09)):
+                if not pts[group]:
+                    continue
+                g = list(zip(*pts[group]))
+                ax.plot(g[0], g[1], color=c, lw=lw, ls=ls, marker=mark, ms=4.2 if group == 0 else 3.2,
+                        mew=0, solid_capstyle="round", dash_capstyle="round", zorder=4 - group)
+                ax.fill_between(g[0], g[2], g[3], color=c, alpha=alpha, lw=0, zorder=3 - group)
+                lows.append(min(g[2]))
+                highs.append(max(g[3]))
+                other_n |= group == 1
+        size_axis(ax, sorted(all_sizes))
+        lo, hi = min(lows), max(highs)
+        pad = 0.06 * max(hi - lo, 2)
+        ax.set_ylim(lo - pad, hi + pad)
         ax.yaxis.set_major_locator(MaxNLocator(nbins=7, steps=[1, 2, 2.5, 5, 10]))
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: "0" if v == 0 else f"{v:+g}%".replace("-", "\u2212")))
         ax.set_title(f"{prec} {PANEL_TITLES[xform]}", loc="left", fontsize=10.5, fontweight="bold",
                      color=INK, pad=6)
-        if i == len(precs) - 1:
+        if i == len(precs) - 1 or (precs[i + 1], xform) not in present:
             ax.set_xlabel("transform length n", fontsize=8.5, color=INK2)
             ax.tick_params(labelbottom=True)
         if j == 0:
-            ax.set_ylabel("change in cost, B vs A", fontsize=8.5, color=INK2)
+            ax.set_ylabel(f"speed of {names['B']} relative to {names['A']}", fontsize=8.5, color=INK2)
 
-    keys = [Line2D([], [], color=FASTER, ls="", marker="o", ms=6, label="B faster (whole range below 0)"),
-            Line2D([], [], color=SLOWER, ls="", marker="o", ms=6, label="B slower (whole range above 0)"),
-            Line2D([], [], color=MUTED, ls="", marker="o", ms=6, label="no clear change"),
-            Line2D([], [], color=MUTED, ls="", marker="^", ms=6.5, label="n not a power of two"),
-            Line2D([], [], color=MUTED, lw=2, alpha=0.5, label="range over launches and trials")]
-    layout.key(keys, 5)
-    name = {k: meta.get(k, k) for k in "AB"}
-    unit = "CPU cycles" if all(r["cycles"] is not None for r in rows) else "time"
-    layout.header(f"pffft {name['B']} vs {name['A']}",
-           f"{machine(meta)}  ·  {unit} per pffft_transform_ordered, B relative to A; below 0: B is faster; "
-           f"dot: median of {meta.get('launches', '?')} launches × {int(meta.get('trials', 0)) // max(1, int(meta.get('launches', 1)))} trials",
-                  [], 1)
+    handles = [Line2D([], [], color=colors[k % len(colors)], lw=2, marker=marks[k % len(marks)], ms=4.5, mew=0,
+                      label=machine(meta)) for k, (_, meta, _) in enumerate(files)]
+    keys = [Line2D([], [], color=MUTED, lw=1.8, label="n a power of two")]
+    if other_n:
+        keys.append(Line2D([], [], color=MUTED, lw=1.2, ls=(0, (3.5, 2)), label="n not a power of two"))
+    launches = files[0][1].get("launches", "?")
+    per = int(files[0][1].get("trials", 0)) // max(1, int(files[0][1].get("launches", 1) or 1))
+    keys.append(Patch(color=MUTED, alpha=0.25, lw=0, label=f"range over {launches} launches × {per} trials"))
+    layout.key(keys, 3)
+    unit = "CPU cycles" if all(r["cycles"] is not None for r in every) else "time"
+    title = f"pffft {names['B']} vs {names['A']}: speed-up; higher is better"
+    sub = (f"change in transforms per {'cycle' if unit == 'CPU cycles' else 'second'} "
+           f"(pffft_transform_ordered), {names['B']} relative to {names['A']}, measured side by side in one "
+           f"process; median of {launches} launches × {per} trials")
+    if len(files) == 1:
+        sub = f"{machine(files[0][1])}  ·  " + sub
+    layout.header(title, sub, handles if len(files) > 1 else [], max(1, len(files)))
     save(args, fig, plt)
 
 
@@ -400,6 +420,7 @@ def main() -> None:
     ap.add_argument("csv", nargs="+", help="bench_fft CSV files, or one CSV of compare.py")
     ap.add_argument("-o", metavar="FILE", help="write the figure (.png, .svg, ...) instead of showing it")
     ap.add_argument("--engines", metavar="LIST", help="plot only these engines (comma separated)")
+    ap.add_argument("--names", metavar="A,B", help="names of the two revisions of compare.py CSVs, e.g. 1.1.0,1.3.1")
     ap.add_argument("--gflops", action="store_true", help="plot GFLOPS (from time) even where cycles were counted")
     args = ap.parse_args()
     files = load(args.csv)

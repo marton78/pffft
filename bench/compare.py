@@ -9,9 +9,9 @@ Each is built as a shared library with its own CMake; bench_fft from the working
 tree loads both and times them batch by batch, in random order, in one process.
 That process is launched several times, because at small n one launch can
 favour one library in all its trials (code placement, which trials do not
-vary); the range then shows it. "B vs A" is B's cost relative to A's:
-negative means B is faster. -o saves the measurements of all launches as one
-CSV, for plot.py.
+vary); the range then shows it. "B vs A" is B's speed-up over A, cost of A
+over cost of B: positive means B is faster. -o saves the measurements of all
+launches as one CSV, for plot.py.
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ DEFAULT_SIZES = "pow2,96,160,480,1152,1440,2400,4000,15360,48000,100000"
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("rev_a", metavar="REV_A", help="a git revision, or . for the working tree")
-    ap.add_argument("rev_b", metavar="REV_B", help="the same; B vs A < 0 means B is faster")
+    ap.add_argument("rev_b", metavar="REV_B", help="the same; B vs A > 0 means B is faster")
     ap.add_argument("--target", default="local", help="local, android[:serial] or ios[:udid] (default: local)")
     ap.add_argument("--sizes", default=DEFAULT_SIZES, help=f"bench_fft --sizes (default: {DEFAULT_SIZES})")
     ap.add_argument("--prec", help="f32, f64 or f32,f64 (default: all built)")
@@ -80,7 +80,7 @@ def main() -> None:
         print("A and B are the same code: the differences show the noise floor")
     print(f"{meta.get('cpu')}, {meta.get('os')}, counter: {meta.get('counter')}")
     print(f"pffft_transform_ordered, B vs A: median and range over {args.launches} launches "
-          f"x {args.trials} trials; negative: B is faster\n")
+          f"x {args.trials} trials; positive: B is faster\n")
     print(compare_tables(rows, engines), end="")
 
 
@@ -97,7 +97,7 @@ def compare_tables(rows, engines) -> str:
             a, b, *ref = (cases[field].get((e, prec, xform, n)) for e in engines)
             cells = [results.fmt(v and statistics.median(v)) for v in (a, b)]
             if a and b and len(a) == len(b):
-                diff, lo, hi = results.summary([(y / x - 1) * 100 for x, y in zip(a, b)])
+                diff, lo, hi = results.summary([(x / y - 1) * 100 for x, y in zip(a, b)])  # speed-up
                 cells += [f"{diff:+.2f}%", f"{lo:+.2f} .. {hi:+.2f}"]
             else:
                 cells += ["-", "-"]
