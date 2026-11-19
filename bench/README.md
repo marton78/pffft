@@ -117,18 +117,26 @@ FFTW the first time takes about 2 minutes per target.
   counting only with `kernel.perf_event_paranoid` at 2 or lower (Debian and
   Ubuntu set more; `sudo sysctl kernel.perf_event_paranoid=2`) and, in a
   container, a seccomp profile that allows `perf_event_open`.
-- **Engines that slow the clock.** On Apple chips the clock drops while the
-  AMX matrix unit works: by 7.7% for vDSP f32 FFTs from n = 512 (real) and
-  256 (complex) on the M2, more on the iPhone, and by about 23% for a small
-  sgemm. It stays down as long as AMX works (as low after 20 ms of vDSP as
-  after 300 µs) and recovers some 40 µs after; unlike FFTW's planning it is
-  no one-time cost, and cycles do not show it. bench_fft records the clock of every
-  clean batch and compares it with that of the batches of other engines just
-  before and after it (so that the system changing the clock does not count);
-  an engine whose median ratio is more than 2% below 1 is charged its cycles
-  at the others' clock, which makes it compare by time. The CSV columns `ghz`
-  and `clock` show this. Other engines stay within 0.04% of 1 (90th
-  percentile), 1.5% at most. AVX-512 slows Intel cores the same way.
+- **Costs that cycles do not show.** bench_fft records the clock (cycles
+  per ns) of every clean batch and compares it with that of the batches of
+  other engines just before and after it, so that the system changing the
+  clock does not count. An engine whose median ratio is more than 2% below 1
+  is charged its cycles at the others' clock, which makes it compare by time;
+  the CSV columns `ghz` and `clock` show this. Other engines stay within 0.04%
+  of 1 on an M2 (90th percentile), 1.5% at most. Two causes were found:
+  - On Apple chips the clock drops while the AMX matrix unit works: for vDSP
+    f32 FFTs from n = 256 or 512, by 7.7% on the M2 and up to 25% on the
+    iPhone 11 Pro; by about 23% for a small sgemm. It stays down as long as
+    AMX works (as low after 20 ms of vDSP as after 300 µs) and recovers some
+    40 µs after; unlike FFTW's planning it is no one-time cost. AVX-512 slows
+    Intel cores the same way.
+  - Linux counts user-space cycles only. PocketFFT allocates a work array in
+    every transform; at n from about 5000 the page faults that costs, in the
+    kernel, made its batches look 2-41% slower in time than in cycles on an
+    Android phone (MT6878).
+
+  On the iPhone 1.2% of the cases of other engines, all at n of 262144 and
+  more, were charged 2-6% for reasons not found.
 - **Self-check.** Before timing, every engine must transform random data
   correctly; one that fails is dropped with a message, and bench_fft exits
   with a nonzero status.
