@@ -81,23 +81,21 @@ static int exact_log2(int n)
 #endif
 
 /* ------------------------------------------------------------------------
- * pffft, linked in from this source tree. "pffft" calls
- * pffft_transform_ordered(); "pffftu" calls pffft_transform(), which leaves
- * the spectrum in pffft's internal order.
+ * pffft, linked in from this source tree: pffft_transform_ordered(), which
+ * gives the spectrum in the same order as the other libraries.
  * ---------------------------------------------------------------------- */
 
 typedef struct state_pffft {
   pf_setup *setup;
-  void (*transform)(const pf_setup *, const scalar *, scalar *, scalar *, pffft_direction_t);
   bench_bufs bufs;
 } state_pffft;
 
-/* e->variant: 0 ordered, 1 unordered */
 static int create_pffft(const bench_engine *e, int n, int cplx, const bench_bufs *bufs,
                         bench_instance *inst)
 {
   const pffft_transform_t kind = cplx ? PFFFT_COMPLEX : PFFFT_REAL;
   state_pffft *s;
+  (void)e;
   if (!PF(is_valid_size)(n, kind)) return 1;
   s = malloc(sizeof *s);
   if (!s) return 1;
@@ -106,7 +104,6 @@ static int create_pffft(const bench_engine *e, int n, int cplx, const bench_bufs
     free(s);
     return 1;
   }
-  s->transform = e->variant ? PF(transform) : PF(transform_ordered);
   s->bufs = *bufs;
   return instance_ready(inst, s, bufs, OUT_OF_PLACE, n, cplx, (double)n);
 }
@@ -117,8 +114,8 @@ static void run_pffft(const bench_instance *inst, int pairs)
   scalar *x = s->bufs.buf[0], *y = s->bufs.buf[1], *z = s->bufs.buf[2], *work = s->bufs.buf[3];
   int i;
   for (i = 0; i < pairs; i++) {
-    s->transform(s->setup, x, y, work, PFFFT_FORWARD);
-    s->transform(s->setup, y, z, work, PFFFT_BACKWARD);
+    PF(transform_ordered)(s->setup, x, y, work, PFFFT_FORWARD);
+    PF(transform_ordered)(s->setup, y, z, work, PFFFT_BACKWARD);
   }
 }
 
@@ -130,8 +127,8 @@ static void destroy_pffft(bench_instance *inst)
 }
 
 /* ------------------------------------------------------------------------
- * pffft from a shared library given with --lib: "pffft@label" and
- * "pffftu@label". The library may be of any revision, so no header describes
+ * pffft from a shared library given with --lib: "pffft@label", which calls
+ * its pffft_transform_ordered(). The library may be of any revision, so no header describes
  * it: its functions are called through pointers that spell setups and arrays
  * as void * and enums as int.
  * ---------------------------------------------------------------------- */
@@ -158,7 +155,6 @@ static void lib_function(void *lib, const char *symbol, void *fn)
   memcpy(fn, &address, sizeof address);
 }
 
-/* e->variant: 0 ordered, 1 unordered */
 static int create_lib(const bench_engine *e, int n, int cplx, const bench_bufs *bufs,
                       bench_instance *inst)
 {
@@ -177,8 +173,7 @@ static int create_lib(const bench_engine *e, int n, int cplx, const bench_bufs *
     free(s);
     return 1;
   }
-  lib_function(e->lib, e->variant ? PF_SYMBOL("transform") : PF_SYMBOL("transform_ordered"),
-               &s->transform);
+  lib_function(e->lib, PF_SYMBOL("transform_ordered"), &s->transform);
   lib_function(e->lib, PF_SYMBOL("destroy_setup"), &s->destroy_setup);
   s->bufs = *bufs;
   return instance_ready(inst, s, bufs, OUT_OF_PLACE, n, cplx, (double)n);
@@ -656,7 +651,6 @@ int BENCH_ENGINES(bench_engine *list, int max)
 {
   static const bench_engine all[] = {
     {"pffft", create_pffft, run_pffft, destroy_pffft, NULL, 0},
-    {"pffftu", create_pffft, run_pffft, destroy_pffft, NULL, 1},
 #ifdef HAVE_FFTPACK
     {"fftpack", create_fftpack, run_fftpack, destroy_fftpack, NULL, 0},
 #endif
@@ -689,26 +683,23 @@ int BENCH_ENGINES(bench_engine *list, int max)
 int BENCH_LIB_ENGINES(const char *label, const char *path, bench_engine *list, int max,
                       char *err, size_t errlen)
 {
-  static const char *const needed[4] = {PF_SYMBOL("new_setup"), PF_SYMBOL("destroy_setup"),
-                                        PF_SYMBOL("transform"), PF_SYMBOL("transform_ordered")};
+  static const char *const needed[3] = {PF_SYMBOL("new_setup"), PF_SYMBOL("destroy_setup"),
+                                        PF_SYMBOL("transform_ordered")};
   void *lib;
   int i;
-  if (max < 2) {
+  if (max < 1) {
     snprintf(err, errlen, "no room for the engines of %s", path);
     return -1;
   }
   lib = bench_dl_open(path, err, errlen);
   if (!lib) return -1;
-  for (i = 0; i < 4; i++)
+  for (i = 0; i < 3; i++)
     if (!bench_dl_sym(lib, needed[i])) return 0; /* built without this precision */
-  for (i = 0; i < 2; i++) {
-    bench_engine *e = &list[i];
-    snprintf(e->name, sizeof e->name, "%s@%s", i ? "pffftu" : "pffft", label);
-    e->create = create_lib;
-    e->run = run_lib;
-    e->destroy = destroy_lib;
-    e->lib = lib;
-    e->variant = i;
-  }
-  return 2;
+  snprintf(list->name, sizeof list->name, "pffft@%s", label);
+  list->create = create_lib;
+  list->run = run_lib;
+  list->destroy = destroy_lib;
+  list->lib = lib;
+  list->variant = 0;
+  return 1;
 }

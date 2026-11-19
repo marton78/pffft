@@ -66,7 +66,7 @@ typedef struct options {
   const char *csv;
   int show; /* SHOW_*, or -1: cycles if counted, else ns */
   struct {
-    char label[41]; /* "pffftu@" and the label fit a bench_engine name */
+    char label[41]; /* "pffft@" and the label fit a bench_engine name */
     const char *path;
   } lib[MAX_LIBS];
   int nlibs;
@@ -665,8 +665,8 @@ static void usage(FILE *f) {
           "  --xform LIST        real,cplx (default: both)\n"
           "  --engines LIST      engine names (default: all built-in engines; if --lib is\n"
           "                      given, only the --lib engines)\n"
-          "  --lib LABEL=PATH    add engines pffft@LABEL and pffftu@LABEL from a pffft\n"
-          "                      shared library (repeatable)\n"
+          "  --lib LABEL=PATH    add the engine pffft@LABEL from a pffft shared library\n"
+          "                      (repeatable)\n"
           "  --trials T          default 1\n"
           "  --rounds R          default 100\n"
           "  --batch-us U        default 300\n"

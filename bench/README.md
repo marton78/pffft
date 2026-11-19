@@ -20,9 +20,9 @@ build/bench/bench_fft --sizes 1024,1152 --prec f32 --xform real
 ```
 ```
 f32 real: CPU cycles per transform, fastest batch
-        n        pffft      pffftu     fftpack     kissfft   pocketfft       green        vdsp
-     1024       1680.4      1495.0      5384.2     12022.8      4799.9      4738.0      1219.2
-     1152*      2085.2      1876.4      8006.6     13214.8      6420.1           -           -
+        n        pffft     fftpack     kissfft   pocketfft       green        vdsp
+     1024       1680.4      5384.2     12022.8      4799.9      4738.0      1219.2
+     1152*      2085.2      8006.6     13214.8      6420.1           -           -
 ```
 
 `*` marks lengths that are not powers of two; `-` means the engine does not
@@ -148,8 +148,7 @@ What it cannot do:
 | Engine | Library | Precisions | Lengths | Notes |
 |---|---|---|---|---|
 | `pffft` | this tree, `pffft_transform_ordered` | f32, f64 | 2^a·3^b·5^c; real: multiple of 32, complex: of 16 | |
-| `pffftu` | this tree, `pffft_transform` | f32, f64 | as pffft | unordered output, as for convolution |
-| `pffft@L`, `pffftu@L` | a pffft shared library, `--lib L=PATH` | those it has | as pffft | what compare.py measures |
+| `pffft@L` | a pffft shared library, `--lib L=PATH`, `pffft_transform_ordered` | those it has | as pffft | what compare.py measures |
 | `fftpack` | `src/fftpack.c` | f32, f64 | any | |
 | `fftw-est`, `fftw-meas` | FFTW 3.3.10 from `FFTW3_ROOT` | f32, f64 | any; `fftw-meas` up to `--fftw-measure-max` (65536) | FFTW_ESTIMATE and FFTW_MEASURE plans |
 | `kissfft` | submodule `kissfft` | f32 | any (real: even) | |

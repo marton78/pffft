@@ -88,7 +88,7 @@ typedef struct bench_instance {
  * followed by one backward transform of its result. */
 typedef struct bench_engine bench_engine;
 struct bench_engine {
-  char name[48]; /* "pffft", "pffftu", "fftw-est", "pffft@master", ... */
+  char name[48]; /* "pffft", "fftw-est", "pffft@master", ... */
 
   /* Set up for n >= 1 points (n real samples, or n complex samples if cplx).
    * Returns 0 on success and nonzero if the engine cannot do this case; it
@@ -114,9 +114,9 @@ struct bench_engine {
 int bench_engines_f32(bench_engine *list, int max);
 int bench_engines_f64(bench_engine *list, int max);
 
-/* The engines "pffft@<label>" (ordered) and "pffftu@<label>" (unordered) of a
- * pffft shared library. Returns how many were appended: 0 if the library was
- * built without this precision, -1 on error with the reason in err. */
+/* The engine "pffft@<label>" of a pffft shared library. Returns how many were
+ * appended: 1, 0 if the library was built without this precision, -1 on error
+ * with the reason in err. */
 int bench_lib_engines_f32(const char *label, const char *path,
                           bench_engine *list, int max, char *err, size_t errlen);
 int bench_lib_engines_f64(const char *label, const char *path,
