@@ -46,6 +46,12 @@ const char *pffftd_simd_arch(void);
 #define MAX_LIBS 8
 #define MAX_PAIRS (1 << 24)
 #define MIN_ROUNDS 10     /* --case-seconds never ends a trial before this */
+/* nor before every engine has this many clean batches, unless the trial has
+ * taken CLEAN_PATIENCE times --case-seconds: a batch of a large n takes tens
+ * of ms, and on Apple systems, which cannot pin, all 10 of them could touch
+ * an efficiency core, leaving no cycle count */
+#define MIN_CLEAN 3
+#define CLEAN_PATIENCE 5
 #define PLACE_RANGE 16384 /* later trials shift each array by less than this */
 /* An engine whose batches ran at a clock this much below that of the batches
  * around them slowed the clock itself, and its cycles are charged for it (see
@@ -545,7 +551,11 @@ static void run_trial(const options *o, const registry *reg, int prec, int cplx,
         now = b.ns;
       }
       sample_overhead();
-      if (round + 1 >= MIN_ROUNDS && (double)(now - start.ns) >= o->case_seconds * 1e9) break;
+      if (round + 1 >= MIN_ROUNDS && (double)(now - start.ns) >= o->case_seconds * 1e9) {
+        int short_of_clean = 0;
+        for (int i = 0; i < count && g_counted; i++) short_of_clean |= slots[i].clean < MIN_CLEAN;
+        if (!short_of_clean || (double)(now - start.ns) >= CLEAN_PATIENCE * o->case_seconds * 1e9) break;
+      }
     }
 
     if (!all_zero(&bufs, prec)) {
