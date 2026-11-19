@@ -113,6 +113,7 @@ jobs:
           cat "out/$RUNNER_LABEL-system.txt"
 
       - name: Sweep
+        id: sweep
         if: github.event_name == 'push' || inputs.sweep
         run: |
           fftw=
@@ -120,6 +121,23 @@ jobs:
           # BENCH_ARGS and fftw are split into words on purpose
           # shellcheck disable=SC2086
           $PY bench/run.py $fftw -o "out/$RUNNER_LABEL.csv" -- $BENCH_ARGS --quiet
+
+      - name: Diagnose
+        # if the sweep failed: each engine alone on one small case, to see which fails
+        if: failure() && steps.sweep.outcome == 'failure'
+        run: |
+          set +e
+          exe=$(find build_bench_cache/local -type f \( -name bench_fft -o -name bench_fft.exe \) | head -n 1)
+          echo "bench_fft: $exe"
+          "$exe" --list; echo "--list: exit $?"
+          for prec in f32 f64; do
+            for xform in real cplx; do
+              for engine in $("$exe" --list | sed -n "s/^$prec: //p"); do
+                "$exe" --engines "$engine" --prec "$prec" --xform "$xform" --sizes 32 --rounds 10 --case-seconds 0 --csv - > diag.out 2> diag.err
+                echo "$prec $xform $engine: exit $? $(tail -n 1 diag.err)"
+              done
+            done
+          done
 
       - name: Compare
         if: inputs.compare
