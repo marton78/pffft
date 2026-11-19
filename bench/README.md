@@ -43,8 +43,10 @@ python3 bench/run.py --target ios --fftw -o ios.csv
 python3 bench/run.py -- --sizes 1024,4096 --prec f32 --trials 3   # after --: bench_fft options
 python3 bench/compare.py master .                   # the working tree against master
 python3 bench/compare.py c14802c master --target android -o cmp.csv
+uv run --with matplotlib python3 bench/plot.py local.csv -o local.png
+uv run --with matplotlib python3 bench/plot.py local.csv --engines pffft -o pffft.png
 uv run --with matplotlib python3 bench/plot.py local.csv android.csv -o devices.png
-uv run --with matplotlib python3 bench/plot.py --ns local.csv -o local-ns.png   # time, not cycles
+uv run --with matplotlib python3 bench/plot.py cmp.csv -o cmp.png          # B vs A
 ```
 
 - **run.py** prints the tables and saves the CSV with `-o`. bench_fft options
@@ -58,14 +60,18 @@ uv run --with matplotlib python3 bench/plot.py --ns local.csv -o local-ns.png   
   `-o` saves the measurements of all launches as one CSV, for plot.py.
   Each revision builds with its own defaults, so v1.0.0 and v1.1.0 get no
   NEON on arm64.
-- **plot.py** draws the cost per transform divided by n·log2(n) against n: a
-  panel per precision and transform kind, a line per engine through the powers
-  of two, markers at other lengths. Hollow markers show what vdsp and green,
-  which do only powers of two, cost at the next power of two. Dotted lines mark
-  where 4 arrays of n samples fill a cache (a rough guide), if the CSV header
-  gives cache sizes and all files give the same. Several files are overlaid,
-  one line style each. Cycles where every row has them, else ns; `--ns`
-  forces ns. It needs matplotlib 3.7 or later.
+- **plot.py** draws speed against n, higher is faster: flops per CPU cycle,
+  counting 5·n·log2(n) flops per complex transform and 2.5·n·log2(n) per real
+  one (benchFFT's convention), so that lengths compare fairly. A panel per
+  precision and transform kind; per engine a solid line through the powers of
+  two and a dashed one through the other lengths, with a band for the range
+  over trials. Vertical lines mark where 4 arrays of n samples fill a cache (a
+  rough guide), if the CSV header gives cache sizes and all files give the
+  same. `--engines` picks engines. `--gflops` plots GFLOPS, from time, which
+  depend on the clock (and is what there is without a cycle counter); use it
+  to compare devices. Several files are overlaid, one marker shape each. A CSV
+  of `compare.py -o` gives B vs A per n, with the range over launches and
+  trials. It needs matplotlib 3.7 or later.
 
 With everything built, the default sweep took 37 s on an Apple M2. With
 `--fftw` it took 2 min 21 s there, 4 min 11 s on an Android phone (MT6878) and
