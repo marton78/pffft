@@ -58,7 +58,11 @@ uv run --with matplotlib python3 bench/plot.py mac-cmp.csv ios-cmp.csv --names 1
 ```
 
 - **run.py** prints the tables and saves the CSV with `-o`. bench_fft options
-  after `--` take the form `--opt value`.
+  after `--` take the form `--opt value`. run.py and compare.py build for
+  this computer's CPU: `TARGET_C_ARCH=native` (-march=native; with MSVC
+  /arch:AVX512 or AVX2 where the CPU has them), for pffft, the other engines
+  and FFTW alike; the CSV header says `target_arch`. Phones get the default
+  of their toolchain.
 - **compare.py** builds both revisions as shared libraries with their own
   CMake (any revision from `fde5014` on; `.` is the working tree), loads both
   into one bench_fft and prints the cost of A and B per case, and "B vs A":

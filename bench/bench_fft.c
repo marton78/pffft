@@ -42,6 +42,10 @@ const char *pffftd_simd_arch(void);
 #  define BENCH_COMPILER "unknown"
 #endif
 
+#ifndef BENCH_TARGET_ARCH
+#  define BENCH_TARGET_ARCH "" /* TARGET_C_ARCH of the build: -march or /arch */
+#endif
+
 #define MAX_SIZES 512
 #define MAX_LIBS 8
 #define MAX_PAIRS (1 << 24)
@@ -592,6 +596,7 @@ static void write_header(FILE *f, const char *prefix, const options *o, const ch
   bench_platform_describe(f, prefix);
   fprintf(f, "%scompiler: %s\n", prefix, BENCH_COMPILER);
   fprintf(f, "%spffft_simd: %s\n", prefix, simd_name());
+  fprintf(f, "%starget_arch: %s\n", prefix, BENCH_TARGET_ARCH[0] ? BENCH_TARGET_ARCH : "none");
   fprintf(f, "%strials: %d\n", prefix, o->trials);
   fprintf(f, "%srounds: %d\n", prefix, o->rounds);
   fprintf(f, "%sbatch_us: %g\n", prefix, o->batch_us);

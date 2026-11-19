@@ -39,6 +39,8 @@ endif()
 macro(bench_submodule dir lib definition)
   if (EXISTS "${PFFFT_SOURCE_DIR}/${dir}/CMakeLists.txt")
     add_subdirectory("${PFFFT_SOURCE_DIR}/${dir}" "${CMAKE_CURRENT_BINARY_DIR}/${dir}")
+    # the same -march / /arch as pffft (TARGET_C_ARCH), for a fair comparison
+    target_set_c_arch_flags(${lib})
     if (MSVC)
       # Their CMakeLists.txt are written for GCC and Clang: MSVC rejects their
       # warning options (-Werror) and has no libm to link.
@@ -120,8 +122,11 @@ endif()
 
 ######################################################
 
-# what the other C targets of the project get, too
+# what the other C targets of the project get, too, and the same -march /
+# /arch as pffft (TARGET_C_ARCH), which the CSV header records
 function(bench_target_setup target)
+  target_set_c_arch_flags(${target})
+  target_compile_definitions(${target} PRIVATE "BENCH_TARGET_ARCH=\"${TARGET_C_ARCH}\"")
   target_compile_definitions(${target} PRIVATE _USE_MATH_DEFINES)
   target_activate_c_compiler_warnings(${target})
   if (PFFFT_USE_DEBUG_ASAN)

@@ -199,14 +199,39 @@ def lib_options(libs: dict) -> list:
     return [a for label, path in (libs or {}).items() for a in ("--lib", f"{label}={path}")]
 
 
+def local_arch() -> str:
+    """TARGET_C_ARCH for the best code for this computer's CPU: native for
+    GCC and Clang. MSVC has no such flag: AVX512 or AVX2 where the CPU has
+    them (x64), else its default."""
+    if os.name != "nt":
+        return "native"
+    import ctypes
+    import platform
+    if platform.machine().lower() in ("amd64", "x86_64"):
+        present = ctypes.windll.kernel32.IsProcessorFeaturePresent
+        if present(41):  # PF_AVX512F_INSTRUCTIONS_AVAILABLE
+            return "AVX512"
+        if present(40):  # PF_AVX2_INSTRUCTIONS_AVAILABLE
+            return "AVX2"
+    return "none"
+
+
 class LocalTarget(Target):
-    """This computer."""
+    """This computer. Everything is built for its CPU (-march=native or the
+    best /arch), pffft, the other engines and FFTW alike: a benchmark that
+    only runs here may use all of it, and a comparison should give every
+    library the same chance."""
 
     name = "local"
 
+    def __init__(self):
+        self.arch = local_arch()
+        self.cmake_args = [f"-DTARGET_C_ARCH={self.arch}"]  # after COMMON_ARGS: wins
+
     def fftw_build_args(self):
         import build_fftw
-        return {"configure_args": build_fftw.native_simd_args()}
+        cflags = "-O3 -march=native" if self.arch == "native" else "-O3"
+        return {"cflags": cflags, "configure_args": build_fftw.native_simd_args()}
 
     def run(self, harness, bench_args, libs=None):
         cmd = [str(harness), *bench_args, *lib_options(libs), "--csv", "-"]
