@@ -58,7 +58,11 @@ macro(bench_submodule dir lib definition)
   endif()
 endmacro()
 
-if (PFFFT_USE_BENCH_GREEN AND PFFFT_USE_TYPE_FLOAT)  # single precision only
+if (PFFFT_USE_BENCH_GREEN AND PFFFT_USE_TYPE_FLOAT AND WIN32)
+  # It crashes there (MSVC, x64 and ARM64), probably through its use of long,
+  # which has 32 bits on Windows also on 64-bit systems.
+  message(STATUS "Green FFT is left out of bench_fft on Windows, where it crashes")
+elseif (PFFFT_USE_BENCH_GREEN AND PFFFT_USE_TYPE_FLOAT)  # single precision only
   # only its library: its test programs do not compile with current compilers
   # and its tests need Octave
   bench_submodule(greenffts/src GreenFFT HAVE_GREEN_FFTS)

@@ -174,7 +174,7 @@ What it cannot do:
 | `fftw-est`, `fftw-meas` | FFTW 3.3.10 from `FFTW3_ROOT` | f32, f64 | any; `fftw-meas` up to `--fftw-measure-max` (65536) | FFTW_ESTIMATE plans from a cost model, at once, as pffft sets up; FFTW_MEASURE plans by timing candidate algorithms first (about 5 s at n = 262144 on an M2, outside the timing), an advantage no other engine takes |
 | `kissfft` | submodule `kissfft` | f32 | any (real: even) | |
 | `pocketfft` | submodule `pocketfft` | f32, f64 | any | |
-| `green` | submodule `greenffts` | f32 | powers of two | |
+| `green` | submodule `greenffts` | f32 | powers of two | not on Windows, where it crashes |
 | `vdsp` | Apple Accelerate | f32, f64 | powers of two | Apple only; f32 from n = 256 or 512 slows the clock while it runs, and is charged for it (see above) |
 | `mkl` | Intel oneMKL | f32, f64 | any | not yet run with bench_fft |
 
