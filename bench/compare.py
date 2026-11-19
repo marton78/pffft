@@ -2,7 +2,7 @@
 """Compare the speed of pffft at two revisions, measured side by side.
 
     python3 bench/compare.py REV_A REV_B [--target T] [--sizes LIST] [--prec LIST]
-                             [--xform LIST] [--launches 3] [--trials 2] [--fftw]
+                             [--xform LIST] [--launches 3] [--trials 2] [--fftw] [-o FILE]
 
 A revision is anything git rev-parse understands, or '.' for the working tree.
 Each is built as a shared library with its own CMake; bench_fft from the working
@@ -10,14 +10,17 @@ tree loads both and times them batch by batch, in random order, in one process.
 That process is launched several times, because at small n one launch can
 favour one library in all its trials (code placement, which trials do not
 vary); the range then shows it. "B vs A" is B's cost relative to A's:
-negative means B is faster.
+negative means B is faster. -o saves the measurements of all launches as one
+CSV, for plot.py.
 """
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import statistics
 import sys
+from pathlib import Path
 
 import results
 import targets
@@ -38,9 +41,12 @@ def main() -> None:
     ap.add_argument("--launches", type=int, default=3, help="separate runs of bench_fft (default: 3)")
     ap.add_argument("--trials", type=int, default=2, help="trials per launch (default: 2)")
     ap.add_argument("--fftw", action="store_true", help="also measure FFTW (FFTW_MEASURE plans, n <= 65536), for reference")
+    ap.add_argument("-o", metavar="FILE", type=Path, help="save the CSV of all launches to FILE")
     args = ap.parse_args()
     if args.launches < 1:
         ap.error("--launches must be at least 1")
+    if args.o and not os.access(args.o.parent, os.W_OK):  # fail now, not after measuring
+        ap.error(f"cannot write to {args.o.parent}")
 
     target = targets.make_target(args.target)
     (commit_a, src_a), (commit_b, src_b) = targets.export_rev(args.rev_a), targets.export_rev(args.rev_b)
@@ -62,6 +68,10 @@ def main() -> None:
         for r in launch_rows:
             r["trial"] += launch * args.trials
         rows += launch_rows
+    if args.o:
+        meta.update(trials=args.launches * args.trials, launches=args.launches,
+                    A=f"{args.rev_a} ({commit_a[:10]})", B=f"{args.rev_b} ({commit_b[:10]})")
+        results.write_csv(args.o, meta, rows)
 
     for label, rev, commit in (("A", args.rev_a, commit_a), ("B", args.rev_b, commit_b)):
         print(f"{label} = {rev} ({'working tree' if commit == '.' else commit})")

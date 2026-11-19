@@ -42,7 +42,7 @@ python3 bench/run.py --target android --fftw -o android.csv
 python3 bench/run.py --target ios --fftw -o ios.csv
 python3 bench/run.py -- --sizes 1024,4096 --prec f32 --trials 3   # after --: bench_fft options
 python3 bench/compare.py master .                   # the working tree against master
-python3 bench/compare.py c14802c master --target android
+python3 bench/compare.py c14802c master --target android -o cmp.csv
 uv run --with matplotlib python3 bench/plot.py local.csv android.csv -o devices.png
 uv run --with matplotlib python3 bench/plot.py --ns local.csv -o local-ns.png   # time, not cycles
 ```
@@ -55,6 +55,7 @@ uv run --with matplotlib python3 bench/plot.py --ns local.csv -o local-ns.png   
   B's cost relative to A's, the median over 3 launches of 2 trials each
   (`--launches`, `--trials`), with its range. Negative means B is faster.
   `--fftw` adds FFTW as a reference. `compare.py X X` shows the noise floor.
+  `-o` saves the measurements of all launches as one CSV, for plot.py.
   Each revision builds with its own defaults, so v1.0.0 and v1.1.0 get no
   NEON on arm64.
 - **plot.py** draws the cost per transform divided by n·log2(n) against n: a

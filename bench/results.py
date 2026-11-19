@@ -61,6 +61,17 @@ def read_csv(source):
     return meta, rows
 
 
+def write_csv(path: Path, meta, rows) -> None:
+    """Write meta and rows as read_csv returns them, as a pffft-bench CSV."""
+    def cell(v):
+        return "" if v is None else str(v)
+    lines = ["# pffft-bench 1"] + [f"# {k}: {v}" for k, v in meta.items() if k != "format"]
+    columns = list(rows[0]) if rows else ["engine"]
+    lines.append(",".join(columns))
+    lines += [",".join(cell(r[c]) for c in columns) for r in rows]
+    Path(path).write_text("\n".join(lines) + "\n")
+
+
 def by_case(rows, field):
     """{(engine, prec, xform, n): [value of each trial]}, in the order of the
     rows; trials without the value are left out."""
