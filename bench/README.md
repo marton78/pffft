@@ -213,6 +213,27 @@ automatic signing. Keep the phone unlocked while it runs. The app,
 `com.example.pffft.bench`, stays installed; remove it with
 `xcrun devicectl device uninstall app --device UDID com.example.pffft.bench`.
 
+## Other CPUs, on GitHub's runners
+
+`.github/workflows/bench.yml` runs the sweep, and optionally compare.py, on
+GitHub-hosted runners: by default x86_64 and arm64 Linux, Apple-silicon and
+Intel macOS, x86_64 and arm64 Windows. It never starts by itself, only by
+hand, and only once it is on the default branch:
+
+```sh
+gh workflow run bench.yml --ref my-branch -f runners=ubuntu-26.04-arm,macos-26-intel -f compare="v1.3.0 HEAD"
+gh run watch
+gh run download <run id> --dir bench-results
+uv run --with matplotlib python3 bench/plot.py bench-results/bench-ubuntu-26.04-arm/ubuntu-26.04-arm.csv -o arm.png
+```
+
+Each runner uploads an artifact `bench-<runner>` with the CSVs and what the
+system says about its CPU (`<runner>-system.txt`); the workflow draws no
+plots. Runners are virtual machines that others share, so expect more noise
+than at home; a Linux VM may expose no cycle counter, and Windows has none
+(the CSV header says `counter: none`; plots then show GFLOPS). FFTW is left
+out on Windows, where build_fftw.py cannot run.
+
 ## CSV
 
 `bench_fft --csv FILE` writes the results; with `--csv -` they go to stdout

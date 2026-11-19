@@ -172,7 +172,9 @@ def cmake_build(src: Path, build: Path, args, cmake_target: str) -> None:
     each time is cheap and picks up changed arguments. The tools' output is
     shown only if they fail."""
     first = not (build / "CMakeCache.txt").exists()
-    gen = ["-G", "Ninja"] if first and shutil.which("ninja") else []
+    # Ninja where there is one, but not on Windows: there it would take whatever
+    # compiler the PATH has; the default generator is Visual Studio, with MSVC
+    gen = ["-G", "Ninja"] if first and shutil.which("ninja") and os.name != "nt" else []
     log(f"building {cmake_target} in {build}")
     for cmd in (["cmake", "-S", str(src), "-B", str(build), *gen, *args],
                 ["cmake", "--build", str(build), "--target", cmake_target, "--config", "Release",
