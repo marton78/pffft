@@ -74,6 +74,12 @@ def device(cpu):
     return re.sub(r"\s+", " ", cpu).strip()
 
 
+def system(meta) -> str:
+    """The operating system, short: Linux without its kernel version."""
+    os_name = meta.get("os") or ""
+    return "Linux" if os_name.startswith("Linux") else os_name
+
+
 def machine(meta) -> str:
     """The device, by a readable name where known, and its system."""
     return ", ".join(x for x in (device(meta.get("cpu")), meta.get("os")) if x) or "unknown machine"
@@ -324,6 +330,8 @@ def plot_engines(args, files, plt) -> None:
     title = (f"{label_for(engines[0])} speed" if single else "FFT speed")
     if len(files) == 1:
         title += f" on {device(files[0][1].get('cpu')) or '?'}"
+        if system(files[0][1]):
+            title += f", {system(files[0][1])}"
     title += "; higher is faster"
     if field == "cycles":
         sub = ("flops per CPU cycle: 5·n·log₂n per complex transform, 2.5·n·log₂n per real one, "

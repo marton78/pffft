@@ -396,7 +396,17 @@ static uint64_t now_ns(void) {
 static void describe(machine *m) {
   HKEY key;
   DWORD len = (DWORD)sizeof m->cpu - 1; /* m is zero-filled: the text stays terminated */
+  char build[16] = {0};
+  DWORD blen = (DWORD)sizeof build - 1;
   snprintf(m->os, sizeof m->os, "Windows");
+  /* the build number names the release (26100: Windows 11 24H2 and Server
+   * 2025); ProductName says "Windows 10" also on Windows 11 */
+  if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", 0, KEY_READ, &key) ==
+      ERROR_SUCCESS) {
+    if (RegQueryValueExA(key, "CurrentBuildNumber", NULL, NULL, (LPBYTE)build, &blen) == ERROR_SUCCESS && build[0])
+      snprintf(m->os, sizeof m->os, "Windows build %s", build);
+    RegCloseKey(key);
+  }
   if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 0, KEY_READ,
                     &key) != ERROR_SUCCESS)
     return;
