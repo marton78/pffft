@@ -1,7 +1,10 @@
 # Benchmarks on GitHub's hosted runners, to measure CPUs we do not own.
 #
-# Runs only when started by hand: never on push, pull request or schedule.
-# Start it from the Actions tab ("Benchmark", "Run workflow") or with
+# For now it also runs on every push to the branch bench-rewrite, with the
+# defaults below (no compare.py); remove the "push:" trigger (marked
+# TEMPORARY) to make it manual only. It never runs on pull requests or on a
+# schedule. Start it by hand from the Actions tab ("Benchmark", "Run
+# workflow") or with
 #
 #   gh workflow run bench.yml --ref <branch> -f runners=ubuntu-26.04-arm,macos-26
 #   gh run watch
@@ -20,6 +23,8 @@
 name: Benchmark
 
 on:
+  push: # TEMPORARY: remove this trigger, and the workflow runs only by hand
+    branches: [bench-rewrite]
   workflow_dispatch:
     inputs:
       runners:
@@ -46,6 +51,15 @@ on:
 permissions:
   contents: read
 
+# a newer push to the same branch cancels the run of the older one
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+# A push has no inputs: these are the defaults of workflow_dispatch above.
+env:
+  DEFAULT_RUNNERS: "ubuntu-26.04,ubuntu-26.04-arm,macos-26,macos-26-intel,windows-2025,windows-11-arm"
+
 jobs:
   runners:
     runs-on: ubuntu-latest
@@ -54,7 +68,7 @@ jobs:
     steps:
       - id: parse
         env:
-          RUNNERS: ${{ inputs.runners }}
+          RUNNERS: ${{ inputs.runners || env.DEFAULT_RUNNERS }}
         run: |
           python3 -c 'import json, os; print("list=" + json.dumps([r.strip() for r in os.environ["RUNNERS"].split(",") if r.strip()]))' >> "$GITHUB_OUTPUT"
 
@@ -71,9 +85,8 @@ jobs:
         shell: bash
     env:
       RUNNER_LABEL: ${{ matrix.runner }}
-      SWEEP: ${{ inputs.sweep }}
-      FFTW: ${{ inputs.fftw }}
-      BENCH_ARGS: ${{ inputs.bench_args }}
+      FFTW: ${{ github.event_name == 'push' || inputs.fftw }}
+      BENCH_ARGS: ${{ inputs.bench_args || '--trials 3' }}
       COMPARE: ${{ inputs.compare }}
     steps:
       - uses: actions/checkout@v7
@@ -100,7 +113,7 @@ jobs:
           cat "out/$RUNNER_LABEL-system.txt"
 
       - name: Sweep
-        if: inputs.sweep
+        if: github.event_name == 'push' || inputs.sweep
         run: |
           fftw=
           if [ "$FFTW" = true ] && [ "$RUNNER_OS" != Windows ]; then fftw=--fftw; fi
@@ -109,7 +122,7 @@ jobs:
           $PY bench/run.py $fftw -o "out/$RUNNER_LABEL.csv" -- $BENCH_ARGS --quiet
 
       - name: Compare
-        if: inputs.compare != ''
+        if: inputs.compare
         run: |
           read -r rev_a rev_b <<< "$COMPARE"
           if [ -z "$rev_b" ]; then echo "compare needs two revisions, got '$COMPARE'"; exit 1; fi

@@ -217,8 +217,10 @@ automatic signing. Keep the phone unlocked while it runs. The app,
 
 `.github/workflows/bench.yml` runs the sweep, and optionally compare.py, on
 GitHub-hosted runners: by default x86_64 and arm64 Linux, Apple-silicon and
-Intel macOS, x86_64 and arm64 Windows. It never starts by itself, only by
-hand, and only once it is on the default branch:
+Intel macOS, x86_64 and arm64 Windows. For now it runs on every push to the
+branch `bench-rewrite`, with the defaults (TEMPORARY: without the `push:`
+trigger it runs only by hand). By hand, which works once the workflow is on
+the default branch:
 
 ```sh
 gh workflow run bench.yml --ref my-branch -f runners=ubuntu-26.04-arm,macos-26-intel -f compare="v1.3.0 HEAD"
