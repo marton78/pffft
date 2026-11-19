@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -61,10 +62,20 @@ def bytes_label(b: int) -> str:
 DEVICES = {"iPhone12,3": "iPhone 11 Pro (A13)", "iPhone12,1": "iPhone 11 (A13)", "MT6878": "MediaTek MT6878"}
 
 
+def device(cpu):
+    """A readable name for a CPU or device id: a known name, or the id
+    without trademark signs and clock ("Intel(R) Core(TM) i7-8700B CPU @
+    3.20GHz": "Intel Core i7-8700B")."""
+    if not cpu or cpu in DEVICES:
+        return DEVICES.get(cpu, cpu)
+    cpu = re.sub(r"\((R|TM|tm|r)\)", "", cpu)
+    cpu = re.sub(r"\s+(CPU\s+)?@\s*[\d.]+\s*GHz", "", cpu)
+    return re.sub(r"\s+", " ", cpu).strip()
+
+
 def machine(meta) -> str:
     """The device, by a readable name where known, and its system."""
-    cpu = meta.get("cpu")
-    return ", ".join(x for x in (DEVICES.get(cpu, cpu), meta.get("os")) if x) or "unknown machine"
+    return ", ".join(x for x in (device(meta.get("cpu")), meta.get("os")) if x) or "unknown machine"
 
 
 def style_axes(ax) -> None:
@@ -311,7 +322,7 @@ def plot_engines(args, files, plt) -> None:
 
     title = (f"{label_for(engines[0])} speed" if single else "FFT speed")
     if len(files) == 1:
-        title += f" on {DEVICES.get(files[0][1].get('cpu'), files[0][1].get('cpu', '?'))}"
+        title += f" on {device(files[0][1].get('cpu')) or '?'}"
     title += "; higher is faster"
     if field == "cycles":
         sub = ("flops per CPU cycle: 5·n·log₂n per complex transform, 2.5·n·log₂n per real one, "
