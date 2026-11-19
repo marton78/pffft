@@ -312,6 +312,33 @@ static int cpuinfo_text(const char *key, char *out, size_t n) {
   fclose(f);
   return found;
 }
+
+/* arm64 /proc/cpuinfo names no model, only the implementer and part numbers
+ * of the core; servers (GitHub's arm64 runners, AWS Graviton) are known by
+ * them. Writes "" if there are none. */
+static void arm_core_name(char *out, size_t n) {
+  static const struct {
+    unsigned implementer, part;
+    const char *name;
+  } known[] = {{0x41, 0xd0c, "Arm Neoverse N1"}, {0x41, 0xd40, "Arm Neoverse V1"}, {0x41, 0xd49, "Arm Neoverse N2"},
+               {0x41, 0xd4f, "Arm Neoverse V2"}, {0x41, 0xd8e, "Arm Neoverse N3"}, {0x41, 0xd84, "Arm Neoverse V3"},
+               {0x41, 0xd08, "Arm Cortex-A72"},  {0x41, 0xd0b, "Arm Cortex-A76"},  {0xc0, 0xac3, "AmpereOne"},
+               {0x61, 0, "Apple"}};
+  char implementer[32], part[32];
+  unsigned imp, prt;
+  out[0] = 0;
+  if (!cpuinfo_text("CPU implementer", implementer, sizeof implementer) || !cpuinfo_text("CPU part", part, sizeof part))
+    return;
+  imp = (unsigned)strtoul(implementer, NULL, 0);
+  prt = (unsigned)strtoul(part, NULL, 0);
+  for (size_t i = 0; i < sizeof known / sizeof known[0]; i++) {
+    if (known[i].implementer == imp && (known[i].part == prt || known[i].part == 0)) {
+      snprintf(out, n, "%s", known[i].name);
+      return;
+    }
+  }
+  snprintf(out, n, "arm64 core, implementer 0x%x, part 0x%x", imp, prt);
+}
 #  endif
 
 static void describe(machine *m) {
@@ -328,8 +355,9 @@ static void describe(machine *m) {
   struct utsname u;
   snprintf(m->os, sizeof m->os, "Linux");
   if (uname(&u) == 0) snprintf(m->os, sizeof m->os, "%.40s %.40s", u.sysname, u.release);
-  if (!cpuinfo_text("model name", m->cpu, sizeof m->cpu) && !cpuinfo_text("Hardware", m->cpu, sizeof m->cpu))
-    cpuinfo_text("Model", m->cpu, sizeof m->cpu);
+  if (!cpuinfo_text("model name", m->cpu, sizeof m->cpu) && !cpuinfo_text("Hardware", m->cpu, sizeof m->cpu) &&
+      !cpuinfo_text("Model", m->cpu, sizeof m->cpu))
+    arm_core_name(m->cpu, sizeof m->cpu);
 #  endif
   for (int i = 0; i < 8; i++) {
     char leaf[48], type[32], size[32], *unit;
