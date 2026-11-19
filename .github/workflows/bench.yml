@@ -36,7 +36,7 @@ on:
         type: boolean
         default: true
       fftw:
-        description: "Include FFTW, built from source (not on Windows)"
+        description: "Include FFTW, built from source (not on Windows ARM64)"
         type: boolean
         default: true
       bench_args:
@@ -117,7 +117,8 @@ jobs:
         if: github.event_name == 'push' || inputs.sweep
         run: |
           fftw=
-          if [ "$FFTW" = true ] && [ "$RUNNER_OS" != Windows ]; then fftw=--fftw; fi
+          # FFTW's CMake build, the one Windows can use, has no NEON
+          if [ "$FFTW" = true ] && { [ "$RUNNER_OS" != Windows ] || [ "$RUNNER_ARCH" = X64 ]; }; then fftw=--fftw; fi
           # BENCH_ARGS and fftw are split into words on purpose
           # shellcheck disable=SC2086
           $PY bench/run.py $fftw -o "out/$RUNNER_LABEL.csv" -- $BENCH_ARGS --quiet

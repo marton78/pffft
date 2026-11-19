@@ -237,8 +237,9 @@ Each runner uploads an artifact `bench-<runner>` with the CSVs and what the
 system says about its CPU (`<runner>-system.txt`); the workflow draws no
 plots. Runners are virtual machines that others share, so expect more noise
 than at home; a Linux VM may expose no cycle counter, and Windows has none
-(the CSV header says `counter: none`; plots then show GFLOPS). FFTW is left
-out on Windows, where build_fftw.py cannot run.
+(the CSV header says `counter: none`; plots then show GFLOPS). On Windows
+build_fftw.py uses FFTW's CMake build with MSVC, which has SSE2, AVX and
+AVX2 but no AVX-512 and no NEON: FFTW is left out on Windows ARM64.
 
 ## CSV
 

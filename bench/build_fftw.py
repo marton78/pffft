@@ -7,7 +7,9 @@
 Package-manager builds of FFTW may lack SIMD (Homebrew's on Apple Silicon
 plans with scalar codelets), which would understate FFTW in the benchmark.
 Targets call build() with their own compiler, --host triplet and flags.
-Needs a POSIX shell, make and tar.
+Needs a POSIX shell and make; on Windows, CMake and Visual Studio instead,
+for x64 only: FFTW's CMake build, which Windows needs, has SSE2, AVX and
+AVX2 but neither AVX-512 nor NEON.
 """
 import argparse
 import hashlib
@@ -16,6 +18,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import tarfile
 import urllib.request
 from pathlib import Path
 
@@ -58,15 +61,65 @@ def run(cmd, cwd, env, log):
     with open(log, "a") as f:
         if subprocess.run([str(c) for c in cmd], cwd=cwd, env=env, stdout=f,
                           stderr=subprocess.STDOUT).returncode:
-            sys.exit(f"build_fftw: '{' '.join(map(str, cmd))}' failed, see {log}")
+            tail = Path(log).read_text(errors="replace").splitlines()[-40:]
+            sys.exit("\n".join(tail) + f"\nbuild_fftw: '{' '.join(map(str, cmd))}' failed, see {log}")
+
+
+def unpack(tarball, into):
+    with tarfile.open(tarball) as t:
+        t.extractall(into, **({"filter": "data"} if hasattr(tarfile, "data_filter") else {}))
+
+
+# configure's SIMD flags and the options of FFTW's CMake build that do the same
+CMAKE_SIMD = {"--enable-sse2": "ENABLE_SSE2", "--enable-avx": "ENABLE_AVX", "--enable-avx2": "ENABLE_AVX2"}
+
+
+def build_cmake(prefix, configure_args):
+    """build() on Windows, where configure cannot run: FFTW's own CMake build
+    with the default generator (Visual Studio, MSVC). It knows SSE2, AVX and
+    AVX2 only; other SIMD flags are dropped, and on ARM64, where it has no
+    NEON, it refuses, as FFTW would be scalar there."""
+    if platform.machine().lower() in ("arm64", "aarch64"):
+        sys.exit("build_fftw: FFTW's CMake build, the one Windows can use, has no NEON: "
+                 "FFTW would run scalar on Windows ARM64, so it is not built there")
+    simd = [f"-D{CMAKE_SIMD[a]}=ON" for a in configure_args if a in CMAKE_SIMD]
+    dropped = [a for a in configure_args if a not in CMAKE_SIMD]
+    common = [f"-DCMAKE_INSTALL_PREFIX={prefix}", "-DBUILD_SHARED_LIBS=OFF", "-DBUILD_TESTS=OFF",
+              "-DDISABLE_FORTRAN=ON", "-DCMAKE_BUILD_TYPE=Release",
+              "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"] + simd  # FFTW asks for CMake 3.0
+    args = {"float": common + ["-DENABLE_FLOAT=ON"], "double": common}
+    stamp = prefix / "build_fftw.txt"
+    recipe = "".join(f"cmake {' '.join(a)}\n" for a in args.values())
+    if stamp.is_file() and stamp.read_text() == recipe:
+        return prefix
+    if dropped:
+        print(f"build_fftw: FFTW's CMake build has no option for {' '.join(dropped)}: left out",
+              file=sys.stderr)
+    work = prefix / "build"
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True)
+    log = work / "log.txt"
+    unpack(fetch(), work)
+    for prec, a in args.items():
+        print(f"build_fftw: {prec}: cmake {' '.join(a)}", file=sys.stderr)
+        run(["cmake", "-S", work / f"fftw-{VERSION}", "-B", work / prec, *a], work, None, log)
+        run(["cmake", "--build", work / prec, "--config", "Release", "--target", "install",
+             "--parallel", str(os.cpu_count() or 4)], work, None, log)
+    shutil.rmtree(work)
+    stamp.write_text(recipe)
+    return prefix
 
 
 def build(prefix, *, cc="cc", cflags="-O3", host=None, configure_args=()):
     """Build libfftw3f.a and libfftw3.a and fftw3.h into prefix (lib/, include/)
     unless they are already there; return prefix. host is the autoconf --host
     triplet for cross builds, None for native. configure_args carries the SIMD
-    flags, chosen by the caller (the target)."""
+    flags, chosen by the caller (the target). On Windows (native only) FFTW's
+    CMake build makes fftw3f.lib and fftw3.lib instead; cc and cflags do not
+    apply there."""
     prefix = Path(prefix).resolve()
+    if os.name == "nt" and not host:
+        return build_cmake(prefix, configure_args)
     common = [f"--prefix={prefix}", "--disable-shared", "--disable-fortran",
               "--disable-doc"] + ([f"--host={host}"] if host else [])
     args = {"float": common + ["--enable-float", *configure_args],
@@ -88,7 +141,7 @@ def build(prefix, *, cc="cc", cflags="-O3", host=None, configure_args=()):
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
     log = work / "log.txt"
-    run(["tar", "xzf", fetch()], work, env, log)
+    unpack(fetch(), work)
     for prec, a in args.items():
         print(f"build_fftw: {prec}: configure {' '.join(a)}", file=sys.stderr)
         (work / prec).mkdir()
@@ -112,6 +165,8 @@ def native_simd_args():
         if sys.platform == "darwin":
             avx512 = subprocess.run(["sysctl", "-n", "hw.optional.avx512f"],
                                     capture_output=True, text=True).stdout.strip() == "1"
+        elif os.name == "nt":
+            avx512 = False  # FFTW's CMake build, the one Windows can use, has no AVX-512
         else:
             cpuinfo = Path("/proc/cpuinfo")
             avx512 = cpuinfo.is_file() and "avx512f" in cpuinfo.read_text().split()
