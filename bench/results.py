@@ -5,7 +5,7 @@ import statistics
 from pathlib import Path
 
 INTS = ("n", "trial", "pairs", "batches", "clean")
-FLOATS = ("ns", "ns_median", "cycles", "cycles_median", "instructions", "mflops")
+FLOATS = ("ns", "ns_median", "cycles", "cycles_median", "instructions", "mflops", "ghz", "clock")
 UNITS = {"cycles": "CPU cycles per transform", "ns": "nanoseconds per transform", "mflops": "MFLOPS"}
 
 
@@ -53,8 +53,8 @@ def read_csv(source):
             row = dict(zip(columns, fields))
             for key in INTS:
                 row[key] = int(row[key])
-            for key in FLOATS:
-                row[key] = float(row[key]) if row[key] else None
+            for key in FLOATS:  # ghz and clock are missing from older files
+                row[key] = float(row[key]) if row.get(key) else None
             rows.append(row)
     if columns is None:
         raise ValueError("no pffft-bench CSV found")

@@ -101,6 +101,16 @@ FFTW the first time takes about 2 minutes per target.
   counting only with `kernel.perf_event_paranoid` at 2 or lower (Debian and
   Ubuntu set more; `sudo sysctl kernel.perf_event_paranoid=2`) and, in a
   container, a seccomp profile that allows `perf_event_open`.
+- **Engines that slow the clock.** On Apple chips the clock drops while the
+  AMX matrix unit works: by 7.7% for vDSP f32 FFTs from n = 512 (real) and
+  256 (complex) on the M2, more on the iPhone, and by about 23% for a small
+  sgemm. Cycles do not show that cost. bench_fft records the clock of every
+  clean batch and compares it with that of the batches of other engines just
+  before and after it (so that the system changing the clock does not count);
+  an engine whose median ratio is more than 2% below 1 is charged its cycles
+  at the others' clock, which makes it compare by time. The CSV columns `ghz`
+  and `clock` show this. Other engines stay within 0.04% of 1 (90th
+  percentile), 1.5% at most. AVX-512 slows Intel cores the same way.
 - **Self-check.** Before timing, every engine must transform random data
   correctly; one that fails is dropped with a message, and bench_fft exits
   with a nonzero status.
@@ -122,12 +132,9 @@ What it cannot do:
 - **Small n.** Up to a few hundred, single trials of identical code differ by
   up to about ±2.5%, and medians by up to 1%. Trust a difference there only
   when it is larger than the range of `compare.py X X` at that n.
-- **vdsp f32** counts too few cycles, for reasons unknown: on the iPhone, real
-  n = 1024 costs 1984 cycles against pffft's 1886, but 986 ns against 709.
-  Compare vdsp in time, with longer batches, for example
-  `bench_fft --sizes 1024,4096 --prec f32 --engines pffft,vdsp --show ns --batch-us 3000`.
-  plot.py uses cycles whenever every row has them, so it flatters vdsp:
-  use `plot.py --ns`.
+- **Alone, an engine that slows the clock** has nothing to be compared with:
+  run it with at least one other engine (`--engines vdsp` alone counts its
+  cycles at its own clock; the `clock` column is then empty).
 
 ## Engines
 
@@ -189,8 +196,8 @@ between the lines `#BEGIN-CSV` and `#END-CSV`. `bench/results.py` reads them.
 # date: 2026-11-11T19:57:30Z
 # os: macOS 26.5.2
 ...
-engine,prec,xform,n,trial,pairs,batches,clean,ns,ns_median,cycles,cycles_median,instructions,mflops
-pffft,f32,real,1024,0,304,100,100,480.127,493.970,1681.586,1682.602,10811.535,53319.3
+engine,prec,xform,n,trial,pairs,batches,clean,ns,ns_median,cycles,cycles_median,instructions,mflops,ghz,clock
+pffft,f32,real,1024,0,304,100,100,480.127,493.970,1681.586,1682.602,10811.535,53319.3,3.5038,0.9998
 ```
 
 The `#` lines describe the machine and the run (date in UTC, os, cpu,
@@ -206,6 +213,8 @@ There is one row per engine, precision (`f32`, `f64`), transform kind
 | `cycles`, `cycles_median` | the same in CPU cycles, over clean batches; empty without a counter or a clean batch |
 | `instructions` | per transform, in the fastest clean batch |
 | `mflops` | (5 complex, 2.5 real) · n · log2(n) / `ns` · 1000 |
+| `ghz` | the clock of the clean batches (cycles per ns, median) |
+| `clock` | that clock relative to the batches of other engines around them, median; below 0.98 the cycles were charged for it (see above); empty with one engine or without a counter |
 
 ## CMake options and tests
 

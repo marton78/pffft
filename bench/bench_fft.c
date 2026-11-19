@@ -47,6 +47,10 @@ const char *pffftd_simd_arch(void);
 #define MAX_PAIRS (1 << 24)
 #define MIN_ROUNDS 10     /* --case-seconds never ends a trial before this */
 #define PLACE_RANGE 16384 /* later trials shift each array by less than this */
+/* An engine whose batches ran at a clock this much below that of the batches
+ * around them slowed the clock itself, and its cycles are charged for it (see
+ * add_result). Other engines stay within 0.5%. */
+#define CLOCK_SLACK 0.02
 
 enum { F32, F64, NPREC };
 enum { SHOW_CYCLES, SHOW_NS, SHOW_MFLOPS };
@@ -89,7 +93,11 @@ typedef struct slot {
   int pairs, batches, clean;
   double *ns;     /* what the clock saw of every batch, overhead included */
   double *cycles; /* the same in CPU cycles, clean batches only */
+  double *ghz;    /* cycles per nanosecond of the clean batches */
+  double *ratios; /* the same relative to the batches around them */
+  int nratios;
   double best_cycles, best_instructions; /* of the cheapest clean batch */
+  double clock;   /* the median of ratios[], 0 if unknown */
 } slot;
 
 /* One line of the CSV. A negative value was not measured. */
@@ -97,6 +105,8 @@ typedef struct result {
   const bench_engine *e;
   int prec, cplx, n, trial, pairs, batches, clean;
   double ns, ns_median, cycles, cycles_median, instructions;
+  double ghz;   /* the engine's clock, cycles per nanosecond */
+  double clock; /* its clock relative to the other engines' (1: the same) */
 } result;
 
 static registry g_reg[NPREC];
@@ -353,21 +363,59 @@ static int calibrate(const slot *s, double target_ns) {
   return want < 1 ? 1 : want > MAX_PAIRS ? MAX_PAIRS : (int)want;
 }
 
-static void record(slot *s, const bench_snap *a, const bench_snap *b) {
+/* Returns the clock of the batch in cycles per nanosecond, 0 if it is not
+ * clean. */
+static double record(slot *s, const bench_snap *a, const bench_snap *b) {
   s->ns[s->batches++] = (double)(b->ns - a->ns);
   /* Clean: no cycles on another kind of core, which would be missing from the
    * count. A counter that stood still did not count this batch at all. */
-  if (g_counted && b->stray_cycles == a->stray_cycles && b->cycles != a->cycles) {
+  if (g_counted && b->stray_cycles == a->stray_cycles && b->cycles != a->cycles && b->ns > a->ns) {
     double cycles = (double)(b->cycles - a->cycles);
     if (s->clean == 0 || cycles < s->best_cycles) {
       s->best_cycles = cycles;
       s->best_instructions = (double)(b->instructions - a->instructions);
     }
-    s->cycles[s->clean++] = cycles;
+    s->ghz[s->clean] = cycles / (double)(b->ns - a->ns);
+    s->cycles[s->clean] = cycles;
+    return s->ghz[s->clean++];
   }
+  return 0;
 }
 
-/* Turns the batches of a slot into the cost of one transform. */
+/* The clock of each engine relative to the others': the median over its clean
+ * batches of the batch's clock over the faster of the nearest clean batches
+ * of other engines before and after it. Neighbours, so that the system
+ * changing the clock during a trial does not count; the faster one, because
+ * the clock recovers only some 40 us after AMX work, slowing the batch that
+ * follows. who[] and ghz[] are the slot and record() of each batch in turn. */
+static void clock_ratios(slot *slots, int count, const int *who, const double *ghz, int nseq) {
+  for (int i = 0; i < nseq; i++) {
+    double ref = 0;
+    if (ghz[i] <= 0) continue;
+    for (int j = i - 1; j >= 0 && ref == 0; j--)
+      if (who[j] != who[i] && ghz[j] > 0) ref = ghz[j];
+    for (int j = i + 1; j < nseq; j++) {
+      if (who[j] == who[i] || ghz[j] <= 0) continue;
+      if (ghz[j] > ref) ref = ghz[j];
+      break;
+    }
+    if (ref > 0) {
+      slot *s = &slots[who[i]];
+      s->ratios[s->nratios++] = ghz[i] / ref;
+    }
+  }
+  for (int i = 0; i < count; i++) slots[i].clock = slots[i].nratios ? median(slots[i].ratios, slots[i].nratios) : 0;
+}
+
+/* Turns the batches of a slot into the cost of one transform.
+ *
+ * Cycles do not count a clock that the engine itself slows: on Apple chips
+ * the clock drops by 10-25% while the AMX matrix unit works (vDSP uses it for
+ * f32 FFTs from n=256 or 512 on an M2), much as AVX-512 slows Intel cores.
+ * The engines take turns batch by batch, so a clock that differs between
+ * them is their own doing, not the system's. An engine that runs at a lower
+ * clock than the others is charged its cycles at theirs, which makes it
+ * compare by time. */
 static void add_result(slot *s, int prec, int cplx, int n, int trial) {
   const double per_transform = 0.5 / s->pairs;
   result *r;
@@ -387,10 +435,16 @@ static void add_result(slot *s, int prec, int cplx, int n, int trial) {
   r->clean = s->clean;
   r->ns_median = net(median(s->ns, s->batches), g_overhead.ns) * per_transform;
   r->ns = net(s->ns[0], g_overhead.ns) * per_transform;
-  r->cycles = r->cycles_median = r->instructions = -1;
+  r->cycles = r->cycles_median = r->instructions = r->ghz = r->clock = -1;
   if (s->clean > 0) {
-    r->cycles_median = net(median(s->cycles, s->clean), g_overhead.cycles) * per_transform;
-    r->cycles = net(s->best_cycles, g_overhead.cycles) * per_transform;
+    double charge = 1;
+    r->ghz = median(s->ghz, s->clean);
+    if (s->clock > 0) {
+      r->clock = s->clock;
+      if (s->clock < 1 - CLOCK_SLACK) charge = 1 / s->clock;
+    }
+    r->cycles_median = net(median(s->cycles, s->clean), g_overhead.cycles) * per_transform * charge;
+    r->cycles = net(s->best_cycles, g_overhead.cycles) * per_transform * charge;
     if (s->best_instructions > 0) /* 0: the system counts cycles only */
       r->instructions = net(s->best_instructions, g_overhead.instructions) * per_transform;
   }
@@ -462,7 +516,9 @@ static void run_trial(const options *o, const registry *reg, int prec, int cplx,
   for (int i = 0; i < count; i++) {
     slots[i].ns = (double *)calloc((size_t)o->rounds, sizeof(double)); /* checks the product */
     slots[i].cycles = (double *)calloc((size_t)o->rounds, sizeof(double));
-    if (!slots[i].ns || !slots[i].cycles) die("out of memory");
+    slots[i].ghz = (double *)calloc((size_t)o->rounds, sizeof(double));
+    slots[i].ratios = (double *)calloc((size_t)o->rounds, sizeof(double));
+    if (!slots[i].ns || !slots[i].cycles || !slots[i].ghz || !slots[i].ratios) die("out of memory");
     order[i] = i;
   }
 
@@ -472,6 +528,9 @@ static void run_trial(const options *o, const registry *reg, int prec, int cplx,
     for (int i = 0; i < 4; i++) memset(bufs.buf[i], 0, bufs.bytes);
     for (int i = 0; i < count; i++) slots[i].pairs = calibrate(&slots[i], o->batch_us * 1000.0);
 
+    int nseq = 0, *who = (int *)malloc((size_t)o->rounds * (size_t)count * sizeof(int));
+    double *ghz = (double *)malloc((size_t)o->rounds * (size_t)count * sizeof(double));
+    if (!who || !ghz) die("out of memory");
     bench_snap_begin(&start);
     now = start.ns;
     for (int round = 0; round < o->rounds; round++) {
@@ -481,7 +540,8 @@ static void run_trial(const options *o, const registry *reg, int prec, int cplx,
         bench_snap_begin(&a);
         s->e->run(&s->inst, s->pairs);
         bench_snap_end(&b);
-        record(s, &a, &b);
+        who[nseq] = order[i];
+        ghz[nseq++] = record(s, &a, &b);
         now = b.ns;
       }
       sample_overhead();
@@ -493,11 +553,16 @@ static void run_trial(const options *o, const registry *reg, int prec, int cplx,
               prec_name[prec], xform_name[cplx], n);
       g_failed = 1;
     }
+    clock_ratios(slots, count, who, ghz, nseq);
+    free(who);
+    free(ghz);
     for (int i = 0; i < count; i++) {
       add_result(&slots[i], prec, cplx, n, trial);
       slots[i].e->destroy(&slots[i].inst);
       free(slots[i].ns);
       free(slots[i].cycles);
+      free(slots[i].ghz);
+      free(slots[i].ratios);
     }
   }
   for (int i = 0; i < 4; i++) bench_aligned_free(block[i]);
@@ -526,7 +591,7 @@ static void write_header(FILE *f, const char *prefix, const options *o, const ch
 static void write_csv(FILE *f, const options *o, const char *date) {
   fprintf(f, "# pffft-bench 1\n");
   write_header(f, "# ", o, date);
-  fprintf(f, "engine,prec,xform,n,trial,pairs,batches,clean,ns,ns_median,cycles,cycles_median,instructions,mflops\n");
+  fprintf(f, "engine,prec,xform,n,trial,pairs,batches,clean,ns,ns_median,cycles,cycles_median,instructions,mflops,ghz,clock\n");
   for (int i = 0; i < g_nresults; i++) {
     const result *r = &g_results[i];
     fprintf(f, "%s,%s,%s,%d,%d,%d,%d,%d,%.3f,%.3f,", r->e->name, prec_name[r->prec], xform_name[r->cplx], r->n,
@@ -535,7 +600,11 @@ static void write_csv(FILE *f, const options *o, const char *date) {
     else fprintf(f, ",,");
     if (r->instructions >= 0) fprintf(f, "%.3f,", r->instructions);
     else fprintf(f, ",");
-    fprintf(f, "%.1f\n", mflops(r));
+    fprintf(f, "%.1f,", mflops(r));
+    if (r->ghz > 0) fprintf(f, "%.4f,", r->ghz);
+    else fprintf(f, ",");
+    if (r->clock > 0) fprintf(f, "%.4f\n", r->clock);
+    else fprintf(f, "\n");
   }
 }
 
