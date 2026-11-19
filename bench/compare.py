@@ -25,9 +25,10 @@ from pathlib import Path
 import results
 import targets
 
-# powers of two 32 to 262144, and others with factors 3, 5, 9, 15 and 45: with
-# the other defaults about 40 seconds on an Apple M2
-DEFAULT_SIZES = "pow2,96,160,480,1152,5120,15360,46080,163840"
+# powers of two 32 to 2^20, and from bench_fft's picked sizes one with each of
+# the odd parts 3, 5, 15, 9 (the radix-3 ido == 3 path), 45, 75, 125, 375 and
+# 3125 (five radix-5 passes)
+DEFAULT_SIZES = "pow2,96,160,480,1152,1440,2400,4000,15360,48000,100000"
 
 
 def main() -> None:

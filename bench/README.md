@@ -27,7 +27,15 @@ f32 real: CPU cycles per transform, fastest batch
 
 `*` marks lengths that are not powers of two; `-` means the engine does not
 support the length. Without options bench_fft runs the default sweep: powers
-of two, 3·2^k and 5·2^k from 32 to 262144, both precisions, real and complex.
+of two from 32 to 2^20 and 28 picked other lengths from 96 to 1000000, both
+precisions, real and complex. The picked lengths take one to six passes of
+radix 3 and 5 (odd parts 3, 5, 9, 15, 25, 45, 75, 125, 225, 375, 1125, 3125,
+9375 and 15625), so that each shows its cost. On an M2, in cache, f32 real
+lengths ran per n·log2(n) from 6% slower to 11% faster than the powers of two
+around them with one such pass, 5-10% slower with two, 8-14% with three; out
+of cache most ran faster than their neighbours (1000000: 15%). `--sizes
+nonpow2` gives 3, 5, 9 and 15 times every power of two instead, `--sizes all`
+adds the powers of two.
 `--help` lists the options, `--list` the engines of the build. With Visual
 Studio or Xcode, which build several configurations, the program is
 `build/bench/Release/bench_fft`.

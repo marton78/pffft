@@ -658,9 +658,11 @@ static int print_table_row(const registry *reg, const result *r, int count, int 
 static void usage(FILE *f) {
   fprintf(f,
           "bench_fft [options]\n"
-          "  --sizes LIST        sizes and/or keywords pow2, nonpow2, all, comma separated\n"
-          "                      (default: pow2 plus 3*2^k and 5*2^k)\n"
-          "  --min N --max N     limits for the keyword lists (defaults 32 and 262144)\n"
+          "  --sizes LIST        sizes and/or keywords, comma separated: pow2; picked,\n"
+          "                      28 sizes 96..1000000 with factors 3 and 5 up to 5^6;\n"
+          "                      nonpow2, 3, 5, 9 and 15 times 2^k; all, pow2 and\n"
+          "                      nonpow2 (default: pow2,picked)\n"
+          "  --min N --max N     limits for the keyword lists (defaults 32 and 1048576)\n"
           "  --prec LIST         f32,f64 (default: every precision built in)\n"
           "  --xform LIST        real,cplx (default: both)\n"
           "  --engines LIST      engine names (default: all built-in engines; if --lib is\n"
@@ -724,6 +726,14 @@ static int compare_ints(const void *a, const void *b) {
 /* Expands --sizes into a sorted list without duplicates. */
 static int expand_sizes(const options *o, int *sizes) {
   static const int odd[5] = {1, 3, 5, 9, 15};
+  /* "picked": one to six passes of radix 3 and 5 (odd parts 3 to 5^6), so that
+   * the cost of each shows, the ido == 3 fast path of radix 3 (9 * 2^k: 1152,
+   * 9216), and lengths people use (48000); 20480 fills the gap between 15360
+   * and 32000. All are multiples of 32, so every engine can do them, real and
+   * complex. */
+  static const int picked[] = {96,    160,   192,   320,   480,   640,   768,    960,    1152,   1280,
+                               1440,  1600,  1920,  2400,  2560,  3200,  4000,   4800,   7200,   9216,
+                               15360, 20480, 32000, 48000, 72000, 100000, 300000, 1000000};
   const char *list = o->sizes ? o->sizes : "default";
   char item[32];
   int count = 0, unique = 0;
@@ -732,8 +742,14 @@ static int expand_sizes(const options *o, int *sizes) {
     if (!strcmp(item, "pow2")) last = 0;
     else if (!strcmp(item, "nonpow2")) first = 1, last = 4;
     else if (!strcmp(item, "all")) last = 4;
-    else if (!strcmp(item, "default")) last = 2;
-    else {
+    else if (!strcmp(item, "picked") || !strcmp(item, "default")) {
+      if (item[0] == 'd') last = 0; /* default: pow2,picked */
+      for (size_t i = 0; i < sizeof picked / sizeof picked[0]; i++) {
+        if (picked[i] < o->min_n || picked[i] > o->max_n) continue;
+        if (count == MAX_SIZES) die("too many sizes");
+        sizes[count++] = picked[i];
+      }
+    } else {
       if (count == MAX_SIZES) die("too many sizes");
       sizes[count++] = int_arg("--sizes", item, 1);
     }
@@ -756,7 +772,7 @@ static void parse_options(int argc, char **argv, options *o) {
   memset(o, 0, sizeof *o);
   o->show = -1;
   o->min_n = 32;
-  o->max_n = 262144;
+  o->max_n = 1048576;
   o->trials = 1;
   o->rounds = 100;
   o->batch_us = 300;
