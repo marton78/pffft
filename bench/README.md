@@ -73,7 +73,8 @@ uv run --with matplotlib python3 bench/plot.py cmp.csv -o cmp.png          # B v
   one (benchFFT's convention), so that lengths compare fairly. A panel per
   precision and transform kind; per engine a solid line through the powers of
   two and a dashed one through the other lengths, with a band for the range
-  over trials. Vertical lines mark where 4 arrays of n samples fill a cache (a
+  over trials. vdsp and green, which do only powers of two, get a dotted line
+  there as if padded: the flops of n at the cost of the next power of two. Vertical lines mark where 4 arrays of n samples fill a cache (a
   rough guide), if the CSV header gives cache sizes and all files give the
   same. `--engines` picks engines. `--gflops` plots GFLOPS, from time, which
   depend on the clock (and is what there is without a cycle counter); use it

@@ -8,7 +8,9 @@ A panel per (precision, transform kind), with n on the x axis:
 - for bench_fft CSVs, the speed of each engine, higher is faster: flops per
   CPU cycle, counting 5·n·log2(n) flops per complex transform and 2.5·n·log2(n)
   per real one, as benchFFT does. A solid line joins the powers of two, a
-  dashed one the other lengths. With --gflops, or where cycles were not
+  dashed one the other lengths; engines that do only powers of two (vdsp,
+  green) get there, dotted, the flops of n at the cost of the next power of
+  two, as if their user padded. With --gflops, or where cycles were not
   counted, GFLOPS (flops per ns), which depend on the clock;
 - for a CSV that compare.py wrote (-o): B vs A in percent, the median and the
   range over all launches and trials.
@@ -27,12 +29,16 @@ from pathlib import Path
 import results
 
 POW2_ONLY = {"vdsp", "green"}  # engines that support powers of two only
-# An engine keeps its color in every figure, in the order of the palette;
-# pffft@LABEL engines take the colors left over.
-SERIES = {"pffft": "#2a78d6", "fftw-meas": "#eb6834", "vdsp": "#1baf7a", "pocketfft": "#eda100",
-          "kissfft": "#e87ba4", "fftpack": "#008300", "green": "#6250d6", "fftw-est": "#e34948",
+# An engine keeps its color in every figure. The seven libraries take seven
+# colors picked to be as different as possible, in OKLab, for every pair:
+# worst pair 17.4 apart (x100) to normal vision, 8.8 under simulated protan or
+# deutan vision. fftw-meas is fftw-est at 45% HSV saturation, to read as one
+# library.
+# pffft@LABEL engines take the colors of the libraries that are absent.
+SERIES = {"pffft": "#2a78d6", "fftw-est": "#f06a2e", "fftw-meas": "#f0a584", "vdsp": "#43a26d",
+          "pocketfft": "#9a5505", "kissfft": "#e678c0", "fftpack": "#bb1664", "green": "#7a2eb4",
           "mkl": "#898781"}
-SPARE = ["#e34948", "#6250d6", "#008300", "#e87ba4", "#eda100", "#1baf7a"]
+SPARE = ["#bb1664", "#43a26d", "#7a2eb4", "#9a5505", "#e678c0", "#f06a2e"]
 INK, INK2, MUTED = "#0b0b0b", "#52514e", "#898781"
 SURFACE, GRID, AXIS = "#fcfcfb", "#e1e0d9", "#c3c2b7"
 FASTER, SLOWER = "#2a78d6", "#e34948"
@@ -114,8 +120,9 @@ class Layout:
     below: sizes in inches, so that text keeps its room at any grid size."""
     PANEL_W, PANEL_H, LEFT, RIGHT, ROW = 6.0, 3.6, 1.05, 0.3, 0.23
 
-    def __init__(self, plt, precs, xforms, legend_rows: int, key_rows: int):
+    def __init__(self, plt, precs, xforms, legend_rows: int, key_rows: int, right: float = None):
         rows, cols = len(precs), len(xforms)
+        self.RIGHT = self.RIGHT if right is None else right
         self.top = 0.95 + legend_rows * self.ROW + 0.35  # title, subtitle, legend, panel title
         self.bottom = 0.55 + key_rows * self.ROW + 0.15  # x labels, key
         gap_w, gap_h = 1.05, 0.75
@@ -175,7 +182,15 @@ def plot_engines(args, files, plt) -> None:
     from matplotlib.ticker import FixedLocator, FuncFormatter, NullFormatter, NullLocator
 
     every = [r for _, _, rows in files for r in rows]
-    field = "cycles" if not args.gflops and all(r["cycles"] is not None for r in every) else "ns"
+    # cycles if counted; a case without a clean batch in any trial is left out
+    field = "cycles" if not args.gflops and any(r["cycles"] is not None for r in every) else "ns"
+    if field == "cycles":
+        missing = sorted({(r["engine"], r["prec"], r["xform"], r["n"]) for r in every if r["cycles"] is None})
+        cases = results.by_case(every, "cycles")
+        lost = [c for c in missing if c not in cases]
+        if lost:
+            print(f"plot.py: no cycle count, left out: {', '.join(' '.join(map(str, c)) for c in lost)}",
+                  file=sys.stderr)
     engines = list(dict.fromkeys(r["engine"] for r in every))
     # pffft first in the legend, drawn last (on top)
     engines.sort(key=lambda e: (not e.startswith("pffft"), list(SERIES).index(e) if e in SERIES else 99))
@@ -186,12 +201,15 @@ def plot_engines(args, files, plt) -> None:
     key_ncol = 5 if len(files) == 1 else 4
     key_rows = math.ceil((5 + (len(files) if len(files) > 1 else 0)) / key_ncol)  # at most this many keys
     single = len(engines) == 1 and len(files) == 1  # no legend: the title names the engine
-    layout = Layout(plt, precs, xforms, 0 if single else math.ceil(len(engines) / ncol), key_rows)
+    labelled = len(files) > 1 and len(engines) == 1  # file names at the line ends need room
+    layout = Layout(plt, precs, xforms, 0 if single else math.ceil(len(engines) / ncol), key_rows,
+                    right=0.8 if labelled else None)
     fig, axes = layout.fig, layout.axes
     trials = max(len(v) for _, _, rows in files for v in results.by_case(rows, field).values())
     same = len({tuple(m.get(key) for _, key in CACHES) for _, m, _ in files}) == 1
     caches = [(lv, int(files[0][1][key])) for lv, key in CACHES if same and files[0][1].get(key, "").isdigit()]
-    cached = other_n = False
+    cached = other_n = padded = False
+    DASHED, DOTTED = (0, (3.5, 2)), (0, (1, 1.8))
 
     for (i, prec), (j, xform) in itertools.product(enumerate(precs), enumerate(xforms)):
         ax = axes[i][j]
@@ -208,7 +226,10 @@ def plot_engines(args, files, plt) -> None:
             for e in engines[::-1]:
                 pts = ([], [])  # powers of two, other n
                 for n in sizes:
-                    v = cases.get((e, prec, xform, n))
+                    # an engine for powers of two only pads n up to the next one:
+                    # the flops of n at the cost of the padded transform
+                    m = n if results.is_pow2(n) or e not in POW2_ONLY else 1 << (n - 1).bit_length()
+                    v = cases.get((e, prec, xform, m))
                     if not v:
                         continue
                     # floating-point log2, see commit 419a7e60cd1
@@ -216,7 +237,9 @@ def plot_engines(args, files, plt) -> None:
                     vals = [flops / x for x in v]  # per cycle, or per ns = GFLOPS
                     pts[0 if results.is_pow2(n) else 1].append((n, *results.summary(vals)))
                 c, lw = color[e], width[e]
-                for group, ls, alpha in ((0, "-", 0.14), (1, (0, (3.5, 2)), 0.08)):
+                # other n: dashed where the engine does them, dotted where it pads
+                other = DOTTED if e in POW2_ONLY else DASHED
+                for group, ls, alpha in ((0, "-", 0.14), (1, other, 0.08)):
                     if not pts[group]:
                         continue
                     g = list(zip(*pts[group]))
@@ -226,8 +249,14 @@ def plot_engines(args, files, plt) -> None:
                             zorder=3 + lw - group)
                     if trials > 1:
                         ax.fill_between(g[0], g[2], g[3], color=c, alpha=alpha, lw=0, zorder=2 + lw - group)
-                    other_n |= group == 1
+                    other_n |= group == 1 and e not in POW2_ONLY
+                    padded |= group == 1 and e in POW2_ONLY
                     ys += list(g[1])
+                if labelled and pts[0]:
+                    # files tell apart by marker only: name each at the end of its line
+                    n_end, y_end = pts[0][-1][:2]
+                    ax.annotate(files[k][0], (n_end, y_end), xytext=(6, 0), textcoords="offset points",
+                                va="center", fontsize=8, color=INK2, annotation_clip=False)
 
         size_axis(ax, all_sizes)
         ax.set_yscale("log")
@@ -260,10 +289,11 @@ def plot_engines(args, files, plt) -> None:
     handles = [Line2D([], [], color=color[e], lw=width[e], label=label_for(e)) for e in engines]
     keys = [Line2D([], [], color=MUTED, lw=1.8, label="n a power of two")]
     if other_n:
-        keys.append(Line2D([], [], color=MUTED, lw=1.2, ls=(0, (3.5, 2)), label="other n (3·2ᵏ, 5·2ᵏ, ...)"))
-    only = [label_for(e) for e in engines if e in POW2_ONLY]
-    if only and other_n:
-        keys.append(Line2D([], [], color=MUTED, lw=0, label=f"{' and '.join(only)}: powers of two only"))
+        keys.append(Line2D([], [], color=MUTED, lw=1.2, ls=DASHED, label="n not a power of two"))
+    if padded:
+        only = " and ".join(label_for(e) for e in engines if e in POW2_ONLY)
+        keys.append(Line2D([], [], color=MUTED, lw=1.2, ls=DOTTED,
+                           label=f"n not a power of two, padded to the next one ({only})"))
     if trials > 1:
         keys.append(Patch(color=MUTED, alpha=0.25, lw=0, label=f"range over {trials} trials"))
     if cached:
@@ -321,10 +351,11 @@ def plot_compare(args, files, plt) -> None:
             mark = "o" if results.is_pow2(n) else "^"
             ax.vlines(n, lo, hi, color=c, lw=2, alpha=0.35, zorder=3, capstyle="round")
             ax.plot([n], [med], marker=mark, ms=7 if mark == "^" else 6, color=c, mec=SURFACE, mew=1.2, zorder=4)
+        # label the largest gain, and the largest loss if there is one
         best = min(pts, key=lambda p: p[1])
         worst = max(pts, key=lambda p: p[1])
         for n, med, lo, hi in {best, worst}:
-            if abs(med) >= 1:
+            if med <= -1 and (n, med) == best[:2] or med >= 1:
                 ax.annotate(f"{med:+.1f}%".replace("-", "\u2212"), (n, med), xytext=(7, 0), textcoords="offset points",
                             va="center", fontsize=8, color=INK, fontweight="bold")
         size_axis(ax, sizes)
