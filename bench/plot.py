@@ -59,7 +59,8 @@ def bytes_label(b: int) -> str:
     return f"{b / 2**20:g} MiB" if b >= 2**20 else f"{b / 2**10:g} KiB"
 
 
-DEVICES = {"iPhone12,3": "iPhone 11 Pro (A13)", "iPhone12,1": "iPhone 11 (A13)", "MT6878": "MediaTek MT6878"}
+DEVICES = {"iPhone12,3": "iPhone 11 Pro (A13)", "iPhone12,1": "iPhone 11 (A13)", "MT6878": "MediaTek MT6878",
+           "Cobalt 100": "Microsoft Cobalt 100 (Arm Neoverse N2)"}
 
 
 def device(cpu):
