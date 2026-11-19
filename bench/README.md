@@ -111,7 +111,9 @@ FFTW the first time takes about 2 minutes per target.
 - **Engines that slow the clock.** On Apple chips the clock drops while the
   AMX matrix unit works: by 7.7% for vDSP f32 FFTs from n = 512 (real) and
   256 (complex) on the M2, more on the iPhone, and by about 23% for a small
-  sgemm. Cycles do not show that cost. bench_fft records the clock of every
+  sgemm. It stays down as long as AMX works (as low after 20 ms of vDSP as
+  after 300 µs) and recovers some 40 µs after; unlike FFTW's planning it is
+  no one-time cost, and cycles do not show it. bench_fft records the clock of every
   clean batch and compares it with that of the batches of other engines just
   before and after it (so that the system changing the clock does not count);
   an engine whose median ratio is more than 2% below 1 is charged its cycles
@@ -150,11 +152,11 @@ What it cannot do:
 | `pffft` | this tree, `pffft_transform_ordered` | f32, f64 | 2^a·3^b·5^c; real: multiple of 32, complex: of 16 | |
 | `pffft@L` | a pffft shared library, `--lib L=PATH`, `pffft_transform_ordered` | those it has | as pffft | what compare.py measures |
 | `fftpack` | `src/fftpack.c` | f32, f64 | any | |
-| `fftw-est`, `fftw-meas` | FFTW 3.3.10 from `FFTW3_ROOT` | f32, f64 | any; `fftw-meas` up to `--fftw-measure-max` (65536) | FFTW_ESTIMATE and FFTW_MEASURE plans |
+| `fftw-est`, `fftw-meas` | FFTW 3.3.10 from `FFTW3_ROOT` | f32, f64 | any; `fftw-meas` up to `--fftw-measure-max` (65536) | FFTW_ESTIMATE plans from a cost model, at once, as pffft sets up; FFTW_MEASURE plans by timing candidate algorithms first (about 5 s at n = 262144 on an M2, outside the timing), an advantage no other engine takes |
 | `kissfft` | submodule `kissfft` | f32 | any (real: even) | |
 | `pocketfft` | submodule `pocketfft` | f32, f64 | any | |
 | `green` | submodule `greenffts` | f32 | powers of two | |
-| `vdsp` | Apple Accelerate | f32, f64 | powers of two | Apple only; compare in ns |
+| `vdsp` | Apple Accelerate | f32, f64 | powers of two | Apple only; f32 from n = 256 or 512 slows the clock while it runs, and is charged for it (see above) |
 | `mkl` | Intel oneMKL | f32, f64 | any | not yet run with bench_fft |
 
 Every library is built from source, except vDSP, which is part of the
