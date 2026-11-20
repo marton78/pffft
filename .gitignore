@@ -1,4 +1,4 @@
 build
-build_benches
-build_*
+/build_*
 .vscode
+__pycache__/

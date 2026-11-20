@@ -46,11 +46,14 @@ ctest -R test_pfconv_lens_symetric
 ./test_pffft_double
 ./test_pffastconv --no-bench --quick
 
-# Run benchmark tests
-./bench_pffft_float --max-len 128 --quick
-./bench_pffft_float --non-pow2 --max-len 192 --quick
-./bench_mixers
-./bench_conv
+# Run the FFT benchmark (see benchmarks/README.md)
+ctest -R bench_fft                                      # its smoke tests
+./benchmarks/bench_fft --sizes 1024,1152 --prec f32     # pffft against the other libraries
+./benchmarks/bench_pf_mixer_float
+./benchmarks/bench_pf_conv_float
+
+# Measure a change against master (from the repository root)
+python3 benchmarks/compare.py master .
 
 # Debug with AddressSanitizer (must rebuild)
 cmake -DPFFFT_USE_DEBUG_ASAN=ON ..
@@ -269,8 +272,9 @@ cmake -DPFFFT_USE_SIMD=OFF ..
 # Debug build with AddressSanitizer
 cmake -DCMAKE_BUILD_TYPE=Debug -DPFFFT_USE_DEBUG_ASAN=ON ..
 
-# Build benchmarks with FFTW comparison
-cmake -DPFFFT_USE_BENCH_FFTW=ON ..
+# Build benchmarks with FFTW comparison (from the repository root; never a system FFTW)
+python3 benchmarks/build_fftw.py --prefix build_bench_cache/fftw-local
+cmake -S . -B build -DPFFFT_USE_BENCH_FFTW=ON -DFFTW3_ROOT=$PWD/build_bench_cache/fftw-local
 ```
 
 ## Platform-Specific Notes
