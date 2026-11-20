@@ -169,3 +169,20 @@ if (PFFFT_USE_TYPE_FLOAT)
   )
 
 endif()
+
+if (PFFFT_BUILD_BENCHMARKS)
+  # Smoke tests of the FFT benchmark: every engine that is built in checks its
+  # result and is timed briefly, at powers of two and at another size. One
+  # test prints the table, the other the CSV. FFTW_MEASURE is limited to one
+  # size: an FFTW without a cycle counter (as Debian's on arm64) takes seconds
+  # for every plan.
+  add_test(NAME bench_fft_smoke
+    COMMAND bench_fft --sizes 64,96,128 --rounds 10 --fftw-measure-max 64
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )
+
+  add_test(NAME bench_fft_csv
+    COMMAND bench_fft --sizes 64,96 --rounds 10 --fftw-measure-max 0 --csv -
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )
+endif()
