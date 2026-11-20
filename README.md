@@ -396,9 +396,16 @@ The `bench_*` tests are excluded because they allocate about 1 GiB.
 
 ## Benchmarks
 
-Benchmark results, with plots, are collected at [https://github.com/hayguen/pffft_benchmarks](https://github.com/hayguen/pffft_benchmarks).
-They are stored in a separate git-repository to keep this repository's sources small.
-You might contribute by providing us the results of your computer(s).
+`bench_fft` measures pffft against other FFT libraries (FFTPACK, FFTW,
+KissFFT, PocketFFT, Green FFT, Apple's vDSP and Intel's MKL), across transform
+lengths, and against other revisions of pffft, on this computer, an attached
+Android phone or an attached iPhone. [benchmarks/README.md](benchmarks/README.md)
+explains how to use it and how it measures.
+
+```
+python3 benchmarks/run.py -o local.csv           # build and run the benchmark here
+python3 benchmarks/compare.py master .           # the working tree against master
+```
 
 ### Git submodules for Green-, Kiss-, and Pocket-FFT
 The benchmarks compare against other FFT libraries. Sources for [Green-](https://github.com/hayguen/greenffts),
@@ -415,15 +422,15 @@ You can also retrieve them later:
 git submodule update --init
 ```
 
-### Fastest Fourier Transform in the West: FFTW
-To compare with [FFTW](http://www.fftw.org/), install it
-(on Debian/Ubuntu: `sudo apt-get install libfftw3-dev`) and use cmake option
-`-DPFFFT_USE_BENCH_FFTW=ON`.
+### FFTW and MKL
+The benchmark never uses a system [FFTW](http://www.fftw.org/), which may be
+built without SIMD. `run.py --fftw` and `compare.py --fftw` build FFTW with
+`benchmarks/build_fftw.py`. For a CMake build, run
+`python3 benchmarks/build_fftw.py --prefix <dir>` and configure with
+`-DPFFFT_USE_BENCH_FFTW=ON -DFFTW3_ROOT=<dir>`.
 
-### Intel Math Kernel Library: MKL
 To compare with Intel's [oneMKL](https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl.html),
-install it (on Ubuntu-Linux the package `intel-mkl`, on Debian `intel-mkl-full`)
-and use cmake option `-DPFFFT_USE_BENCH_MKL=ON`.
+install it and use cmake option `-DPFFFT_USE_BENCH_MKL=ON`.
 
 ## History and changes
 This is a fork of Julien Pommier's pffft on
