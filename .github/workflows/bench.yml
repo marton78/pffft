@@ -1,0 +1,142 @@
+# Benchmarks on GitHub's hosted runners, to measure CPUs we do not own.
+#
+# It runs only when started by hand, never on a push, a pull request or a
+# schedule: from the Actions tab ("Benchmark", "Run workflow") or with
+#
+#   gh workflow run bench.yml --ref <branch> -f runners=ubuntu-26.04-arm,macos-26
+#   gh run watch
+#   gh run download <run id> --dir bench-results
+#
+# GitHub offers a manual workflow only once this file is on the default
+# branch; --ref then picks the branch whose code is measured. Each runner
+# uploads its CSVs (and what the system says about its CPU) as an artifact
+# "bench-<runner>"; plot them at home:
+#
+#   uv run --with matplotlib python3 benchmarks/plot.py bench-results/bench-*/<runner>.csv -o ...
+#
+# Runners are virtual machines shared with other users, so expect more noise
+# than on your own hardware: the CSVs show the range over trials, and the
+# header the counter (Linux VMs may expose no cycle counter: then time).
+name: Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      runners:
+        description: "Runner labels, comma separated"
+        type: string
+        default: "ubuntu-26.04,ubuntu-26.04-arm,macos-26,macos-26-intel,windows-2025,windows-11-arm"
+      sweep:
+        description: "Measure all engines (benchmarks/run.py)"
+        type: boolean
+        default: true
+      fftw:
+        description: "Include FFTW, built from source (not on Windows ARM64)"
+        type: boolean
+        default: true
+      bench_args:
+        description: "bench_fft options for the sweep"
+        type: string
+        default: "--trials 3"
+      compare:
+        description: "Two revisions for benchmarks/compare.py, e.g. 'c14802c HEAD'; empty: none"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  runners:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.parse.outputs.list }}
+    steps:
+      - id: parse
+        env:
+          RUNNERS: ${{ inputs.runners }}
+        run: |
+          python3 -c 'import json, os; print("list=" + json.dumps([r.strip() for r in os.environ["RUNNERS"].split(",") if r.strip()]))' >> "$GITHUB_OUTPUT"
+
+  bench:
+    needs: runners
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(needs.runners.outputs.list) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+    env:
+      RUNNER_LABEL: ${{ matrix.runner }}
+      FFTW: ${{ inputs.fftw }}
+      BENCH_ARGS: ${{ inputs.bench_args }}
+      COMPARE: ${{ inputs.compare }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # compare.py exports any revision
+          submodules: recursive
+
+      - name: Prepare
+        run: |
+          mkdir -p out
+          if [ "$RUNNER_OS" = Windows ]; then echo "PY=python" >> "$GITHUB_ENV"; else echo "PY=python3" >> "$GITHUB_ENV"; fi
+          if [ "$RUNNER_OS" = Linux ]; then
+            # Ubuntu lets no unprivileged process count cycles (paranoid 4)
+            sudo sysctl -w kernel.perf_event_paranoid=1 || true
+          fi
+          {
+            echo "runner: $RUNNER_LABEL ($RUNNER_OS $RUNNER_ARCH)"
+            case "$RUNNER_OS" in
+              Linux) lscpu; cat /proc/cpuinfo | head -40 ;;
+              macOS) sysctl -a | grep -E '^(machdep\.cpu|hw\.(model|perflevel|l1|l2|l3|ncpu|cpufrequency))' ;;
+              Windows) powershell -NoProfile -Command "Get-CimInstance Win32_Processor | Format-List Name,NumberOfCores,NumberOfLogicalProcessors,MaxClockSpeed,L2CacheSize,L3CacheSize" ;;
+            esac
+          } > "out/$RUNNER_LABEL-system.txt" 2>&1
+          cat "out/$RUNNER_LABEL-system.txt"
+
+      - name: Sweep
+        id: sweep
+        if: inputs.sweep
+        run: |
+          fftw=
+          # FFTW's CMake build, the one Windows can use, has no NEON
+          if [ "$FFTW" = true ] && { [ "$RUNNER_OS" != Windows ] || [ "$RUNNER_ARCH" = X64 ]; }; then fftw=--fftw; fi
+          # BENCH_ARGS and fftw are split into words on purpose
+          # shellcheck disable=SC2086
+          $PY benchmarks/run.py $fftw -o "out/$RUNNER_LABEL.csv" -- $BENCH_ARGS --quiet
+
+      - name: Diagnose
+        # if the sweep failed: each engine alone on one small case, to see which fails
+        if: failure() && steps.sweep.outcome == 'failure'
+        run: |
+          set +e
+          exe=$(find build_bench_cache/local -type f \( -name bench_fft -o -name bench_fft.exe \) | head -n 1)
+          echo "bench_fft: $exe"
+          "$exe" --list; echo "--list: exit $?"
+          for prec in f32 f64; do
+            for xform in real cplx; do
+              for engine in $("$exe" --list | sed -n "s/^$prec: //p"); do
+                "$exe" --engines "$engine" --prec "$prec" --xform "$xform" --sizes 32 --rounds 10 --case-seconds 0 --csv - > diag.out 2> diag.err
+                echo "$prec $xform $engine: exit $? $(tail -n 1 diag.err)"
+              done
+            done
+          done
+
+      - name: Compare
+        if: inputs.compare
+        run: |
+          read -r rev_a rev_b <<< "$COMPARE"
+          if [ -z "$rev_b" ]; then echo "compare needs two revisions, got '$COMPARE'"; exit 1; fi
+          $PY benchmarks/compare.py "$rev_a" "$rev_b" -o "out/$RUNNER_LABEL-cmp.csv"
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bench-${{ matrix.runner }}
+          path: out/
+          if-no-files-found: warn
