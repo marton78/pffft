@@ -47,8 +47,6 @@ ctest -R test_pfconv_lens_symetric
 ./test_pffastconv --no-bench --quick
 
 # Run benchmark tests
-./bench_pffft_float --max-len 128 --quick
-./bench_pffft_float --non-pow2 --max-len 192 --quick
 ./bench_mixers
 ./bench_conv
 

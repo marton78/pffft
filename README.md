@@ -123,9 +123,7 @@ in `include/pffft/pffastconv.h`.
 
 CMake builds the libraries `PFFFT`, `PFFASTCONV` and `PFDSP` (files
 `libpffft`, `libpffastconv` and `libpfdsp`), static unless `BUILD_SHARED_LIBS`
-is set. PFFASTCONV and PFDSP need `PFFFT_USE_TYPE_FLOAT`. The FFTPACK
-libraries, used for validation, are built only when tests or benchmarks are
-enabled and `PFFFT_USE_FFTPACK` is on.
+is set. PFFASTCONV and PFDSP need `PFFFT_USE_TYPE_FLOAT`.
 On Debian/Ubuntu Linux, `sudo apt-get install build-essential cmake` is all
 you need.
 
@@ -420,58 +418,12 @@ git submodule update --init
 ### Fastest Fourier Transform in the West: FFTW
 To compare with [FFTW](http://www.fftw.org/), install it
 (on Debian/Ubuntu: `sudo apt-get install libfftw3-dev`) and use cmake option
-`-DPFFFT_USE_BENCH_FFTW=ON` in the benchmark build below.
+`-DPFFFT_USE_BENCH_FFTW=ON`.
 
 ### Intel Math Kernel Library: MKL
 To compare with Intel's [oneMKL](https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl.html),
 install it (on Ubuntu-Linux the package `intel-mkl`, on Debian `intel-mkl-full`)
 and use cmake option `-DPFFFT_USE_BENCH_MKL=ON`.
-
-### Performing the benchmarks - with CMake
-The main build's benchmark executables accept the same `PFFFT_USE_BENCH_*`
-options. The separate project in `bench/` builds and runs the float and double
-benchmarks and packs the results, with system information, into a `.tgz` for
-the results repository. Use it in its own build folder:
-```
-mkdir build_benches
-cd build_benches
-cmake ../bench
-```
-
-Several CMake options select which FFT implementations are benchmarked.
-You can explore all available options with `cmake-gui` or `ccmake`, see [CMake](#cmake).
-
-Some of the options:
-* `BENCH_ID`         name the benchmark - used in filename
-* `BENCH_ARCH`       target architecture passed to compiler for code optimization
-* `PFFFT_USE_BENCH_FFTW`   use (system-installed) FFTW3 in FFT benchmark (default: OFF)
-* `PFFFT_USE_BENCH_GREEN`  use Green FFT in FFT benchmark (default: ON)
-* `PFFFT_USE_BENCH_KISS`   use KissFFT in FFT benchmark (default: ON)
-* `PFFFT_USE_BENCH_POCKET` use PocketFFT in FFT benchmark (default: ON)
-* `PFFFT_USE_BENCH_MKL`    use Intel MKL in FFT benchmark (default: OFF)
-
-These options can be passed to `cmake` at command line, e.g.
-```
-cmake -DBENCH_ARCH=native -DPFFFT_USE_BENCH_FFTW=ON -DPFFFT_USE_BENCH_MKL=ON ../bench
-```
-
-The benchmarks are built and executed with
-```
-cmake --build .
-```
-
-You can also specify to use a different compiler/version with the cmake step, e.g.:
-
-```
-CC=/usr/bin/clang-11 CXX=/usr/bin/clang++-11 cmake -DBENCH_ID=clang11 -DBENCH_ARCH=native -DPFFFT_USE_BENCH_FFTW=ON -DPFFFT_USE_BENCH_MKL=ON ../bench
-```
-
-On Windows, call cmake from the VS Developer prompt.
-
-For running with different compiler version(s):
-* copy the result file (.tgz), e.g. `cp *.tgz ../`
-* empty the build directory: `rm -rf *`
-* then continue with the cmake step
 
 ## History and changes
 This is a fork of Julien Pommier's pffft on

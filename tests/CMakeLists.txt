@@ -168,16 +168,4 @@ if (PFFFT_USE_TYPE_FLOAT)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
 
-  if (PFFFT_BUILD_BENCHMARKS)
-    add_test(NAME bench_pffft_pow2
-      COMMAND bench_pffft_float "--max-len" "128" "--quick"
-      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    )
-
-    add_test(NAME bench_pffft_non2
-      COMMAND bench_pffft_float "--non-pow2" "--max-len" "192" "--quick"
-      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    )
-  endif()
-
 endif()
