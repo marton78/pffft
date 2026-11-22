@@ -43,9 +43,8 @@ set(GCC_EXTRA_OPT_neon_rpi4_a72 "-mfloat-abi=hard" "-mfpu=neon-fp-armv8" "-mtune
 set(GCC_EXTRA_OPT_apple_m1      "-mcpu=apple-m1")
 
 # pffft is compiled with the toolchain's default target flags, plus
-# TARGET_C_ARCH / TARGET_C_EXTRA if set. On WebAssembly, and on RISC-V while
-# TARGET_C_ARCH is unset, target_set_c_arch_flags() adds its own flags
-# instead (see the list below).
+# TARGET_C_ARCH / TARGET_C_EXTRA if set. On WebAssembly,
+# target_set_c_arch_flags() adds its own flags instead (see the list below).
 # pf_float.h / pf_double.h select the
 # SIMD backend from the compiler's predefined macros (__SSE__, __ARM_NEON,
 # __ALTIVEC__, ...), and pffft_report_simd_backend() prints which one. E.g.
@@ -60,8 +59,8 @@ set(GCC_EXTRA_OPT_apple_m1      "-mcpu=apple-m1")
 #   - x86: the FMA reminder below, and the /arch choices offered for MSVC.
 #   - 32-bit ARM A-profile, i.e. Cortex-A cores: the note on gcc's NEON
 #     loads and stores below.
-# RISC-V gets its -march from a probe in target_set_c_arch_flags(), unless
-# TARGET_C_ARCH is set.
+#   - 64-bit RISC-V: TARGET_C_ARCH=auto, which enables the vector extension
+#     if the build machine has it (see _pffft_riscv_auto_march() below).
 #
 # PFFFT_TARGET_PROCESSOR is the lower-case name of the target processor:
 #   - compilers for the MSVC ABI (cl, clang-cl, clang --target=*-windows-msvc):
@@ -86,6 +85,8 @@ elseif (PFFFT_TARGET_PROCESSOR MATCHES "^(x86|x86_64|x64|amd64|i[3-6]86)$")
     set(PFFFT_TARGET_IS_X86 TRUE)
 elseif (PFFFT_TARGET_PROCESSOR MATCHES "^armv7(-?a|h?l)?$|^armv8l$")
     set(PFFFT_TARGET_IS_ARMV7 TRUE)
+elseif (PFFFT_TARGET_PROCESSOR STREQUAL "riscv64")
+    set(PFFFT_TARGET_IS_RISCV64 TRUE)
 endif()
 
 # cmake options - depending on C/C++ compiler
@@ -95,7 +96,7 @@ endif()
 # those of an existing build directory.
 set(GCC_EXTRA_VALUES "none;neon_vfpv4;neon_rpi3_a53;neon_rpi4_a72;apple_m1")
 set(MSVC_ARCH_VALUES "none;SSE2;AVX;AVX2;AVX512")
-set(_pffft_march_desc "target architecture (-march), e.g. native, haswell, armv7-a, rv64gcv; none: the compiler's default")
+set(_pffft_march_desc "target architecture (-march), e.g. native, haswell, armv7-a, rv64gcv; none: the compiler's default; auto (64-bit RISC-V only): the vector extension if the build machine has it")
 set(_pffft_extra_desc "preset of additional options: neon_vfpv4, neon_rpi3_a53, neon_rpi4_a72 for 32-bit ARM hard-float; apple_m1 for Apple arm64; none")
 
 # _pffft_drop_choice_list(<cache entry>)
@@ -154,6 +155,16 @@ elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
 else()
     message(WARNING "unsupported C++ compiler '${CMAKE_CXX_COMPILER_ID}', see https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_COMPILER_ID.html")
 endif()
+
+# "auto" is resolved for 64-bit RISC-V with gcc/clang only; elsewhere
+# target_set_c_arch_flags() treats it as "none"
+foreach(_pffft_lang C CXX)
+    if (("${TARGET_${_pffft_lang}_ARCH}" STREQUAL "auto")
+        AND NOT (PFFFT_TARGET_IS_RISCV64 AND CMAKE_${_pffft_lang}_COMPILER_ID MATCHES "^(GNU|Clang)$"))
+        message(WARNING "TARGET_${_pffft_lang}_ARCH=auto is supported for 64-bit RISC-V with gcc or clang only;"
+                        " using the compiler's default")
+    endif()
+endforeach()
 
 ######################################################
 # x86: FMA is opt-in and easy to miss.
@@ -214,23 +225,74 @@ endif()
 
 ######################################################
 
-# Pick an -march string for RISC-V and report whether the V extension
-# is available. We compile and run a tiny probe against -march=rv64gcv:
+# _pffft_riscv_auto_march(<C|CXX> <out_march> <out_reason>)
+# Resolves TARGET_<lang>_ARCH=auto on 64-bit RISC-V: an -march with the
+# vector extension, V, if the CPU the build runs on has it, or empty to keep
+# the compiler's default. Like -march=native, the result is for CPUs like
+# the build machine, so it is opt-in.
 #
-#   - if compile + run succeed, the target supports V; the probe prints
-#     the host VLEN, and if VLEN >= 256 we append the matching zvlNNNb
-#     so the compiler can emit single-instruction 4-wide double ops
-#     instead of splitting them into VLEN_min=128 pieces;
-#   - if compile or run fails, the target lacks V; we fall back to
-#     plain rv64gc, so the headers stay on the scalar path.
-#
-# The probe runs natively or under CMAKE_CROSSCOMPILING_EMULATOR (e.g.
-# qemu-riscv64-static). When neither applies (bare cross-compile) we
-# optimistically default to rv64gcv with has_v=TRUE; users targeting
-# non-V cores should set TARGET_C_ARCH=rv64gc explicitly.
-function(_pffft_riscv_march out_march out_has_v)
-    if (NOT DEFINED PFFFT_RVV_HAS_V
-        AND (NOT CMAKE_CROSSCOMPILING OR CMAKE_CROSSCOMPILING_EMULATOR))
+#   - If the compiler already enables V, with CMAKE_<lang>_FLAGS and those of
+#     the build type (e.g. a toolchain for the RVA23 profile, or a -march
+#     there), nothing is added.
+#   - Otherwise a probe built with -march=rv64gcv runs natively, or under
+#     CMAKE_CROSSCOMPILING_EMULATOR (e.g. qemu-riscv64). If it runs, the
+#     result is rv64gcv. In a native build with VLEN >= 256 it also gets the
+#     matching zvlNNNb, so the compiler can emit 4-wide double ops as one
+#     instruction instead of splitting them into VLEN_min=128 pieces; an
+#     emulator's VLEN is only what it was configured with, so it is not used.
+#   - If the probe fails, or a cross-compile has no emulator to run it, the
+#     compiler's default is kept.
+function(_pffft_riscv_auto_march lang out_march out_reason)
+    set(${out_march} "" PARENT_SCOPE)
+
+    # a cross toolchain may not link at configure time
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+    set(CMAKE_REQUIRED_QUIET ON)
+    # try_compile() uses the flags of CMAKE_TRY_COMPILE_CONFIGURATION, else
+    # of Debug; follow the build type of single-config generators, as
+    # _pffft_probe_simd_arch() does
+    get_property(_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+    if (NOT CMAKE_TRY_COMPILE_CONFIGURATION AND NOT _multi_config AND CMAKE_BUILD_TYPE)
+        set(CMAKE_TRY_COMPILE_CONFIGURATION "${CMAKE_BUILD_TYPE}")
+    endif()
+    if (CMAKE_TRY_COMPILE_CONFIGURATION)
+        string(TOUPPER "${CMAKE_TRY_COMPILE_CONFIGURATION}" _config)
+    else()
+        set(_config "DEBUG")
+    endif()
+    # the result is cached; check again when the compiler or its flags change
+    set(_has_v PFFFT_RISCV_${lang}_COMPILER_HAS_V)
+    set(_sig "${CMAKE_${lang}_COMPILER};${CMAKE_${lang}_COMPILER_TARGET};${CMAKE_SYSROOT};${CMAKE_${lang}_FLAGS};${_config};${CMAKE_${lang}_FLAGS_${_config}}")
+    if (NOT "${${_has_v}_SIG}" STREQUAL "${_sig}")
+        unset(${_has_v} CACHE)
+    endif()
+    set(_src "#ifndef __riscv_vector\n#error no V\n#endif\nint pffft_rvv_check;\n")
+    if (lang STREQUAL "C")
+        include(CheckCSourceCompiles)
+        check_c_source_compiles("${_src}" ${_has_v})
+    else()
+        include(CheckCXXSourceCompiles)
+        check_cxx_source_compiles("${_src}" ${_has_v})
+    endif()
+    set(${_has_v}_SIG "${_sig}" CACHE INTERNAL "inputs of ${_has_v}")
+    if (${_has_v})
+        set(${out_reason} "the compiler already enables the vector extension" PARENT_SCOPE)
+        return()
+    endif()
+
+    if (CMAKE_CROSSCOMPILING AND NOT CMAKE_CROSSCOMPILING_EMULATOR)
+        set(${out_reason} "cross-compiling without CMAKE_CROSSCOMPILING_EMULATOR, so the CPU cannot be probed" PARENT_SCOPE)
+        return()
+    endif()
+
+    # the probe's result is cached too; run it again for another compiler or
+    # emulator, including another qemu CPU model
+    set(_sig "${CMAKE_C_COMPILER};${CMAKE_CROSSCOMPILING_EMULATOR};$ENV{QEMU_CPU}")
+    if (NOT "${PFFFT_RVV_HAS_V_SIG}" STREQUAL "${_sig}")
+        unset(PFFFT_RVV_HAS_V CACHE)
+        unset(PFFFT_RVV_VLEN CACHE)
+    endif()
+    if (NOT DEFINED PFFFT_RVV_HAS_V)
         set(_probe "${CMAKE_CURRENT_BINARY_DIR}/pffft_rvv_vlen_probe.c")
         file(WRITE "${_probe}"
             "#include <stdio.h>\n"
@@ -246,23 +308,44 @@ function(_pffft_riscv_march out_march out_has_v)
         string(REGEX MATCH "[0-9]+[ \t\r\n]*$" _vlen "${_vlen}")
         string(STRIP "${_vlen}" _vlen)
         if (PFFFT_RVV_PROBE_COMPILED AND PFFFT_RVV_PROBE_RUN EQUAL 0 AND _vlen)
-            set(PFFFT_RVV_HAS_V TRUE CACHE INTERNAL "Target supports the RISC-V V extension")
-            set(PFFFT_RVV_VLEN "${_vlen}" CACHE INTERNAL "Detected RISC-V VLEN in bits")
+            set(PFFFT_RVV_HAS_V TRUE CACHE INTERNAL "The build machine supports the RISC-V V extension")
+            set(PFFFT_RVV_VLEN "${_vlen}" CACHE INTERNAL "VLEN of the build machine in bits")
         else()
-            set(PFFFT_RVV_HAS_V FALSE CACHE INTERNAL "Target lacks the RISC-V V extension")
+            set(PFFFT_RVV_HAS_V FALSE CACHE INTERNAL "The build machine lacks the RISC-V V extension")
         endif()
+        set(PFFFT_RVV_HAS_V_SIG "${_sig}" CACHE INTERNAL "inputs of PFFFT_RVV_HAS_V")
     endif()
 
-    if (DEFINED PFFFT_RVV_HAS_V AND NOT PFFFT_RVV_HAS_V)
-        set(${out_march} "rv64gc" PARENT_SCOPE)
-        set(${out_has_v} FALSE PARENT_SCOPE)
-    elseif (PFFFT_RVV_VLEN AND PFFFT_RVV_VLEN GREATER_EQUAL 256)
+    if (NOT PFFFT_RVV_HAS_V)
+        set(${out_reason} "the build machine has no vector extension" PARENT_SCOPE)
+    elseif (NOT CMAKE_CROSSCOMPILING AND PFFFT_RVV_VLEN GREATER_EQUAL 256)
         set(${out_march} "rv64gcv_zvl${PFFFT_RVV_VLEN}b" PARENT_SCOPE)
-        set(${out_has_v} TRUE PARENT_SCOPE)
+        set(${out_reason} "the build machine has the vector extension, VLEN ${PFFFT_RVV_VLEN}" PARENT_SCOPE)
     else()
         set(${out_march} "rv64gcv" PARENT_SCOPE)
-        set(${out_has_v} TRUE PARENT_SCOPE)
+        set(${out_reason} "the build machine has the vector extension" PARENT_SCOPE)
     endif()
+endfunction()
+
+# _pffft_resolve_arch(<C|CXX> <target> <out_arch>)
+# TARGET_<lang>_ARCH, with "auto" resolved and "none" as empty.
+function(_pffft_resolve_arch lang target out_arch)
+    set(_arch "${TARGET_${lang}_ARCH}")
+    if (_arch STREQUAL "none")
+        set(_arch "")
+    elseif (_arch STREQUAL "auto")
+        set(_arch "")
+        # elsewhere "auto" acts as "none", with a warning at configure time
+        if (PFFFT_TARGET_IS_RISCV64 AND CMAKE_${lang}_COMPILER_ID MATCHES "^(GNU|Clang)$")
+            _pffft_riscv_auto_march(${lang} _arch _reason)
+            if (_arch)
+                message(STATUS "TARGET_${lang}_ARCH=auto for target ${target}: -march=${_arch}, as ${_reason}")
+            else()
+                message(STATUS "TARGET_${lang}_ARCH=auto for target ${target}: the compiler's default, as ${_reason}")
+            endif()
+        endif()
+    endif()
+    set(${out_arch} "${_arch}" PARENT_SCOPE)
 endfunction()
 
 function(target_set_c_arch_flags target)
@@ -280,30 +363,16 @@ function(target_set_c_arch_flags target)
         endif()
         return()
     endif()
-    # On RISC-V the V extension is opt-in via -march; auto-enable RVV
-    # when we can verify the target supports V, and skip it otherwise
-    # so a non-V target still gets a usable rv64gc build.
-    if (CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
-        if ( ("${TARGET_C_ARCH}" STREQUAL "") OR ("${TARGET_C_ARCH}" STREQUAL "none") )
-            _pffft_riscv_march(_rvv_march _rvv_has_v)
-            target_compile_options(${target} PRIVATE "-march=${_rvv_march}")
-            if (_rvv_has_v)
-                message(STATUS "RISC-V detected: defaulting C target ${target} to -march=${_rvv_march}")
-            else()
-                message(STATUS "RISC-V detected (no V extension): defaulting C target ${target} to -march=${_rvv_march}")
-            endif()
-            return()
-        endif()
-    endif()
-    if ( ("${TARGET_C_ARCH}" STREQUAL "") OR ("${TARGET_C_ARCH}" STREQUAL "none") )
+    _pffft_resolve_arch(C ${target} _arch)
+    if ("${_arch}" STREQUAL "")
         message(STATUS "TARGET_C_ARCH not set for target ${target}, using default")
     else()
         if ( (CMAKE_C_COMPILER_ID STREQUAL "GNU") OR (CMAKE_C_COMPILER_ID STREQUAL "Clang") OR (CMAKE_C_COMPILER_ID STREQUAL "AppleClang") )
-            target_compile_options(${target} PRIVATE "-march=${TARGET_C_ARCH}")
-            message(STATUS "C ARCH for target ${target} set: ${TARGET_C_ARCH}")
+            target_compile_options(${target} PRIVATE "-march=${_arch}")
+            message(STATUS "C ARCH for target ${target} set: ${_arch}")
         elseif (CMAKE_C_COMPILER_ID MATCHES "MSVC")
-            target_compile_options(${target} PRIVATE "/arch:${TARGET_C_ARCH}")
-            message(STATUS "C ARCH for target ${target} set: ${TARGET_C_ARCH}")
+            target_compile_options(${target} PRIVATE "/arch:${_arch}")
+            message(STATUS "C ARCH for target ${target} set: ${_arch}")
         else()
             message(WARNING "unsupported C compiler '${CMAKE_C_COMPILER_ID}' for target_set_c_arch_flags(), see https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_COMPILER_ID.html")
         endif()
@@ -337,27 +406,16 @@ function(target_set_cxx_arch_flags target)
         endif()
         return()
     endif()
-    if (CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
-        if ( ("${TARGET_CXX_ARCH}" STREQUAL "") OR ("${TARGET_CXX_ARCH}" STREQUAL "none") )
-            _pffft_riscv_march(_rvv_march _rvv_has_v)
-            target_compile_options(${target} PRIVATE "-march=${_rvv_march}")
-            if (_rvv_has_v)
-                message(STATUS "RISC-V detected: defaulting C++ target ${target} to -march=${_rvv_march}")
-            else()
-                message(STATUS "RISC-V detected (no V extension): defaulting C++ target ${target} to -march=${_rvv_march}")
-            endif()
-            return()
-        endif()
-    endif()
-    if ( ("${TARGET_CXX_ARCH}" STREQUAL "") OR ("${TARGET_CXX_ARCH}" STREQUAL "none") )
+    _pffft_resolve_arch(CXX ${target} _arch)
+    if ("${_arch}" STREQUAL "")
         message(STATUS "TARGET_CXX_ARCH not set for target ${target}, using default")
     else()
         if ( (CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang") OR (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang") )
-            target_compile_options(${target} PRIVATE "-march=${TARGET_CXX_ARCH}")
-            message(STATUS "C++ ARCH for target ${target} set: ${TARGET_CXX_ARCH}")
+            target_compile_options(${target} PRIVATE "-march=${_arch}")
+            message(STATUS "C++ ARCH for target ${target} set: ${_arch}")
         elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-            target_compile_options(${target} PRIVATE "/arch:${TARGET_CXX_ARCH}")
-            message(STATUS "C++ ARCH for target ${target} set: ${TARGET_CXX_ARCH}")
+            target_compile_options(${target} PRIVATE "/arch:${_arch}")
+            message(STATUS "C++ ARCH for target ${target} set: ${_arch}")
         else()
             message(WARNING "unsupported C++ compiler '${CMAKE_CXX_COMPILER_ID}' for target_set_cxx_arch_flags(), see https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_COMPILER_ID.html")
         endif()
