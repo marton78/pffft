@@ -1,0 +1,38 @@
+#!/bin/bash
+# Checks a riscv64 build of pffft against what a CI job expects.
+#
+# usage: check-riscv64-build.sh <build dir> <configure log>
+# environment:
+#   BACKEND  the SIMD backend that cmake must report for float and double
+#   MARCH    the only -march the build may use; empty for none
+#   OBJDUMP  an objdump for riscv64, default riscv64-linux-gnu-objdump
+set -euo pipefail
+build=$1
+log=$2
+objdump=${OBJDUMP:-riscv64-linux-gnu-objdump}
+
+grep "SIMD backend for PFFFT" "$log"
+grep -q "SIMD backend for PFFFT: float: $BACKEND, double: $BACKEND" "$log" \
+  || { echo "::error::expected the $BACKEND backend"; exit 1; }
+
+db=$build/compile_commands.json
+[ -s "$db" ] || { echo "::error::$db is missing or empty"; exit 1; }
+# grep exits with 1 when nothing matches, which is fine here
+found=$({ grep -o -- '-march=[^ "]*' "$db" || [ $? -eq 1 ]; } | sort -u)
+expected=${MARCH:+-march=$MARCH}
+echo "-march found: '$found', expected: '$expected'"
+[ "$found" = "$expected" ] || { echo "::error::unexpected -march"; exit 1; }
+
+# the RVV backend is written with GCC vector types, which a compiler may
+# lower to scalar code; vsetvli/vsetivli start every vector operation
+disasm=$("$objdump" -d "$build/libpffft.a") \
+  || { echo "::error::$objdump could not disassemble libpffft.a"; exit 1; }
+grep -q '<pffft_new_setup>:' <<< "$disasm" \
+  || { echo "::error::no pffft code in the disassembly of libpffft.a"; exit 1; }
+n=$(grep -cE '\svseti?vli\s' <<< "$disasm" || true)
+echo "vsetvli/vsetivli in libpffft.a: $n"
+if [ "$BACKEND" = RVV ]; then
+  [ "$n" -gt 0 ] || { echo "::error::the RVV backend compiled to no vector instructions"; exit 1; }
+else
+  [ "$n" -eq 0 ] || { echo "::error::vector instructions in a build without V"; exit 1; }
+fi

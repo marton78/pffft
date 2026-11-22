@@ -32,34 +32,176 @@ jobs:
     - name: test
       run: ctest --test-dir build_wasm --output-on-failure
 
+  # 64-bit RISC-V, cross-compiled and run under qemu. TARGET_C_ARCH=none, the
+  # default, must leave -march to the toolchain, as on every other target, so
+  # the build runs wherever the toolchain's code runs. TARGET_C_ARCH=auto
+  # enables the vector extension, V, if the build machine has it. qemu takes
+  # its CPU model from QEMU_CPU: build_cpu is the machine the configure-time
+  # probe runs on, test_cpu the one the tests run on, so a binary built on a
+  # machine with V can be run on one without it.
   build_riscv64_qemu:
-    runs-on: ubuntu-26.04
+    name: riscv64 (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu 26.04's gcc 15 targets the RVA23 profile, which has V
+          - name: RVA23 toolchain, default
+            os: ubuntu-26.04
+            gcc: ""
+            arch: none
+            build_cpu: rva23u64,vlen=256
+            test_cpu: rva23u64,vlen=256
+            backend: RVV
+            march: ""
+          - name: RVA23 toolchain, auto
+            os: ubuntu-26.04
+            gcc: ""
+            arch: auto
+            build_cpu: rva23u64,vlen=256
+            test_cpu: rva23u64,vlen=256
+            backend: RVV
+            march: ""
+          # Ubuntu 24.04's gcc 14 targets rv64gc, without V. Its default gcc 13
+          # cannot lower the RVV backend's GCC vector types to RVV
+          # instructions, so its builds have no vector code at all.
+          - name: rv64gc toolchain, default, built with V, run without
+            os: ubuntu-24.04
+            gcc: "-14"
+            arch: none
+            build_cpu: rv64,v=true,vlen=256,vext_spec=v1.0
+            test_cpu: rv64,v=false
+            backend: 4xScalar
+            march: ""
+          - name: rv64gc toolchain, auto, with V
+            os: ubuntu-24.04
+            gcc: "-14"
+            arch: auto
+            build_cpu: rv64,v=true,vlen=256,vext_spec=v1.0
+            test_cpu: rv64,v=true,vlen=256,vext_spec=v1.0
+            backend: RVV
+            march: rv64gcv
+          - name: rv64gc toolchain, auto, without V
+            os: ubuntu-24.04
+            gcc: "-14"
+            arch: auto
+            build_cpu: rv64,v=false
+            test_cpu: rv64,v=false
+            backend: 4xScalar
+            march: ""
+          # no emulator: nothing to probe, and nothing to run the tests on
+          - name: rv64gc toolchain, auto, no emulator
+            os: ubuntu-24.04
+            gcc: "-14"
+            arch: auto
+            build_cpu: ""
+            test_cpu: ""
+            backend: 4xScalar
+            march: ""
+    env:
+      GCC: ${{ matrix.gcc }}
+      ARCH: ${{ matrix.arch }}
+      BUILD_CPU: ${{ matrix.build_cpu }}
+      TEST_CPU: ${{ matrix.test_cpu }}
+      BACKEND: ${{ matrix.backend }}
+      MARCH: ${{ matrix.march }}
 
     steps:
     - uses: actions/checkout@v7
     - name: install riscv64 cross toolchain and qemu
       run: |
         sudo apt-get update
-        sudo apt-get install -y gcc-riscv64-linux-gnu g++-riscv64-linux-gnu qemu-user
+        sudo apt-get install -y gcc$GCC-riscv64-linux-gnu g++$GCC-riscv64-linux-gnu qemu-user
     - name: cmake configure
       run: |
         set -o pipefail
-        cmake -S . -B build_riscv64 \
+        emulator=()
+        if [ -n "$BUILD_CPU" ]; then
+          emulator=("-DCMAKE_CROSSCOMPILING_EMULATOR=qemu-riscv64;-L;/usr/riscv64-linux-gnu")
+        fi
+        QEMU_CPU="$BUILD_CPU" cmake -S . -B build_riscv64 \
           -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
           -DCMAKE_SYSTEM_NAME=Linux \
           -DCMAKE_SYSTEM_PROCESSOR=riscv64 \
-          -DCMAKE_C_COMPILER=riscv64-linux-gnu-gcc \
-          -DCMAKE_CXX_COMPILER=riscv64-linux-gnu-g++ \
+          -DCMAKE_C_COMPILER=riscv64-linux-gnu-gcc$GCC \
+          -DCMAKE_CXX_COMPILER=riscv64-linux-gnu-g++$GCC \
           -DCMAKE_FIND_ROOT_PATH=/usr/riscv64-linux-gnu \
-          "-DCMAKE_CROSSCOMPILING_EMULATOR=qemu-riscv64;-L;/usr/riscv64-linux-gnu;-cpu;rva23u64,vlen=256" \
-          $TESTS_ONLY \
+          "${emulator[@]}" \
+          -DTARGET_C_ARCH=$ARCH -DTARGET_CXX_ARCH=$ARCH \
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON $TESTS_ONLY \
           | tee configure_riscv64.log
-        # fail unless the RVV backend is selected
-        grep -q "SIMD backend for PFFFT: float: RVV, double: RVV" configure_riscv64.log
     - name: build
       run: cmake --build build_riscv64
     - name: test
-      run: ctest --test-dir build_riscv64 --output-on-failure
+      if: matrix.test_cpu != ''
+      run: QEMU_CPU="$TEST_CPU" ctest --test-dir build_riscv64 --output-on-failure
+    - name: check the backend and -march
+      run: bash .github/scripts/check-riscv64-build.sh build_riscv64 configure_riscv64.log
+
+  # The same, built natively: a riscv64 container that qemu runs through
+  # binfmt_misc, CPU model from QEMU_CPU as above. CMake does not
+  # cross-compile here, so TARGET_C_ARCH=auto also adds zvlNNNb for the VLEN
+  # of the build machine, which it leaves out under an emulator.
+  build_riscv64_native_qemu:
+    name: riscv64 native (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default, built with V, run without
+            arch: none
+            build_cpu: rv64,v=true,vlen=256,vext_spec=v1.0
+            test_cpu: rv64,v=false
+            backend: 4xScalar
+            march: ""
+          - name: auto, VLEN 256
+            arch: auto
+            build_cpu: rv64,v=true,vlen=256,vext_spec=v1.0
+            test_cpu: rv64,v=true,vlen=256,vext_spec=v1.0
+            backend: RVV
+            march: rv64gcv_zvl256b
+          - name: auto, VLEN 128
+            arch: auto
+            build_cpu: rv64,v=true,vlen=128,vext_spec=v1.0
+            test_cpu: rv64,v=true,vlen=128,vext_spec=v1.0
+            backend: RVV
+            march: rv64gcv
+    env:
+      ARCH: ${{ matrix.arch }}
+      BUILD_CPU: ${{ matrix.build_cpu }}
+      TEST_CPU: ${{ matrix.test_cpu }}
+      BACKEND: ${{ matrix.backend }}
+      MARCH: ${{ matrix.march }}
+
+    steps:
+    - uses: actions/checkout@v7
+    - uses: docker/setup-qemu-action@v4
+      with:
+        platforms: riscv64
+    - name: configure, build, test and check in a riscv64 container
+      run: |
+        # Ubuntu 24.04 targets rv64gc, so its programs run on either CPU model;
+        # gcc 14, as gcc 13 compiles the RVV backend to scalar code
+        docker run --rm --platform linux/riscv64 -v "$PWD:/src" -w /src \
+          -e BUILD_TYPE -e TESTS_ONLY \
+          -e ARCH -e BUILD_CPU -e TEST_CPU -e BACKEND -e MARCH \
+          ubuntu:24.04 bash -c '
+            set -eo pipefail
+            apt-get -qq update
+            DEBIAN_FRONTEND=noninteractive apt-get -yqq install gcc-14 g++-14 cmake make binutils >/dev/null
+            export QEMU_CPU="$BUILD_CPU"
+            cmake -S . -B build_riscv64 \
+              -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+              -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 \
+              -DTARGET_C_ARCH=$ARCH -DTARGET_CXX_ARCH=$ARCH \
+              -DCMAKE_EXPORT_COMPILE_COMMANDS=ON $TESTS_ONLY \
+              | tee configure_riscv64.log
+            cmake --build build_riscv64 -j $(nproc)
+            QEMU_CPU="$TEST_CPU" ctest --test-dir build_riscv64 --output-on-failure
+            OBJDUMP=objdump bash .github/scripts/check-riscv64-build.sh build_riscv64 configure_riscv64.log
+          '
 
   build_cortex_m55_qemu:
     runs-on: ubuntu-26.04
