@@ -289,6 +289,9 @@ if (INSTALL_TARGETS)
     EXPORT pffft-targets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    # a DLL is a RUNTIME artifact; CMake fills in a default destination for
+    # it only when neither ARCHIVE nor RUNTIME is given
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   )
   install( FILES  ${INSTALL_HEADERS}  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pffft)
 
