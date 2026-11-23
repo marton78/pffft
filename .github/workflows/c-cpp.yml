@@ -127,19 +127,19 @@ jobs:
     - name: prerequisites
       run: sudo apt -qq update && sudo apt -yqq install gcc-mingw-w64 g++-mingw-w64
     - name: build_w32_no-simd
-      run: bash ./cross_build_mingw32.sh no-simd -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DPFFFT_USE_SIMD=OFF
+      run: bash ./cross_build_mingw.sh w32 no-simd -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DPFFFT_USE_SIMD=OFF
     - name: build_w32_simd_full
-      run: bash ./cross_build_mingw32.sh simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DTARGET_C_ARCH=pentium4 -DTARGET_CXX_ARCH=pentium4
+      run: bash ./cross_build_mingw.sh w32 simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DTARGET_C_ARCH=pentium4 -DTARGET_CXX_ARCH=pentium4
     - name: build_w64_no-simd
-      run: bash ./cross_build_mingw64.sh no-simd -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DPFFFT_USE_SIMD=OFF
+      run: bash ./cross_build_mingw.sh w64 no-simd -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DPFFFT_USE_SIMD=OFF
     - name: build_w64_simd_full
-      run: bash ./cross_build_mingw64.sh simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DTARGET_C_ARCH=sandybridge -DTARGET_CXX_ARCH=sandybridge
+      run: bash ./cross_build_mingw.sh w64 simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DTARGET_C_ARCH=sandybridge -DTARGET_CXX_ARCH=sandybridge
     # On Windows a shared library is two files: the DLL, a RUNTIME artifact
     # that belongs in bin/, and its import library, an ARCHIVE in lib/.
     # Install both, and check that the exported CMake package points at the DLL.
     - name: build_w64_shared and install
       run: |
-        bash ./cross_build_mingw64.sh shared -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DBUILD_SHARED_LIBS=ON -DINSTALL_PFFASTCONV=ON
+        bash ./cross_build_mingw.sh w64 shared -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DBUILD_SHARED_LIBS=ON -DINSTALL_PFFASTCONV=ON
         cmake --install build_w64_shared --prefix "$PWD/install_w64_shared"
         find install_w64_shared -type f | sort
         for lib in pffft pffastconv; do
