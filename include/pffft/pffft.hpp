@@ -454,216 +454,111 @@ inline bool isPowerOfTwo(int N) {
 
 namespace detail {
 
-template<typename T>
-class Setup
-{};
+// CApi<Scalar> gives the float (pffft_*) and double (pffftd_*) C functions
+// one set of names, so that a single Setup<T> serves all four value types.
+template<typename Scalar>
+struct CApi;
 
 #if defined(PFFFT_ENABLE_FLOAT) || ( !defined(PFFFT_ENABLE_FLOAT) && !defined(PFFFT_ENABLE_DOUBLE) )
-
 template<>
-class Setup<float>
+struct CApi<float>
 {
-  PFFFT_Setup* self;
+  typedef PFFFT_Setup Handle;
 
-public:
-  typedef float value_type;
-  typedef Types< value_type >::Scalar Scalar;
-
-  Setup()
-    : self(NULL)
-  {}
-
-  ~Setup() { pffft_destroy_setup(self); }
-
-  void prepareLength(int length)
-  {
-    if (self) {
-      pffft_destroy_setup(self);
-    }
-    self = pffft_new_setup(length, PFFFT_REAL);
-  }
-
-  bool isValid() const { return (self); }
-
-  void transform_ordered(const Scalar* input,
-                         Scalar* output,
-                         Scalar* work,
-                         pffft_direction_t direction)
-  {
-    pffft_transform_ordered(self, input, output, work, direction);
-  }
-
-  void transform(const Scalar* input,
-                 Scalar* output,
-                 Scalar* work,
-                 pffft_direction_t direction)
-  {
-    pffft_transform(self, input, output, work, direction);
-  }
-
-  void reorder(const Scalar* input, Scalar* output, pffft_direction_t direction)
-  {
-    pffft_zreorder(self, input, output, direction);
-  }
-
-  void convolveAccumulate(const Scalar* dft_a,
-                          const Scalar* dft_b,
-                          Scalar* dft_ab,
-                          const Scalar scaling)
-  {
-    pffft_zconvolve_accumulate(self, dft_a, dft_b, dft_ab, scaling);
-  }
-
-  void convolve(const Scalar* dft_a,
-                const Scalar* dft_b,
-                Scalar* dft_ab,
-                const Scalar scaling)
-  {
-    pffft_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
-  }
-
-  void convolve(const Scalar* dft_a,
-                const Scalar* dft_b,
-                Scalar* dft_ab)
-  {
-    pffft_zconvolve(self, dft_a, dft_b, dft_ab);
-  }
-
-  int zconvertZP(const Scalar* in, Scalar* out, const Scalar scaling)
-  {
-    return pffft_zconvert_zp(self, in, out, scaling);
-  }
-
-  int convolveZP(const Scalar* dft_x,
-                 const Scalar* dft_hzp,
-                 Scalar* dft_ab)
-  {
-    return pffft_zconvolve_zp(self, dft_x, dft_hzp, dft_ab);
-  }
+  static Handle* new_setup(int N, pffft_transform_t kind)
+  { return pffft_new_setup(N, kind); }
+  static void destroy_setup(Handle* s)
+  { pffft_destroy_setup(s); }
+  static void transform_ordered(const Handle* s, const float* input, float* output, float* work, pffft_direction_t direction)
+  { pffft_transform_ordered(s, input, output, work, direction); }
+  static void transform(const Handle* s, const float* input, float* output, float* work, pffft_direction_t direction)
+  { pffft_transform(s, input, output, work, direction); }
+  static void zreorder(const Handle* s, const float* input, float* output, pffft_direction_t direction)
+  { pffft_zreorder(s, input, output, direction); }
+  static void zconvolve_accumulate(const Handle* s, const float* dft_a, const float* dft_b, float* dft_ab, float scaling)
+  { pffft_zconvolve_accumulate(s, dft_a, dft_b, dft_ab, scaling); }
+  static void zconvolve_scale(const Handle* s, const float* dft_a, const float* dft_b, float* dft_ab, float scaling)
+  { pffft_zconvolve_scale(s, dft_a, dft_b, dft_ab, scaling); }
+  static void zconvolve(const Handle* s, const float* dft_a, const float* dft_b, float* dft_ab)
+  { pffft_zconvolve(s, dft_a, dft_b, dft_ab); }
+  static int zconvert_zp(const Handle* s, const float* input, float* output, float scaling)
+  { return pffft_zconvert_zp(s, input, output, scaling); }
+  static int zconvolve_zp(const Handle* s, const float* dft_x, const float* dft_hzp, float* dft_ab)
+  { return pffft_zconvolve_zp(s, dft_x, dft_hzp, dft_ab); }
 };
-
-
-template<>
-class Setup< ::std::complex<float> >
-{
-  PFFFT_Setup* self;
-
-public:
-  typedef ::std::complex<float> value_type;
-  typedef Types< value_type >::Scalar Scalar;
-
-  Setup()
-    : self(NULL)
-  {}
-
-  ~Setup() { pffft_destroy_setup(self); }
-
-  void prepareLength(int length)
-  {
-    if (self) {
-      pffft_destroy_setup(self);
-    }
-    self = pffft_new_setup(length, PFFFT_COMPLEX);
-  }
-
-  bool isValid() const { return (self); }
-
-  void transform_ordered(const Scalar* input,
-                         Scalar* output,
-                         Scalar* work,
-                         pffft_direction_t direction)
-  {
-    pffft_transform_ordered(self, input, output, work, direction);
-  }
-
-  void transform(const Scalar* input,
-                 Scalar* output,
-                 Scalar* work,
-                 pffft_direction_t direction)
-  {
-    pffft_transform(self, input, output, work, direction);
-  }
-
-  void reorder(const Scalar* input, Scalar* output, pffft_direction_t direction)
-  {
-    pffft_zreorder(self, input, output, direction);
-  }
-
-  void convolveAccumulate(const Scalar* dft_a,
-                          const Scalar* dft_b,
-                          Scalar* dft_ab,
-                          const Scalar scaling)
-  {
-    pffft_zconvolve_accumulate(self, dft_a, dft_b, dft_ab, scaling);
-  }
-
-  void convolve(const Scalar* dft_a,
-                const Scalar* dft_b,
-                Scalar* dft_ab,
-                const Scalar scaling)
-  {
-    pffft_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
-  }
-
-  void convolve(const Scalar* dft_a,
-                const Scalar* dft_b,
-                Scalar* dft_ab)
-  {
-    pffft_zconvolve(self, dft_a, dft_b, dft_ab);
-  }
-
-  int zconvertZP(const Scalar* in, Scalar* out, const Scalar scaling)
-  {
-    return pffft_zconvert_zp(self, in, out, scaling);
-  }
-
-  int convolveZP(const Scalar* dft_x,
-                 const Scalar* dft_hzp,
-                 Scalar* dft_ab)
-  {
-    return pffft_zconvolve_zp(self, dft_x, dft_hzp, dft_ab);
-  }
-};
-
-#endif /* defined(PFFFT_ENABLE_FLOAT) || ( !defined(PFFFT_ENABLE_FLOAT) && !defined(PFFFT_ENABLE_DOUBLE) ) */
-
+#endif
 
 #if defined(PFFFT_ENABLE_DOUBLE)
-
 template<>
-class Setup<double>
+struct CApi<double>
 {
-  PFFFTD_Setup* self;
+  typedef PFFFTD_Setup Handle;
+
+  static Handle* new_setup(int N, pffft_transform_t kind)
+  { return pffftd_new_setup(N, kind); }
+  static void destroy_setup(Handle* s)
+  { pffftd_destroy_setup(s); }
+  static void transform_ordered(const Handle* s, const double* input, double* output, double* work, pffft_direction_t direction)
+  { pffftd_transform_ordered(s, input, output, work, direction); }
+  static void transform(const Handle* s, const double* input, double* output, double* work, pffft_direction_t direction)
+  { pffftd_transform(s, input, output, work, direction); }
+  static void zreorder(const Handle* s, const double* input, double* output, pffft_direction_t direction)
+  { pffftd_zreorder(s, input, output, direction); }
+  static void zconvolve_accumulate(const Handle* s, const double* dft_a, const double* dft_b, double* dft_ab, double scaling)
+  { pffftd_zconvolve_accumulate(s, dft_a, dft_b, dft_ab, scaling); }
+  static void zconvolve_scale(const Handle* s, const double* dft_a, const double* dft_b, double* dft_ab, double scaling)
+  { pffftd_zconvolve_scale(s, dft_a, dft_b, dft_ab, scaling); }
+  static void zconvolve(const Handle* s, const double* dft_a, const double* dft_b, double* dft_ab)
+  { pffftd_zconvolve(s, dft_a, dft_b, dft_ab); }
+  static int zconvert_zp(const Handle* s, const double* input, double* output, double scaling)
+  { return pffftd_zconvert_zp(s, input, output, scaling); }
+  static int zconvolve_zp(const Handle* s, const double* dft_x, const double* dft_hzp, double* dft_ab)
+  { return pffftd_zconvolve_zp(s, dft_x, dft_hzp, dft_ab); }
+};
+#endif
+
+
+// Owns the C setup for value type T and forwards to the C functions.
+// T picks the scalar type (float or double) and whether the transform
+// is real or complex.
+template<typename T>
+class Setup
+{
+public:
+  typedef T value_type;
+  typedef typename Types< value_type >::Scalar Scalar;
+
+private:
+  typedef CApi<Scalar> Api;
+
+  typename Api::Handle* self;
+
+  static pffft_transform_t transformType()
+  {
+    return sizeof(T) == sizeof(typename Types<T>::Complex) ? PFFFT_COMPLEX : PFFFT_REAL;
+  }
 
 public:
-  typedef double value_type;
-  typedef Types< value_type >::Scalar Scalar;
-
   Setup()
     : self(NULL)
   {}
 
-  ~Setup() { pffftd_destroy_setup(self); }
+  ~Setup() { Api::destroy_setup(self); }
 
   void prepareLength(int length)
   {
-    if (self) {
-      pffftd_destroy_setup(self);
-      self = NULL;
-    }
-    if (length > 0) {
-      self = pffftd_new_setup(length, PFFFT_REAL);
-    }
+    Api::destroy_setup(self);
+    self = Api::new_setup(length, transformType());
   }
 
-  bool isValid() const { return (self); }
+  bool isValid() const { return self != NULL; }
 
   void transform_ordered(const Scalar* input,
                          Scalar* output,
                          Scalar* work,
                          pffft_direction_t direction)
   {
-    pffftd_transform_ordered(self, input, output, work, direction);
+    Api::transform_ordered(self, input, output, work, direction);
   }
 
   void transform(const Scalar* input,
@@ -671,12 +566,12 @@ public:
                  Scalar* work,
                  pffft_direction_t direction)
   {
-    pffftd_transform(self, input, output, work, direction);
+    Api::transform(self, input, output, work, direction);
   }
 
   void reorder(const Scalar* input, Scalar* output, pffft_direction_t direction)
   {
-    pffftd_zreorder(self, input, output, direction);
+    Api::zreorder(self, input, output, direction);
   }
 
   void convolveAccumulate(const Scalar* dft_a,
@@ -684,7 +579,7 @@ public:
                           Scalar* dft_ab,
                           const Scalar scaling)
   {
-    pffftd_zconvolve_accumulate(self, dft_a, dft_b, dft_ab, scaling);
+    Api::zconvolve_accumulate(self, dft_a, dft_b, dft_ab, scaling);
   }
 
   void convolve(const Scalar* dft_a,
@@ -692,110 +587,28 @@ public:
                 Scalar* dft_ab,
                 const Scalar scaling)
   {
-    pffftd_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
+    Api::zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
   }
 
   void convolve(const Scalar* dft_a,
                 const Scalar* dft_b,
                 Scalar* dft_ab)
   {
-    pffftd_zconvolve(self, dft_a, dft_b, dft_ab);
+    Api::zconvolve(self, dft_a, dft_b, dft_ab);
   }
+
   int zconvertZP(const Scalar* in, Scalar* out, const Scalar scaling)
   {
-    return pffftd_zconvert_zp(self, in, out, scaling);
+    return Api::zconvert_zp(self, in, out, scaling);
   }
 
   int convolveZP(const Scalar* dft_x,
                  const Scalar* dft_hzp,
                  Scalar* dft_ab)
   {
-    return pffftd_zconvolve_zp(self, dft_x, dft_hzp, dft_ab);
+    return Api::zconvolve_zp(self, dft_x, dft_hzp, dft_ab);
   }
 };
-
-template<>
-class Setup< ::std::complex<double> >
-{
-  PFFFTD_Setup* self;
-
-public:
-  typedef ::std::complex<double> value_type;
-  typedef Types< value_type >::Scalar Scalar;
-
-  Setup()
-    : self(NULL)
-  {}
-
-  ~Setup() { pffftd_destroy_setup(self); }
-
-  void prepareLength(int length)
-  {
-    if (self) {
-      pffftd_destroy_setup(self);
-    }
-    self = pffftd_new_setup(length, PFFFT_COMPLEX);
-  }
-
-  bool isValid() const { return (self); }
-
-  void transform_ordered(const Scalar* input,
-                         Scalar* output,
-                         Scalar* work,
-                         pffft_direction_t direction)
-  {
-    pffftd_transform_ordered(self, input, output, work, direction);
-  }
-
-  void transform(const Scalar* input,
-                 Scalar* output,
-                 Scalar* work,
-                 pffft_direction_t direction)
-  {
-    pffftd_transform(self, input, output, work, direction);
-  }
-
-  void reorder(const Scalar* input, Scalar* output, pffft_direction_t direction)
-  {
-    pffftd_zreorder(self, input, output, direction);
-  }
-
-  void convolveAccumulate(const Scalar* dft_a,
-                          const Scalar* dft_b,
-                          Scalar* dft_ab,
-                          const Scalar scaling)
-  {
-    pffftd_zconvolve_accumulate(self, dft_a, dft_b, dft_ab, scaling);
-  }
-
-  void convolve(const Scalar* dft_a,
-                const Scalar* dft_b,
-                Scalar* dft_ab,
-                const Scalar scaling)
-  {
-    pffftd_zconvolve_scale(self, dft_a, dft_b, dft_ab, scaling);
-  }
-
-  void convolve(const Scalar* dft_a,
-                const Scalar* dft_b,
-                Scalar* dft_ab)
-  {
-    pffftd_zconvolve(self, dft_a, dft_b, dft_ab);
-  }
-  int zconvertZP(const Scalar* in, Scalar* out, const Scalar scaling)
-  {
-    return pffftd_zconvert_zp(self, in, out, scaling);
-  }
-
-  int convolveZP(const Scalar* dft_x,
-                 const Scalar* dft_hzp,
-                 Scalar* dft_ab)
-  {
-    return pffftd_zconvolve_zp(self, dft_x, dft_hzp, dft_ab);
-  }
-};
-
-#endif /* defined(PFFFT_ENABLE_DOUBLE) */
 
 } // end of anonymous namespace for Setup<>
 
