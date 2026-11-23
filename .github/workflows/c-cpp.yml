@@ -4,11 +4,9 @@ on:
   push:
     branches:
       - master
-      - github_actions
   pull_request:
     branches:
       - master
-      - github_actions
 
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
