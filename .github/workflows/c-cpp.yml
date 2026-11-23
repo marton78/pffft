@@ -12,7 +12,8 @@ env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
   # cmake options shared by the jobs below, expanded unquoted: no value may
-  # contain a space. Leave out the third-party FFTs the benchmarks compare to:
+  # contain a space. Where the benchmarks are built, leave out the
+  # third-party FFTs they compare to, submodules CI does not check out:
   NO_BENCH_FFTS: -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF
   # build the tests, but not the benchmarks or the examples:
   TESTS_ONLY: -DPFFFT_BUILD_TESTS=ON -DPFFFT_BUILD_BENCHMARKS=OFF -DPFFFT_BUILD_EXAMPLES=OFF
@@ -25,7 +26,7 @@ jobs:
     - uses: actions/checkout@v7
     - uses: emscripten-core/setup-emsdk@v16
     - name: cmake configure
-      run: emcmake cmake -S . -B build_wasm -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CROSSCOMPILING_EMULATOR=node $NO_BENCH_FFTS $TESTS_ONLY
+      run: emcmake cmake -S . -B build_wasm -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CROSSCOMPILING_EMULATOR=node $TESTS_ONLY
     - name: build
       run: cmake --build build_wasm
     - name: test
@@ -50,7 +51,7 @@ jobs:
           -DCMAKE_CXX_COMPILER=riscv64-linux-gnu-g++ \
           -DCMAKE_FIND_ROOT_PATH=/usr/riscv64-linux-gnu \
           "-DCMAKE_CROSSCOMPILING_EMULATOR=qemu-riscv64;-L;/usr/riscv64-linux-gnu;-cpu;rva23u64,vlen=256" \
-          $NO_BENCH_FFTS $TESTS_ONLY \
+          $TESTS_ONLY \
           | tee configure_riscv64.log
         # fail unless the RVV backend is selected
         grep -q "SIMD backend for PFFFT: float: RVV, double: RVV" configure_riscv64.log
@@ -73,7 +74,7 @@ jobs:
         cmake -S . -B build_m55 \
           -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
           -DCMAKE_TOOLCHAIN_FILE=tests/cortex-m55/toolchain.cmake \
-          -DPFFFT_USE_HELIUM=ON $NO_BENCH_FFTS $TESTS_ONLY \
+          -DPFFFT_USE_HELIUM=ON $TESTS_ONLY \
           | tee configure_m55.log
         # fail unless the Helium backend is selected
         grep -q "SIMD backend for PFFFT: float: Helium, double: 4xScalar" configure_m55.log
