@@ -44,6 +44,11 @@
 #include <string.h>
 #include <time.h>
 
+#if PFFFT_HPP_CXX11
+#include <type_traits>
+#include <utility>
+#endif
+
 /* define own constants required to turn off g++ extensions .. */
 #ifndef M_PI
   #define M_PI    3.14159265358979323846  /* pi */
@@ -72,7 +77,7 @@ Ttest(int N, bool useOrdered)
 
   assert(Fft::isPowerOfTwo(N));
 
-  Fft fft = Fft(N);  // instantiate and prepareLength() for length N
+  Fft fft(N);  // instantiate and prepareLength() for length N
 
 #if __cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1900)
 
@@ -426,6 +431,76 @@ AccumulateTest(int N)
   return false;
 }
 
+#if PFFFT_HPP_CXX11
+// Fft<T> owns a setup and (for large sizes) a heap work buffer: it must be
+// move-only, and moved-from objects must not free what they gave away.
+// Run under ASan (PFFFT_USE_DEBUG_ASAN) to catch double frees.
+template<typename T>
+bool
+MoveTest(int N)
+{
+  typedef pffft::Fft<T> Fft;
+  typedef typename Fft::Complex FftComplex;
+
+  static_assert(!std::is_copy_constructible<Fft>::value, "Fft must not be copyable");
+  static_assert(!std::is_copy_assignable<Fft>::value, "Fft must not be copy-assignable");
+  static_assert(std::is_nothrow_move_constructible<Fft>::value, "Fft must be nothrow-movable");
+  static_assert(std::is_nothrow_move_assignable<Fft>::value, "Fft must be nothrow-move-assignable");
+
+  Fft ref(N);
+  pffft::AlignedVector<T> X = ref.valueVector();
+  pffft::AlignedVector<FftComplex> Yref = ref.spectrumVector();
+  pffft::AlignedVector<FftComplex> Y = ref.spectrumVector();
+  for (int j = 0; j < N; ++j)
+    X[j] = T(0.5 * sin(0.37 * j) + 0.25 * cos(1.71 * j + 0.3));
+  ref.forward(X, Yref);
+
+  // no reserve(): growth relocates the elements by move.
+  // even entries use the heap work buffer, odd ones the stack.
+  std::vector<Fft> ffts;
+  for (int k = 0; k < 9; ++k)
+    ffts.push_back(Fft(N, (k % 2) ? N : N - 1));
+
+  bool retError = false;
+  for (size_t k = 0; k < ffts.size(); ++k) {
+    if (!ffts[k].isValid() || ffts[k].getLength() != N) {
+      printf("move: vector element %d invalid after relocation\n", int(k));
+      return true;
+    }
+    ffts[k].forward(X, Y);
+    if (memcmp(Y.data(), Yref.data(), Y.size() * sizeof(FftComplex))) {
+      printf("move: vector element %d transforms differently\n", int(k));
+      retError = true;
+    }
+  }
+
+  // move construction leaves the source invalid but reusable
+  Fft a(std::move(ffts[0]));
+  if (!a.isValid() || ffts[0].isValid() || ffts[0].getLength() != 0) {
+    printf("move: move construction left wrong validity\n");
+    retError = true;
+  }
+  if (!ffts[0].prepareLength(N) || !ffts[0].isValid()) {
+    printf("move: moved-from Fft cannot be prepared again\n");
+    retError = true;
+  }
+
+  // move assignment releases the target's own resources
+  Fft b(2 * N, 0);
+  b = std::move(a);
+  if (!b.isValid() || b.getLength() != N || a.isValid()) {
+    printf("move: move assignment left wrong validity\n");
+    retError = true;
+  }
+  b.forward(X, Y);
+  if (memcmp(Y.data(), Yref.data(), Y.size() * sizeof(FftComplex))) {
+    printf("move: move-assigned Fft transforms differently\n");
+    retError = true;
+  }
+  return retError;
+}
+#endif
+
 bool
 test(int N, bool useComplex, bool useOrdered)
 {
@@ -567,7 +642,21 @@ main(int argc, char** argv)
   if (!resAcc)
     printf("convolveAccumulate wrapper tests succeeded successfully.\n");
 
-  resAll = resNextPw2 | resIsPw2 | resFFT | resZP | resAcc;
+  int resMove = 0;
+#if PFFFT_HPP_CXX11
+#ifdef PFFFT_ENABLE_FLOAT
+  resMove |= MoveTest<float>(64);
+  resMove |= MoveTest< ::std::complex<float> >(64);
+#endif
+#ifdef PFFFT_ENABLE_DOUBLE
+  resMove |= MoveTest<double>(64);
+  resMove |= MoveTest< ::std::complex<double> >(64);
+#endif
+  if (!resMove)
+    printf("Fft move semantics tests succeeded successfully.\n");
+#endif
+
+  resAll = resNextPw2 | resIsPw2 | resFFT | resZP | resAcc | resMove;
   if (!resAll)
     printf("all tests succeeded successfully.\n");
   else

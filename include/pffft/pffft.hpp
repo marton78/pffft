@@ -34,6 +34,14 @@
 #include <vector>
 #include <limits>
 #include <cassert>
+#include <utility>
+
+// move semantics and '= delete' need C++11 (MSVC 2015 does not raise __cplusplus)
+#if (__cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1900))
+#define PFFFT_HPP_CXX11 1
+#else
+#define PFFFT_HPP_CXX11 0
+#endif
 
 namespace pffft {
 namespace detail {
@@ -102,7 +110,7 @@ namespace detail {
   template<typename T> class Setup;
 }
 
-#if (__cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1900))
+#if PFFFT_HPP_CXX11
 
 // define AlignedVector<T> utilizing 'using' in C++11
 template<typename T>
@@ -176,6 +184,19 @@ public:
 
 
   ~Fft();
+
+  /*
+   * Fft owns its setup and work buffer, so it cannot be copied.
+   * With C++11 it can be moved; a moved-from Fft is invalid (isValid()
+   * returns false) until prepareLength() is called on it again.
+   */
+#if PFFFT_HPP_CXX11
+  Fft(const Fft&) = delete;
+  Fft& operator=(const Fft&) = delete;
+
+  Fft(Fft&& other) noexcept;
+  Fft& operator=(Fft&& other) noexcept;
+#endif
 
   /*
    * prepare for transformation length 'newLength'.
@@ -420,6 +441,12 @@ public:
                              const Scalar scaling);
 
 private:
+#if !PFFFT_HPP_CXX11
+  // declared but never defined: Fft is not copyable
+  Fft(const Fft&);
+  Fft& operator=(const Fft&);
+#endif
+
   detail::Setup<T> setup;
   Scalar* work;
   int length;
@@ -545,6 +572,34 @@ public:
 
   ~Setup() { Api::destroy_setup(self); }
 
+  // owns 'self': copying would destroy it twice, so Setup is move-only
+#if PFFFT_HPP_CXX11
+  Setup(const Setup&) = delete;
+  Setup& operator=(const Setup&) = delete;
+
+  Setup(Setup&& other) noexcept
+    : self(other.self)
+  {
+    other.self = NULL;
+  }
+
+  Setup& operator=(Setup&& other) noexcept
+  {
+    if (this != &other) {
+      Api::destroy_setup(self);
+      self = other.self;
+      other.self = NULL;
+    }
+    return *this;
+  }
+#else
+private:
+  // declared but never defined
+  Setup(const Setup&);
+  Setup& operator=(const Setup&);
+public:
+#endif
+
   void prepareLength(int length)
   {
     Api::destroy_setup(self);
@@ -619,7 +674,7 @@ inline Fft<T>::Fft(int length, int stackThresholdLen)
   , length(0)
   , stackThresholdLen(stackThresholdLen)
 {
-#if (__cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1900))
+#if PFFFT_HPP_CXX11
   static_assert( sizeof(Complex) == 2 * sizeof(Scalar), "pffft requires sizeof(std::complex<>) == 2 * sizeof(Scalar)" );
 #elif defined(__GNUC__)
   char static_assert_like[(sizeof(Complex) == 2 * sizeof(Scalar)) ? 1 : -1]; // pffft requires sizeof(std::complex<>) == 2 * sizeof(Scalar)
@@ -632,6 +687,35 @@ inline Fft<T>::~Fft()
 {
   alignedFree(work);
 }
+
+#if PFFFT_HPP_CXX11
+template<typename T>
+inline Fft<T>::Fft(Fft&& other) noexcept
+  : setup(std::move(other.setup))
+  , work(other.work)
+  , length(other.length)
+  , stackThresholdLen(other.stackThresholdLen)
+{
+  other.work = NULL;
+  other.length = 0;
+}
+
+template<typename T>
+inline Fft<T>&
+Fft<T>::operator=(Fft&& other) noexcept
+{
+  if (this != &other) {
+    setup = std::move(other.setup);
+    alignedFree(work);
+    work = other.work;
+    length = other.length;
+    stackThresholdLen = other.stackThresholdLen;
+    other.work = NULL;
+    other.length = 0;
+  }
+  return *this;
+}
+#endif
 
 template<typename T>
 inline bool
