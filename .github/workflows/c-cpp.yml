@@ -4,15 +4,19 @@ on:
   push:
     branches:
       - master
-      - github_actions
   pull_request:
     branches:
       - master
-      - github_actions
 
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
+  # cmake options shared by the jobs below, expanded unquoted: no value may
+  # contain a space. Where the benchmarks are built, leave out the
+  # third-party FFTs they compare to, submodules CI does not check out:
+  NO_BENCH_FFTS: -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF
+  # build the tests, but not the benchmarks or the examples:
+  TESTS_ONLY: -DPFFFT_BUILD_TESTS=ON -DPFFFT_BUILD_BENCHMARKS=OFF -DPFFFT_BUILD_EXAMPLES=OFF
 
 jobs:
   build_emscripten:
@@ -22,11 +26,11 @@ jobs:
     - uses: actions/checkout@v7
     - uses: emscripten-core/setup-emsdk@v16
     - name: cmake configure
-      run: emcmake cmake -S . -B build_wasm -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CROSSCOMPILING_EMULATOR=node -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DPFFFT_BUILD_TESTS=ON -DPFFFT_BUILD_BENCHMARKS=OFF -DPFFFT_BUILD_EXAMPLES=OFF
+      run: emcmake cmake -S . -B build_wasm -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CROSSCOMPILING_EMULATOR=node $TESTS_ONLY
     - name: build
       run: cmake --build build_wasm
     - name: test
-      run: cd build_wasm && ctest --output-on-failure
+      run: ctest --test-dir build_wasm --output-on-failure
 
   build_riscv64_qemu:
     runs-on: ubuntu-26.04
@@ -39,6 +43,7 @@ jobs:
         sudo apt-get install -y gcc-riscv64-linux-gnu g++-riscv64-linux-gnu qemu-user
     - name: cmake configure
       run: |
+        set -o pipefail
         cmake -S . -B build_riscv64 \
           -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
           -DCMAKE_SYSTEM_NAME=Linux \
@@ -47,15 +52,14 @@ jobs:
           -DCMAKE_CXX_COMPILER=riscv64-linux-gnu-g++ \
           -DCMAKE_FIND_ROOT_PATH=/usr/riscv64-linux-gnu \
           "-DCMAKE_CROSSCOMPILING_EMULATOR=qemu-riscv64;-L;/usr/riscv64-linux-gnu;-cpu;rva23u64,vlen=256" \
-          -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF \
-          -DPFFFT_BUILD_TESTS=ON -DPFFFT_BUILD_BENCHMARKS=OFF -DPFFFT_BUILD_EXAMPLES=OFF \
+          $TESTS_ONLY \
           | tee configure_riscv64.log
         # fail unless the RVV backend is selected
         grep -q "SIMD backend for PFFFT: float: RVV, double: RVV" configure_riscv64.log
     - name: build
       run: cmake --build build_riscv64
     - name: test
-      run: cd build_riscv64 && ctest --output-on-failure
+      run: ctest --test-dir build_riscv64 --output-on-failure
 
   build_cortex_m55_qemu:
     runs-on: ubuntu-26.04
@@ -68,12 +72,11 @@ jobs:
         sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib qemu-system-arm
     - name: cmake configure
       run: |
+        set -o pipefail
         cmake -S . -B build_m55 \
           -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
           -DCMAKE_TOOLCHAIN_FILE=tests/cortex-m55/toolchain.cmake \
-          -DPFFFT_USE_HELIUM=ON \
-          -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF \
-          -DPFFFT_BUILD_TESTS=ON -DPFFFT_BUILD_BENCHMARKS=OFF -DPFFFT_BUILD_EXAMPLES=OFF \
+          -DPFFFT_USE_HELIUM=ON $TESTS_ONLY \
           | tee configure_m55.log
         # fail unless the Helium backend is selected
         grep -q "SIMD backend for PFFFT: float: Helium, double: 4xScalar" configure_m55.log
@@ -81,125 +84,65 @@ jobs:
       run: cmake --build build_m55
     - name: test
       # the bench_* tests allocate about 1 GiB
-      run: cd build_m55 && ctest --output-on-failure -E "^bench_"
+      run: ctest --test-dir build_m55 --output-on-failure -E "^bench_"
 
-  build_w_mipp_ubuntu-amd64:
-    runs-on: ubuntu-26.04
-
-    steps:
-    - name: check out MIPP
-      uses: actions/checkout@v7
-      with:
-          repository: hayguen/MIPP
-          path: ./MIPP
-    - name: cmake configure MIPP
-      run: cmake -S MIPP -B MIPP_build -DCMAKE_INSTALL_PREFIX=$HOME/.local -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-    - name: cmake install MIPP headers
-      run: cmake --build MIPP_build --target install && ls -alh $HOME/.local/ && ls -alh $HOME/.local/include/
-
-    - uses: actions/checkout@v7
-    - name: cmake_make_simd_float_double
-      run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
-    - name: cmake_make_simd_float
-      run: mkdir build_simd_float && cmake -S . -B build_simd_float -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_DOUBLE=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_float
-    - name: cmake_make_simd_double
-      run: mkdir build_simd_double && cmake -S . -B build_simd_double -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_FLOAT=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_double
-    - name: cmake_make_no-simd_float_double
-      run: mkdir build_no-simd_full && cmake -S . -B build_no-simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_no-simd_full
-    - name: cmake_make_no-simd_scalar_float_double
-      run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=ON -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
-    - name: cmake_make_no-simd_novect_float_double
-      run: mkdir build_no-simd_novect && cmake -S . -B build_no-simd_novect -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_novect
-    - name: ctest_no-simd_novect
-      # greenffts octave wrappers cannot run outside their environment;
-      # everything else -- including the SIMD_SZ==1 nosimd kernels --
-      # must pass. (The harness step-0 loop that used to hang this test
-      # under SZ=1 was fixed in tests/test_fft_factors.c.)
-      run: cd build_no-simd_novect && ctest -E "convTest|conv2dTest|rfft2d" --output-on-failure
-    - name: ctest
-      run: for d in build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full; do (cd $d && ctest --output-on-failure) || exit 1; done
-    - name: compress
-      run: tar zcvf pffft_w_mipp_ubuntu-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
-    - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v7
-      with:
-        name: pffft_w_mipp_ubuntu_builds
-        path: pffft_w_mipp_ubuntu-amd64.tar.gz
-
-  build_ubuntu-amd64:
-    runs-on: ubuntu-26.04
+  # Linux and macOS, natively
+  build_unix:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, macos-26]
+    env:
+      BUILDS: build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full build_no-simd_novect
 
     steps:
     - uses: actions/checkout@v7
-    - name: cmake_make_simd_float_double
-      run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
-    - name: cmake_make_simd_float
-      run: mkdir build_simd_float && cmake -S . -B build_simd_float -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_DOUBLE=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_float
-    - name: cmake_make_simd_double
-      run: mkdir build_simd_double && cmake -S . -B build_simd_double -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_FLOAT=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_double
-    - name: cmake_make_no-simd_float_double
-      run: mkdir build_no-simd_full && cmake -S . -B build_no-simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_no-simd_full
-    - name: cmake_make_no-simd_scalar_float_double
-      run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=ON -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
-    - name: cmake_make_no-simd_novect_float_double
-      run: mkdir build_no-simd_novect && cmake -S . -B build_no-simd_novect -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_novect
-    - name: ctest_no-simd_novect
-      # greenffts octave wrappers cannot run outside their environment;
-      # everything else -- including the SIMD_SZ==1 nosimd kernels --
-      # must pass. (The harness step-0 loop that used to hang this test
-      # under SZ=1 was fixed in tests/test_fft_factors.c.)
-      run: cd build_no-simd_novect && ctest -E "convTest|conv2dTest|rfft2d" --output-on-failure
-    - name: ctest
-      run: for d in build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full; do (cd $d && ctest --output-on-failure) || exit 1; done
-    - name: compress
-      run: tar zcvf pffft_ubuntu-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
-    - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v7
-      with:
-        name: pffft_ubuntu-amd64
-        path: pffft_ubuntu-amd64.tar.gz
+    - name: build
+      run: |
+        build() {  # <build dir> <cmake options>
+          echo "::group::$1"
+          cmake -S . -B "$1" -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS \
+            -DTARGET_C_ARCH=native -DTARGET_CXX_ARCH=native "${@:2}"
+          cmake --build "$1"
+          echo "::endgroup::"
+        }
+        build build_simd_full
+        build build_simd_float -DPFFFT_USE_TYPE_DOUBLE=OFF
+        build build_simd_double -DPFFFT_USE_TYPE_FLOAT=OFF
+        build build_no-simd_full -DPFFFT_USE_SIMD=OFF
+        build build_no-simd_scalar_full -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=ON
+        # the only configuration that compiles the SIMD_SZ==1 nosimd code
+        build build_no-simd_novect -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=OFF
+    - name: test
+      run: |
+        for d in $BUILDS; do
+          echo "::group::$d"
+          ctest --test-dir $d --output-on-failure
+          echo "::endgroup::"
+        done
 
   cross_build_win_from_linux:
     runs-on: ubuntu-26.04
 
     steps:
-    - name: prerequisites
-      run: sudo apt -qq update && sudo apt -yqq install gcc-mingw-w64 g++-mingw-w64
-
-    - name: check out MIPP
-      uses: actions/checkout@v7
-      with:
-          repository: hayguen/MIPP
-          path: ./MIPP
-    - name: cmake configure MIPP
-      working-directory: ${{runner.workspace}}
-      run: cmake -S pffft/MIPP -B MIPP_build -DCMAKE_INSTALL_PREFIX=$(pwd) -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-    - name: cmake install MIPP headers
-      working-directory: ${{runner.workspace}}
-      run: cmake --build MIPP_build --target install
-
     - uses: actions/checkout@v7
+    - name: prerequisites
+      run: sudo apt-get -qq update && sudo apt-get -yqq install gcc-mingw-w64 g++-mingw-w64
     - name: build_w32_no-simd
-      working-directory: ${{runner.workspace}}
-      run: cd $GITHUB_WORKSPACE && bash ./cross_build_mingw32.sh no-simd -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF
+      run: bash ./cross_build_mingw.sh w32 no-simd -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DPFFFT_USE_SIMD=OFF
     - name: build_w32_simd_full
-      working-directory: ${{runner.workspace}}
-      run: X=$(pwd) && cd $GITHUB_WORKSPACE && bash ./cross_build_mingw32.sh simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=pentium4 -DTARGET_C_ARCH=pentium4 -DMIPP_INCLUDE_DIRS=$X/include/mipp
-
+      run: bash ./cross_build_mingw.sh w32 simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DTARGET_C_ARCH=pentium4 -DTARGET_CXX_ARCH=pentium4
     - name: build_w64_no-simd
-      working-directory: ${{runner.workspace}}
-      run: cd $GITHUB_WORKSPACE && bash ./cross_build_mingw64.sh no-simd -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF
+      run: bash ./cross_build_mingw.sh w64 no-simd -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DPFFFT_USE_SIMD=OFF
     - name: build_w64_simd_full
-      working-directory: ${{runner.workspace}}
-      run: X=$(pwd) && cd $GITHUB_WORKSPACE && bash ./cross_build_mingw64.sh simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=sandybridge -DTARGET_C_ARCH=sandybridge -DMIPP_INCLUDE_DIRS=$X/include/mipp
+      run: bash ./cross_build_mingw.sh w64 simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DTARGET_C_ARCH=sandybridge -DTARGET_CXX_ARCH=sandybridge
     # On Windows a shared library is two files: the DLL, a RUNTIME artifact
     # that belongs in bin/, and its import library, an ARCHIVE in lib/.
     # Install both, and check that the exported CMake package points at the DLL.
     - name: build_w64_shared and install
-      working-directory: ${{runner.workspace}}
       run: |
-        cd $GITHUB_WORKSPACE
-        bash ./cross_build_mingw64.sh shared -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DBUILD_SHARED_LIBS=ON -DINSTALL_PFFASTCONV=ON -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF
+        bash ./cross_build_mingw.sh w64 shared -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DBUILD_SHARED_LIBS=ON -DINSTALL_PFFASTCONV=ON
         cmake --install build_w64_shared --prefix "$PWD/install_w64_shared"
         find install_w64_shared -type f | sort
         for lib in pffft pffastconv; do
@@ -209,152 +152,77 @@ jobs:
         grep -q 'bin/libpffft\.dll' install_w64_shared/lib/cmake/pffft/pffft-targets-*.cmake \
           || { echo "::error::the exported targets do not locate libpffft.dll"; exit 1; }
 
-    - name: compress
-      run: tar zcvf pffft_cross-build-windows-from-linux-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt  build_w32_no-simd build_w32_simd_full build_w64_no-simd build_w64_simd_full
-    - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v7
-      with:
-        name: pffft_cross-build-windows-from-linux-amd64
-        path: pffft_cross-build-windows-from-linux-amd64.tar.gz
-
-
   build_win_msvc:
-    # The CMake configure and build commands are platform agnostic and should work equally
-    # well on Windows or Mac.  You can convert this to a matrix build if you need
-    # cross-platform coverage.
-    # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
     runs-on: windows-2025-vs2026
+    defaults:
+      run:
+        shell: bash
+    env:
+      BUILDS: build_no-simd build_sse2 build_avx build_avx2
 
     steps:
-    - name: check out MIPP
-      uses: actions/checkout@v7
-      with:
-          repository: hayguen/MIPP
-          path: ./MIPP
-    - name: cmake configure MIPP
-      shell: bash
-      working-directory: ${{runner.workspace}}
-      run: cmake -S pffft/MIPP -B MIPP_build -DCMAKE_INSTALL_PREFIX=$(pwd) -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-    - name: cmake install MIPP headers
-      working-directory: ${{runner.workspace}}
-      run: cmake --build MIPP_build --target install
-
     - uses: actions/checkout@v7
+    - name: configure and build
+      run: |
+        build() {  # <build dir> <TARGET_C_ARCH and TARGET_CXX_ARCH> <cmake options>
+          echo "::group::$1"
+          cmake -S . -B "$1" -G "Visual Studio 18 2026" -A x64 -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+            $NO_BENCH_FFTS -DTARGET_C_ARCH=$2 -DTARGET_CXX_ARCH=$2 "${@:3}"
+          cmake --build "$1" --config $BUILD_TYPE
+          echo "::endgroup::"
+        }
+        build build_no-simd none -DPFFFT_USE_SIMD=OFF
+        build build_sse2 SSE2
+        build build_avx AVX
+        build build_avx2 AVX2
+    - name: test
+      run: for d in $BUILDS; do ctest --test-dir $d -C $BUILD_TYPE --output-on-failure; done
 
-    - name: Configure CMake No-SIMD
-      shell: bash
-      working-directory: ${{runner.workspace}}
-      run: cmake -S $GITHUB_WORKSPACE -B build_no-simd -G "Visual Studio 18 2026" -A x64 -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DENABLE_PFDSP=ON -DPFFFT_USE_SIMD=OFF -DTARGET_CXX_ARCH=none -DTARGET_C_ARCH=none
-    - name: Build No-SIMD
-      shell: bash
-      working-directory: ${{runner.workspace}}
-      # Execute the build.  You can specify a specific target with "--target <NAME>"
-      run: cmake --build build_no-simd --config $BUILD_TYPE
-
-    - name: Configure CMake SSE2
-      shell: bash
-      working-directory: ${{runner.workspace}}
-      run: cmake -S $GITHUB_WORKSPACE -B build_sse2 -G "Visual Studio 18 2026" -A x64 -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DENABLE_PFDSP=ON -DTARGET_CXX_ARCH=SSE2 -DTARGET_C_ARCH=SSE2 -DMIPP_INCLUDE_DIRS=$(pwd)/include/mipp
-    - name: Build SSE2
-      shell: bash
-      working-directory: ${{runner.workspace}}
-      # Execute the build.  You can specify a specific target with "--target <NAME>"
-      run: cmake --build build_sse2 --config $BUILD_TYPE
-
-    - name: Configure CMake AVX
-      # Use a bash shell so we can use the same syntax for environment variable
-      # access regardless of the host operating system
-      shell: bash
-      working-directory: ${{runner.workspace}}
-      run: cmake -S $GITHUB_WORKSPACE -B build_avx -G "Visual Studio 18 2026" -A x64 -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DENABLE_PFDSP=ON -DTARGET_CXX_ARCH=AVX -DTARGET_C_ARCH=AVX -DMIPP_INCLUDE_DIRS=$(pwd)/include/mipp
-    - name: Build AVX
-      working-directory: ${{runner.workspace}}
-      shell: bash
-      # Execute the build.  You can specify a specific target with "--target <NAME>"
-      run: cmake --build build_avx --config $BUILD_TYPE
-
-    - name: Configure CMake AVX2
-      # Use a bash shell so we can use the same syntax for environment variable
-      # access regardless of the host operating system
-      shell: bash
-      working-directory: ${{runner.workspace}}
-      run: cmake -S $GITHUB_WORKSPACE -B build_avx2 -G "Visual Studio 18 2026" -A x64 -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DENABLE_PFDSP=ON -DTARGET_CXX_ARCH=AVX2 -DTARGET_C_ARCH=AVX2 -DMIPP_INCLUDE_DIRS=$(pwd)/include/mipp
-    - name: Build AVX2
-      working-directory: ${{runner.workspace}}
-      shell: bash
-      # Execute the build.  You can specify a specific target with "--target <NAME>"
-      run: cmake --build build_avx2 --config $BUILD_TYPE
-
-    - name: ctest
-      working-directory: ${{runner.workspace}}
-      shell: bash
-      run: for d in build_no-simd build_sse2 build_avx build_avx2; do (cd $d && ctest -C $BUILD_TYPE --output-on-failure) || exit 1; done
-    - name: compress
-      working-directory: ${{runner.workspace}}
-      run: tar zcvf pffft_windows-msvc-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt  build_no-simd build_sse2 build_avx build_avx2
-    - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v7
-      with:
-        name: pffft_windows-msvc-amd64
-        path: ${{runner.workspace}}/pffft_windows-msvc-amd64.tar.gz
-
-
+  # MSVC for ARM, natively, and from an x64 host, where CMAKE_SYSTEM_PROCESSOR
+  # is the host's "AMD64" and the target comes from the compiler
   build_win_msvc_arm64:
-    # native Windows on ARM: MSVC targets ARM64, CMAKE_SYSTEM_PROCESSOR is "ARM64"
-    runs-on: windows-11-arm
+    name: MSVC ${{ matrix.platform }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-11-arm
+            platform: ARM64
+            backend: NEON
+            test: true
+          - os: windows-2025-vs2026
+            platform: ARM64
+            backend: NEON
+          # ARM64EC defines neither _M_ARM64 nor __ARM_NEON, and the SSE headers
+          # exclude _M_ARM64EC, so both backends are scalar
+          - os: windows-2025-vs2026
+            platform: ARM64EC
+            backend: 4xScalar
+    defaults:
+      run:
+        shell: bash
+    env:
+      # not PLATFORM, which MSBuild would take for its Platform property
+      VS_PLATFORM: ${{ matrix.platform }}
+      BACKEND: ${{ matrix.backend }}
 
     steps:
     - uses: actions/checkout@v7
-
-    - name: Configure CMake ARM64
-      shell: bash
-      working-directory: ${{runner.workspace}}
+    - name: configure
       run: |
-        cmake -S $GITHUB_WORKSPACE -B build_arm64 -G "Visual Studio 18 2026" -A ARM64 -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF | tee configure_arm64.log
-        grep -q "Detected SIMD backend for PFFFT: float: NEON, double: NEON" configure_arm64.log
-        if grep -q "has no FMA" configure_arm64.log; then echo "ARM64 treated as x86"; exit 1; fi
-    - name: Build ARM64
-      shell: bash
-      working-directory: ${{runner.workspace}}
-      run: cmake --build build_arm64 --config $BUILD_TYPE
-    - name: ctest
-      shell: bash
-      working-directory: ${{runner.workspace}}
-      run: cd build_arm64 && ctest -C $BUILD_TYPE --output-on-failure
-
-  cross_build_win_msvc_arm64:
-    # Visual Studio -A ARM64 / ARM64EC on an x64 host: CMAKE_SYSTEM_PROCESSOR
-    # is the host's "AMD64" here, the target comes from the compiler
-    runs-on: windows-2025-vs2026
-
-    steps:
-    - uses: actions/checkout@v7
-
-    - name: Configure and build ARM64
-      shell: bash
-      working-directory: ${{runner.workspace}}
-      run: |
-        cmake -S $GITHUB_WORKSPACE -B build_arm64 -G "Visual Studio 18 2026" -A ARM64 -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF | tee configure_arm64.log
-        grep -q "Detected SIMD backend for PFFFT: float: NEON, double: NEON" configure_arm64.log
-        if grep -q "has no FMA" configure_arm64.log; then echo "ARM64 treated as x86"; exit 1; fi
-        cmake --build build_arm64 --config $BUILD_TYPE
-    - name: Configure and build ARM64EC
-      shell: bash
-      working-directory: ${{runner.workspace}}
-      run: |
-        cmake -S $GITHUB_WORKSPACE -B build_arm64ec -G "Visual Studio 18 2026" -A ARM64EC -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF | tee configure_arm64ec.log
-        # ARM64EC defines neither _M_ARM64 nor __ARM_NEON, and the SSE headers
-        # exclude _M_ARM64EC, so both backends are scalar
-        grep -q "Detected SIMD backend for PFFFT: float: 4xScalar, double: 4xScalar" configure_arm64ec.log
-        if grep -q "has no FMA" configure_arm64ec.log; then echo "ARM64EC treated as x86"; exit 1; fi
-        cmake --build build_arm64ec --config $BUILD_TYPE
+        cmake -S . -B build -G "Visual Studio 18 2026" -A $VS_PLATFORM -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS | tee configure.log
+        grep -qF "Detected SIMD backend for PFFFT: float: $BACKEND, double: $BACKEND" configure.log \
+          || { echo "::error::expected the $BACKEND backend"; exit 1; }
+        if grep -q "has no FMA" configure.log; then echo "::error::$VS_PLATFORM treated as x86"; exit 1; fi
+    - name: build
+      run: cmake --build build --config $BUILD_TYPE
+    - name: test
+      if: matrix.test
+      run: ctest --test-dir build -C $BUILD_TYPE --output-on-failure
 
   build_win_mingw:
     runs-on: windows-2025-vs2026
-    strategy:
-      matrix:
-        compiler: [gcc]
-        msystem: [UCRT64]
     defaults:
       run:
         shell: msys2 {0}
@@ -362,85 +230,14 @@ jobs:
     - uses: actions/checkout@v7
     - uses: msys2/setup-msys2@v2
       with:
-        msystem: ${{ matrix.msystem }}
+        msystem: UCRT64
         pacboy: >-
           gcc:p
           cmake:p
           make:p
-    - name: Configure cmake
-      run: CC=gcc cmake -DMINGW=ON -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native -S . -B build_mgw64
-    - name: Build
+    - name: configure
+      run: CC=gcc cmake -S . -B build_mgw64 -DMINGW=ON -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DTARGET_C_ARCH=native -DTARGET_CXX_ARCH=native
+    - name: build
       run: cmake --build build_mgw64
-
-    - name: ctest
-      run: for d in build_mgw64; do (cd $d && ctest --output-on-failure) || exit 1; done
-    - name: compress
-      run: tar zcvf pffft_windows-mingw-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt  build_mgw64
-    - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v7
-      with:
-        name: pffft_windows_mingw-amd64
-        path: pffft_windows-mingw-amd64.tar.gz
-
-
-  build_macos:
-    # copied from build_ubuntu-amd64 with minor renaming
-    runs-on: macos-26
-
-    steps:
-    - uses: actions/checkout@v7
-    - name: cmake_make_simd_float_double
-      run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
-    - name: cmake_make_simd_float
-      run: mkdir build_simd_float && cmake -S . -B build_simd_float -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_DOUBLE=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_float
-    - name: cmake_make_simd_double
-      run: mkdir build_simd_double && cmake -S . -B build_simd_double -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_FLOAT=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_double
-    - name: cmake_make_no-simd_float_double
-      run: mkdir build_no-simd_full && cmake -S . -B build_no-simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_no-simd_full
-    - name: cmake_make_no-simd_scalar_float_double
-      run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=ON -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
-    - name: ctest
-      run: for d in build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full; do (cd $d && ctest --output-on-failure) || exit 1; done
-    - name: compress
-      run: tar zcvf pffft_macos.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
-    - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v7
-      with:
-        name: pffft_macos
-        path: pffft_macos.tar.gz
-
-  build_w_mipp_macos:
-    # copied from build_w_mipp_ubuntu-amd64 with minor renaming
-    runs-on: macos-26
-
-    steps:
-    - name: check out MIPP
-      uses: actions/checkout@v7
-      with:
-          repository: hayguen/MIPP
-          path: ./MIPP
-    - name: cmake configure MIPP
-      run: cmake -S MIPP -B MIPP_build -DCMAKE_INSTALL_PREFIX=$HOME/.local -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-    - name: cmake install MIPP headers
-      run: cmake --build MIPP_build --target install && ls -alh $HOME/.local/ && ls -alh $HOME/.local/include/
-
-    - uses: actions/checkout@v7
-    - name: cmake_make_simd_float_double
-      run: mkdir build_simd_full && cmake -S . -B build_simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_full
-    - name: cmake_make_simd_float
-      run: mkdir build_simd_float && cmake -S . -B build_simd_float -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_DOUBLE=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_float
-    - name: cmake_make_simd_double
-      run: mkdir build_simd_double && cmake -S . -B build_simd_double -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_TYPE_FLOAT=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_simd_double
-    - name: cmake_make_no-simd_float_double
-      run: mkdir build_no-simd_full && cmake -S . -B build_no-simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native  && cmake --build build_no-simd_full
-    - name: cmake_make_no-simd_scalar_float_double
-      run: mkdir build_no-simd_scalar_full && cmake -S . -B build_no-simd_scalar_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=ON -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=native -DTARGET_C_ARCH=native && cmake --build build_no-simd_scalar_full
-    - name: ctest
-      run: for d in build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full; do (cd $d && ctest --output-on-failure) || exit 1; done
-    - name: compress
-      run: tar zcvf pffft_w_mipp_macos.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
-    - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v7
-      with:
-        name: pffft_w_mipp_macos
-        path: pffft_w_mipp_macos.tar.gz
+    - name: test
+      run: ctest --test-dir build_mgw64 --output-on-failure
