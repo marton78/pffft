@@ -3,7 +3,7 @@
 Measured with [bench_fft](../benchmarks/README.md) in November 2026: pffft
 1.3.1 against the FFT libraries it is usually compared with, on eight
 machines, and against pffft 1.1.0, which is as fast as Julien Pommier's
-original, on three. Every chart has a panel per precision (f32, f64) and
+original, on six. Every chart has a panel per precision (f32, f64) and
 transform kind (real, complex) and covers 44 lengths from 32 to 2^20: the
 powers of two and 28 other lengths with factors 3 and 5.
 
@@ -81,6 +81,21 @@ to 24% at single lengths. In cache (n up to 16384) it was faster at every
 length, by 2% at least; out of cache the gain shrinks, and on the MediaTek
 phone it is within the noise at many lengths from 2^16 up.
 
+![pffft 1.3.1 vs 1.1.0 on Intel Xeon 6975P-C, Intel Core i7-8700B and AMD EPYC 9V74](benchmarks/pffft-1.3.1-vs-1.1.0-x86.png)
+
+On x86 the gain is smaller, as much of the work above was for NEON; what
+applies there is FMA (where the build targets AVX2 or newer), the radix-3 and
+radix-4 fast paths, the radix-8 pass and the code layout. Below n = 4096,
+1.3.1 was 9.9% faster on the Xeon 6975P-C (Linux, gcc), 7.1% on the Core
+i7-8700B (macOS, Clang) and 4.8% on the EPYC 9V74 (Windows, MSVC); from 4096
+up 2.3%, 1.6% and 3.2%. The largest gains are at complex n = 32, the radix-8
+pass: 21% on the Xeon, 29 to 35% on the other two. In cache the EPYC was
+faster at every length; the Xeon and the Core i7 were slower at a few
+lengths from 2048 up, by 2% at most. Out of cache the gain shrinks to 1.5 to
+1.7% on average on the Xeon and the Core i7 (single lengths from -3% to
++16%) and stays at 3.2% on the EPYC. Two runs of 1.1.0 against itself, on
+the same runner images, differed by 0.2 to 0.3% on average.
+
 ## Machines
 
 How to read the charts: each shows one machine, with the speed in GFLOPS on
@@ -157,7 +172,8 @@ FFTW is built with its CMake build here, with AVX2 (the CPU has no AVX-512).
 - **Versions.** 1.3.1 is pffft as of commit e392851; 1.1.0 is commit
   c14802c. The phones and the M2 ran the benchmark locally; the other
   machines are GitHub-hosted runners (shared virtual machines), measured by
-  .github/workflows/bench.yml.
+  .github/workflows/bench.yml, the comparisons on x86 with its `compare`
+  input set to `c14802c e392851`.
 
 To repeat a measurement:
 
