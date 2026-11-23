@@ -19,6 +19,11 @@
 # found, disassembles it. Without vector instructions the backend is reported
 # as "RVV (scalar code)", with a warning.
 #
+# The target's compile options are taken as _pffft_eval_compile_options()
+# (target_optimizations.cmake) sees them. If generator expressions it cannot
+# evaluate hold machine options (-m..., /arch:), the probe does not know what
+# they do, and the report says so.
+#
 # Single-config generators probe CMAKE_BUILD_TYPE. Multi-config generators
 # probe one configuration, CMAKE_TRY_COMPILE_CONFIGURATION or Debug, and the
 # report names it, since CMAKE_C_FLAGS_<CONFIG> may differ between them.
@@ -57,11 +62,7 @@ function(_pffft_probe_simd_arch target header out_var)
     # using pffft via add_subdirectory(); the build applies them on top
     get_directory_property(_dir_defs COMPILE_DEFINITIONS)
     list(APPEND _defs ${_dir_defs})
-    _pffft_strip_genex("${_opts}" _flags)
     _pffft_strip_genex("${_defs}" _defs)
-    foreach(_d IN LISTS _defs)
-        list(APPEND _flags "-D${_d}")
-    endforeach()
 
     # try_compile() builds CMAKE_TRY_COMPILE_CONFIGURATION, Debug if unset,
     # not CMAKE_BUILD_TYPE; follow the build type of single-config generators
@@ -75,6 +76,12 @@ function(_pffft_probe_simd_arch target header out_var)
         set(_config "Debug")
     endif()
     string(TOUPPER "${_config}" _config_upper)
+
+    # the compile options of the configuration probed, plus the definitions
+    _pffft_eval_compile_options(C "${_config_upper}" "${_opts}" _flags _unevaluated)
+    foreach(_d IN LISTS _defs)
+        list(APPEND _flags "-D${_d}")
+    endforeach()
 
     # besides flags, try_compile() forwards these, which can change the target
     set(_sig "${CMAKE_C_COMPILER};${CMAKE_C_COMPILER_TARGET};${CMAKE_OSX_ARCHITECTURES};${CMAKE_OSX_SYSROOT};${CMAKE_SYSROOT}")
@@ -189,6 +196,20 @@ function(pffft_report_simd_backend target)
         if (_multi_config)
             set(_parts "${_parts} (${_config} configuration)")
         endif()
+        # machine options the probe could not see may select another backend
+        get_target_property(_opts ${target} COMPILE_OPTIONS)
+        if (NOT _opts)
+            set(_opts "")
+        endif()
+        string(TOUPPER "${_config}" _config_upper)
+        _pffft_eval_compile_options(C "${_config_upper}" "${_opts}" _applied _unevaluated)
+        foreach(_opt IN LISTS _unevaluated)
+            if (_opt MATCHES "(^|[:;, ])(-m[a-z]|/arch:)")
+                string(APPEND _parts " (not counting the machine options in generator"
+                                     " expressions of its compile options, e.g. ${_opt})")
+                break()
+            endif()
+        endforeach()
         message(STATUS "Detected SIMD backend for ${target}: ${_parts}")
         if (_parts MATCHES "RVV \\(scalar code\\)")
             message(WARNING "${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION} compiles pffft's RVV"

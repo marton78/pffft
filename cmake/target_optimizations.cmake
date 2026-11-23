@@ -285,9 +285,9 @@ function(_pffft_riscv_auto_march lang out_march out_reason)
         return()
     endif()
 
-    # the probe's result is cached too; run it again for another compiler or
-    # emulator, including another qemu CPU model
-    set(_sig "${CMAKE_C_COMPILER};${CMAKE_CROSSCOMPILING_EMULATOR};$ENV{QEMU_CPU}")
+    # what the probe found about the CPU is cached; run it again for another
+    # compiler, C flags, or emulator, including another qemu CPU model
+    set(_sig "${CMAKE_C_COMPILER};${CMAKE_C_FLAGS};${_config};${CMAKE_C_FLAGS_${_config}};${CMAKE_CROSSCOMPILING_EMULATOR};$ENV{QEMU_CPU}")
     if (NOT "${PFFFT_RVV_HAS_V_SIG}" STREQUAL "${_sig}")
         unset(PFFFT_RVV_HAS_V CACHE)
         unset(PFFFT_RVV_VLEN CACHE)
@@ -303,11 +303,17 @@ function(_pffft_riscv_auto_march lang out_march out_reason)
             "${_probe}"
             COMPILE_DEFINITIONS "-march=rv64gcv"
             RUN_OUTPUT_VARIABLE _vlen)
+        if (NOT PFFFT_RVV_PROBE_COMPILED)
+            # no answer about the CPU, e.g. flags that break the link: cache
+            # nothing, so that the next configure probes again
+            set(${out_reason} "the vector extension probe could not be built (see the CMake configure log)" PARENT_SCOPE)
+            return()
+        endif()
         # the output may also hold emulator chatter (qemu warns on stderr
         # when no vext_spec is given); the VLEN is the last number printed
         string(REGEX MATCH "[0-9]+[ \t\r\n]*$" _vlen "${_vlen}")
         string(STRIP "${_vlen}" _vlen)
-        if (PFFFT_RVV_PROBE_COMPILED AND PFFFT_RVV_PROBE_RUN EQUAL 0 AND _vlen)
+        if (PFFFT_RVV_PROBE_RUN EQUAL 0 AND _vlen)
             set(PFFFT_RVV_HAS_V TRUE CACHE INTERNAL "The build machine supports the RISC-V V extension")
             set(PFFFT_RVV_VLEN "${_vlen}" CACHE INTERNAL "VLEN of the build machine in bits")
         else()
@@ -327,6 +333,132 @@ function(_pffft_riscv_auto_march lang out_march out_reason)
     endif()
 endfunction()
 
+# _pffft_active_configs(<out_var>)
+# The configurations being built, in upper case: CMAKE_BUILD_TYPE for
+# single-config generators, CMAKE_CONFIGURATION_TYPES for multi-config ones.
+function(_pffft_active_configs out_var)
+    get_property(_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+    if (_multi_config)
+        set(_configs ${CMAKE_CONFIGURATION_TYPES})
+    else()
+        set(_configs ${CMAKE_BUILD_TYPE})
+    endif()
+    string(TOUPPER "${_configs}" _configs)
+    set(${out_var} "${_configs}" PARENT_SCOPE)
+endfunction()
+
+# _pffft_eval_compile_options(<C|CXX> <configs> <options> <out_applied> <out_unevaluated>)
+# Of a COMPILE_OPTIONS list, the options the <lang> compiler gets, as far as
+# that is known at configure time: SHELL: groups are split as CMake does, and
+# $<$<COMPILE_LANGUAGE:...>:...> and $<$<CONFIG:...>:...> around a single
+# option are evaluated. A CONFIG option applies if it names one of <configs>,
+# a list of configurations in upper case. What other
+# generator expressions hold depends on what CMake knows only when it
+# generates the build; their list items go to <out_unevaluated> unchanged.
+function(_pffft_eval_compile_options lang configs options out_applied out_unevaluated)
+    set(_applied "")
+    set(_unevaluated "")
+    # one generator expression can span several list items, so track the
+    # nesting depth, as _pffft_strip_genex() does
+    set(_depth 0)
+    foreach(_opt IN LISTS options)
+        if (_depth EQUAL 0 AND _opt MATCHES "^\\$<\\$<(COMPILE_LANGUAGE|CONFIG):([A-Za-z0-9_,]+)>:([^$<>]*)>$")
+            # CONFIG compares case-insensitively; the option applies if one
+            # of the configurations being built matches
+            if (CMAKE_MATCH_1 STREQUAL "CONFIG")
+                string(TOUPPER "${CMAKE_MATCH_2}" _values)
+                set(_wanted ${configs})
+            else()
+                set(_values "${CMAKE_MATCH_2}")
+                set(_wanted ${lang})
+            endif()
+            set(_opt "${CMAKE_MATCH_3}")
+            string(REPLACE "," ";" _values "${_values}")
+            set(_applies FALSE)
+            foreach(_value IN LISTS _values)
+                if (_value IN_LIST _wanted)
+                    set(_applies TRUE)
+                endif()
+            endforeach()
+            if (NOT _applies)
+                continue()
+            endif()
+        elseif (_depth GREATER 0 OR _opt MATCHES "\\$<")
+            string(REGEX MATCHALL "\\$<" _open "${_opt}")
+            string(REGEX MATCHALL ">" _close "${_opt}")
+            list(LENGTH _open _n_open)
+            list(LENGTH _close _n_close)
+            math(EXPR _depth "${_depth} + ${_n_open} - ${_n_close}")
+            list(APPEND _unevaluated "${_opt}")
+            continue()
+        endif()
+        if (_opt MATCHES "^SHELL:(.*)")
+            separate_arguments(_args UNIX_COMMAND "${CMAKE_MATCH_1}")
+            list(APPEND _applied ${_args})
+        elseif (NOT _opt STREQUAL "")
+            list(APPEND _applied "${_opt}")
+        endif()
+    endforeach()
+    set(${out_applied} "${_applied}" PARENT_SCOPE)
+    set(${out_unevaluated} "${_unevaluated}" PARENT_SCOPE)
+endfunction()
+
+# _pffft_find_march(<C|CXX> <target> <out_flag> <out_where>)
+# The first -march or -mcpu (which implies an -march on RISC-V) that the
+# <lang> compiler gets for <target> from outside pffft's arch options: the
+# flags, CMAKE_<lang>_FLAGS and those of the configurations being built, split
+# as a command line is, and the compile options of <target>, which include
+# those of its directory, as _pffft_eval_compile_options() sees them. Empty if
+# none. An -march in a generator expression that it cannot evaluate still
+# wins, as auto puts its -march first among the target's compile options.
+function(_pffft_find_march lang target out_flag out_where)
+    set(${out_flag} "" PARENT_SCOPE)
+    _pffft_active_configs(_configs)
+    set(_vars CMAKE_${lang}_FLAGS)
+    foreach(_config IN LISTS _configs)
+        list(APPEND _vars CMAKE_${lang}_FLAGS_${_config})
+    endforeach()
+    foreach(_var IN LISTS _vars)
+        # split as the compiler's command line is, which removes quotes
+        separate_arguments(_args NATIVE_COMMAND "${${_var}}")
+        foreach(_arg IN LISTS _args)
+            if (_arg MATCHES "^-m(arch|cpu)=")
+                set(${out_flag} "${_arg}" PARENT_SCOPE)
+                set(${out_where} "${_var}" PARENT_SCOPE)
+                return()
+            endif()
+        endforeach()
+    endforeach()
+    # a target starts with the compile options of its directory, so these
+    # include e.g. add_compile_options() of a parent project
+    get_target_property(_opts ${target} COMPILE_OPTIONS)
+    if (NOT _opts)
+        set(_opts "")
+    endif()
+    # any configuration being built would get the -march
+    _pffft_eval_compile_options(${lang} "${_configs}" "${_opts}" _applied _unevaluated)
+    foreach(_opt IN LISTS _applied)
+        if (_opt MATCHES "^-m(arch|cpu)=")
+            set(${out_flag} "${_opt}" PARENT_SCOPE)
+            set(${out_where} "the compile options of target ${target}" PARENT_SCOPE)
+            return()
+        endif()
+    endforeach()
+endfunction()
+
+# _pffft_prepend_compile_option(<target> <option>)
+# Puts <option> first among the compile options of <target>, which start with
+# those of its directory. target_compile_options(BEFORE PRIVATE) would do the
+# same, but ignores BEFORE under the OLD behaviour of policy CMP0101, which
+# CMake 3.17 introduced and cmake_minimum_required(VERSION 3.10) keeps.
+function(_pffft_prepend_compile_option target option)
+    get_target_property(_opts ${target} COMPILE_OPTIONS)
+    if (NOT _opts)
+        set(_opts "")
+    endif()
+    set_property(TARGET ${target} PROPERTY COMPILE_OPTIONS "${option}" ${_opts})
+endfunction()
+
 # _pffft_resolve_arch(<C|CXX> <target> <out_arch>)
 # TARGET_<lang>_ARCH, with "auto" resolved and "none" as empty.
 function(_pffft_resolve_arch lang target out_arch)
@@ -337,6 +469,13 @@ function(_pffft_resolve_arch lang target out_arch)
         set(_arch "")
         # elsewhere "auto" acts as "none", with a warning at configure time
         if (PFFFT_TARGET_IS_RISCV64 AND CMAKE_${lang}_COMPILER_ID MATCHES "^(GNU|Clang)$")
+            # auto chooses the -march itself: one from elsewhere contradicts it
+            _pffft_find_march(${lang} ${target} _flag _where)
+            if (_flag)
+                message(FATAL_ERROR "TARGET_${lang}_ARCH=auto conflicts with ${_flag} in ${_where}:"
+                                    " auto chooses the -march itself. Set TARGET_${lang}_ARCH=none to"
+                                    " build with ${_flag}, or remove ${_flag} to let auto choose.")
+            endif()
             _pffft_riscv_auto_march(${lang} _arch _reason)
             if (_arch)
                 message(STATUS "TARGET_${lang}_ARCH=auto for target ${target}: -march=${_arch}, as ${_reason}")
@@ -368,7 +507,13 @@ function(target_set_c_arch_flags target)
         message(STATUS "TARGET_C_ARCH not set for target ${target}, using default")
     else()
         if ( (CMAKE_C_COMPILER_ID STREQUAL "GNU") OR (CMAKE_C_COMPILER_ID STREQUAL "Clang") OR (CMAKE_C_COMPILER_ID STREQUAL "AppleClang") )
-            target_compile_options(${target} PRIVATE "-march=${_arch}")
+            # auto's -march goes first, so that one from the target's compile
+            # options, which auto could not see, comes later and wins
+            if ("${TARGET_C_ARCH}" STREQUAL "auto")
+                _pffft_prepend_compile_option(${target} "-march=${_arch}")
+            else()
+                target_compile_options(${target} PRIVATE "-march=${_arch}")
+            endif()
             message(STATUS "C ARCH for target ${target} set: ${_arch}")
         elseif (CMAKE_C_COMPILER_ID MATCHES "MSVC")
             target_compile_options(${target} PRIVATE "/arch:${_arch}")
@@ -411,7 +556,13 @@ function(target_set_cxx_arch_flags target)
         message(STATUS "TARGET_CXX_ARCH not set for target ${target}, using default")
     else()
         if ( (CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang") OR (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang") )
-            target_compile_options(${target} PRIVATE "-march=${_arch}")
+            # auto's -march goes first, so that one from the target's compile
+            # options, which auto could not see, comes later and wins
+            if ("${TARGET_CXX_ARCH}" STREQUAL "auto")
+                _pffft_prepend_compile_option(${target} "-march=${_arch}")
+            else()
+                target_compile_options(${target} PRIVATE "-march=${_arch}")
+            endif()
             message(STATUS "C++ ARCH for target ${target} set: ${_arch}")
         elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
             target_compile_options(${target} PRIVATE "/arch:${_arch}")

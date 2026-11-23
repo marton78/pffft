@@ -356,7 +356,11 @@ build type. Otherwise it runs a probe built with `-march=rv64gcv`;
 if the probe runs, the build gets `-march=rv64gcv`, and in a native build on
 hardware with `VLEN >= 256` (e.g. Spacemit X100) also the matching
 `zvlNNNb`, so the compiler can emit single 4-wide double-precision vector
-ops. If the probe fails, the compiler's default is kept.
+ops. If the probe fails, the compiler's default is kept. As `auto` chooses
+the `-march` itself, combining it with an `-march` or `-mcpu` in the
+compiler flags is an error; use `none` to keep the one in the flags. An
+`-march` that `auto` can't recognise, e.g. inside a complex generator
+expression in a parent project's compile options, still takes precedence.
 
 When cross-compiling, the probe runs under `CMAKE_CROSSCOMPILING_EMULATOR`;
 without one, `auto` keeps the compiler's default. With QEMU, enable V
