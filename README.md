@@ -346,7 +346,8 @@ profile (e.g. Ubuntu 26.04's) do so by default; for others, pass a `-march`
 with `v`, e.g. `-DTARGET_C_ARCH=rv64gcv -DTARGET_CXX_ARCH=rv64gcv`. Such a
 build runs only on CPUs with V. The backend is written with GCC vector
 types, which gcc 14 and later turn into RVV instructions; gcc 13 compiles
-them to scalar code.
+them to scalar code, which `cmake` reports as `RVV (scalar code)`, with a
+warning.
 
 `-DTARGET_C_ARCH=auto -DTARGET_CXX_ARCH=auto` enables V if the build machine
 has it, like `-march=native` does elsewhere. It adds nothing if the compiler

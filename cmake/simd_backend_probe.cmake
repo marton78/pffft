@@ -12,6 +12,13 @@
 # works for any cross target. CMake finds e.g. the pointer size of the target
 # the same way, see Modules/CMakeCompilerABI.h.
 #
+# The RVV backend is the exception: it is written with GCC vector types, and
+# whether the compiler turns them into vector instructions shows only in the
+# code. gcc 13 does not, gcc 14 and clang 18 do. So on RISC-V the probe also
+# holds a function, and when the RVV backend is selected, CMAKE_OBJDUMP, if
+# found, disassembles it. Without vector instructions the backend is reported
+# as "RVV (scalar code)", with a warning.
+#
 # Single-config generators probe CMAKE_BUILD_TYPE. Multi-config generators
 # probe one configuration, CMAKE_TRY_COMPILE_CONFIGURATION or Debug, and the
 # report names it, since CMAKE_C_FLAGS_<CONFIG> may differ between them.
@@ -75,6 +82,8 @@ function(_pffft_probe_simd_arch target header out_var)
         string(APPEND _sig ";${_v}=${${_v}}")
     endforeach()
     string(APPEND _sig ";${CMAKE_C_FLAGS};${_config};${CMAKE_C_FLAGS_${_config_upper}};${_flags};${header}")
+    # and the probe itself, as it has changed between versions of pffft
+    string(APPEND _sig ";probe 2;${CMAKE_OBJDUMP}")
     # and the headers themselves, e.g. after updating pffft in a build tree
     file(GLOB _simd_headers "${CMAKE_CURRENT_SOURCE_DIR}/src/simd/*.h")
     foreach(_h IN LISTS _simd_headers)
@@ -98,7 +107,10 @@ function(_pffft_probe_simd_arch target header out_var)
         "#  define ALWAYS_INLINE(return_type) inline return_type\n"
         "#endif\n"
         "#include \"simd/${header}\"\n"
-        "const char pffft_simd_probe[] = \"PFFFT_SIMD_ARCH[\" VARCH \"]\";\n")
+        "const char pffft_simd_probe[] = \"PFFFT_SIMD_ARCH[\" VARCH \"]\";\n"
+        "#if defined(__riscv)\n"
+        "v4sf pffft_simd_probe_fn(v4sf a, v4sf b) { return VMADD(a, b, a); }\n"
+        "#endif\n")
 
     # no link step: a cross toolchain may not link at configure time
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
@@ -137,6 +149,15 @@ function(_pffft_probe_simd_arch target header out_var)
             if (_hits MATCHES "PFFFT_SIMD_ARCH\\[([^]]*)\\]")
                 set(_arch "${CMAKE_MATCH_1}")
             endif()
+            # vsetvli/vsetivli start every RVV operation
+            if (_arch STREQUAL "RVV" AND CMAKE_OBJDUMP)
+                execute_process(COMMAND "${CMAKE_OBJDUMP}" -d "${_out}.bin"
+                    RESULT_VARIABLE _rc OUTPUT_VARIABLE _disasm ERROR_QUIET)
+                if (_rc EQUAL 0 AND _disasm MATCHES "pffft_simd_probe_fn"
+                    AND NOT _disasm MATCHES "[ \t]vseti?vli[ \t]")
+                    set(_arch "RVV (scalar code)")
+                endif()
+            endif()
         endif()
         if (NOT _slice STREQUAL "-")
             string(APPEND _arch " (${_slice})")
@@ -169,5 +190,11 @@ function(pffft_report_simd_backend target)
             set(_parts "${_parts} (${_config} configuration)")
         endif()
         message(STATUS "Detected SIMD backend for ${target}: ${_parts}")
+        if (_parts MATCHES "RVV \\(scalar code\\)")
+            message(WARNING "${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION} compiles pffft's RVV"
+                            " backend to scalar code, without vector instructions. The backend is"
+                            " written with GCC vector types, which gcc turns into RVV instructions"
+                            " from version 14 on; use gcc 14 or later, or clang 18 or later.")
+        endif()
     endif()
 endfunction()
