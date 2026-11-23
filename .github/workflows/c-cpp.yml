@@ -30,7 +30,7 @@ jobs:
     - name: build
       run: cmake --build build_wasm
     - name: test
-      run: cd build_wasm && ctest --output-on-failure
+      run: ctest --test-dir build_wasm --output-on-failure
 
   build_riscv64_qemu:
     runs-on: ubuntu-26.04
@@ -43,6 +43,7 @@ jobs:
         sudo apt-get install -y gcc-riscv64-linux-gnu g++-riscv64-linux-gnu qemu-user
     - name: cmake configure
       run: |
+        set -o pipefail
         cmake -S . -B build_riscv64 \
           -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
           -DCMAKE_SYSTEM_NAME=Linux \
@@ -58,7 +59,7 @@ jobs:
     - name: build
       run: cmake --build build_riscv64
     - name: test
-      run: cd build_riscv64 && ctest --output-on-failure
+      run: ctest --test-dir build_riscv64 --output-on-failure
 
   build_cortex_m55_qemu:
     runs-on: ubuntu-26.04
@@ -71,6 +72,7 @@ jobs:
         sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib qemu-system-arm
     - name: cmake configure
       run: |
+        set -o pipefail
         cmake -S . -B build_m55 \
           -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
           -DCMAKE_TOOLCHAIN_FILE=tests/cortex-m55/toolchain.cmake \
@@ -82,7 +84,7 @@ jobs:
       run: cmake --build build_m55
     - name: test
       # the bench_* tests allocate about 1 GiB
-      run: cd build_m55 && ctest --output-on-failure -E "^bench_"
+      run: ctest --test-dir build_m55 --output-on-failure -E "^bench_"
 
   # Linux and macOS, natively
   build_unix:
@@ -126,7 +128,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: prerequisites
-      run: sudo apt -qq update && sudo apt -yqq install gcc-mingw-w64 g++-mingw-w64
+      run: sudo apt-get -qq update && sudo apt-get -yqq install gcc-mingw-w64 g++-mingw-w64
     - name: build_w32_no-simd
       run: bash ./cross_build_mingw.sh w32 no-simd -DCMAKE_BUILD_TYPE=$BUILD_TYPE $NO_BENCH_FFTS -DPFFFT_USE_SIMD=OFF
     - name: build_w32_simd_full
