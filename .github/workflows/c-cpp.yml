@@ -63,9 +63,8 @@ jobs:
             test_cpu: rva23u64,vlen=256
             backend: RVV
             march: ""
-          # Ubuntu 24.04's gcc 14 targets rv64gc, without V. Its default gcc 13
-          # cannot lower the RVV backend's GCC vector types to RVV
-          # instructions, so its builds have no vector code at all.
+          # Ubuntu 24.04's gcc 14 targets rv64gc, without V. Its default,
+          # gcc 13, compiles the RVV backend to scalar code (see below).
           - name: rv64gc toolchain, default, built with V, run without
             os: ubuntu-24.04
             gcc: "-14"
@@ -99,6 +98,16 @@ jobs:
             test_cpu: ""
             backend: 4xScalar
             march: ""
+          # gcc 13 selects the RVV backend but emits scalar code for it, which
+          # cmake must report, with a warning
+          - name: gcc 13, rv64gcv
+            os: ubuntu-24.04
+            gcc: "-13"
+            arch: rv64gcv
+            build_cpu: rv64,v=true,vlen=256,vext_spec=v1.0
+            test_cpu: rv64,v=true,vlen=256,vext_spec=v1.0
+            backend: RVV (scalar code)
+            march: rv64gcv
     env:
       GCC: ${{ matrix.gcc }}
       ARCH: ${{ matrix.arch }}
@@ -130,7 +139,7 @@ jobs:
           "${emulator[@]}" \
           -DTARGET_C_ARCH=$ARCH -DTARGET_CXX_ARCH=$ARCH \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON $TESTS_ONLY \
-          | tee configure_riscv64.log
+          2>&1 | tee configure_riscv64.log
     - name: build
       run: cmake --build build_riscv64
     - name: test
@@ -197,7 +206,7 @@ jobs:
               -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 \
               -DTARGET_C_ARCH=$ARCH -DTARGET_CXX_ARCH=$ARCH \
               -DCMAKE_EXPORT_COMPILE_COMMANDS=ON $TESTS_ONLY \
-              | tee configure_riscv64.log
+              2>&1 | tee configure_riscv64.log
             cmake --build build_riscv64 -j $(nproc)
             QEMU_CPU="$TEST_CPU" ctest --test-dir build_riscv64 --output-on-failure
             OBJDUMP=objdump bash .github/scripts/check-riscv64-build.sh build_riscv64 configure_riscv64.log
