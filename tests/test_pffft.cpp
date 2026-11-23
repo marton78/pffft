@@ -35,6 +35,7 @@
 #include "pffft/pffft.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <assert.h>
 #include <cmath>
 #include <math.h>
@@ -362,6 +363,69 @@ ZPtest(int N)
   return retError;
 }
 
+// convolveAccumulate() must exist for every value type and agree with
+// convolve(): accumulating a*b*0.25 twice into zeros gives a*b*0.5.
+template<typename T>
+bool
+AccumulateTest(int N)
+{
+  typedef pffft::Fft<T> Fft;
+  typedef typename Fft::Scalar FftScalar;
+
+  Fft fft(N);
+  pffft::AlignedVector<T> X = fft.valueVector();
+  pffft::AlignedVector<T> Y = fft.valueVector();
+  pffft::AlignedVector<FftScalar> A = fft.internalLayoutVector();
+  pffft::AlignedVector<FftScalar> B = fft.internalLayoutVector();
+  pffft::AlignedVector<FftScalar> ACC = fft.internalLayoutVector();
+  pffft::AlignedVector<FftScalar> REF = fft.internalLayoutVector();
+  const int layoutSize = fft.getInternalLayoutSize();
+  int j;
+
+  FftScalar* x = reinterpret_cast<FftScalar*>(X.data());
+  FftScalar* y = reinterpret_cast<FftScalar*>(Y.data());
+  for (j = 0; j < layoutSize; ++j) {
+    x[j] = FftScalar(0.5 * sin(0.37 * j) + 0.25 * cos(1.71 * j + 0.3));
+    y[j] = FftScalar(0.3 * cos(0.11 * j) - 0.2 * sin(2.3 * j + 0.7));
+    ACC[j] = FftScalar(0);
+  }
+  fft.forwardToInternalLayout(X.data(), A.data());
+  fft.forwardToInternalLayout(Y.data(), B.data());
+
+  fft.convolve(A.data(), B.data(), REF.data(), FftScalar(0.5));
+  fft.convolveAccumulate(A.data(), B.data(), ACC.data(), FftScalar(0.25));
+  fft.convolveAccumulate(A.data(), B.data(), ACC.data(), FftScalar(0.25));
+
+  // the tolerance scales with the reference, so a non-finite reference
+  // bin would make it infinite (or NaN) and let anything pass: reject it.
+  // !(r <= max) is true for both infinity and NaN.
+  double maxRef = 0;
+  for (j = 0; j < layoutSize; ++j) {
+    const double r = std::abs(double(REF[j]));
+    if (!(r <= std::numeric_limits<double>::max())) {
+      printf("convolveAccumulate (%s): convolve gives non-finite bin %d: %g\n",
+             (Fft::isComplexTransform() ? "complex" : "real"),
+             j, double(REF[j]));
+      return true;
+    }
+    maxRef = std::max(maxRef, r);
+  }
+  const double tolerance = 1e-5 * maxRef;
+
+  // !(err <= tolerance) rather than err > tolerance, so that a NaN in
+  // either result fails the test instead of slipping through
+  for (j = 0; j < layoutSize; ++j) {
+    const double err = std::abs(double(ACC[j]) - double(REF[j]));
+    if (!(err <= tolerance)) {
+      printf("convolveAccumulate (%s): bin %d is %g, convolve gives %g\n",
+             (Fft::isComplexTransform() ? "complex" : "real"),
+             j, double(ACC[j]), double(REF[j]));
+      return true;
+    }
+  }
+  return false;
+}
+
 bool
 test(int N, bool useComplex, bool useOrdered)
 {
@@ -491,7 +555,19 @@ main(int argc, char** argv)
   if (!resZP)
     printf("zero-phase and unscaled convolve wrapper tests succeeded successfully.\n");
 
-  resAll = resNextPw2 | resIsPw2 | resFFT | resZP;
+  int resAcc = 0;
+#ifdef PFFFT_ENABLE_FLOAT
+  resAcc |= AccumulateTest<float>(64);
+  resAcc |= AccumulateTest< ::std::complex<float> >(64);
+#endif
+#ifdef PFFFT_ENABLE_DOUBLE
+  resAcc |= AccumulateTest<double>(64);
+  resAcc |= AccumulateTest< ::std::complex<double> >(64);
+#endif
+  if (!resAcc)
+    printf("convolveAccumulate wrapper tests succeeded successfully.\n");
+
+  resAll = resNextPw2 | resIsPw2 | resFFT | resZP | resAcc;
   if (!resAll)
     printf("all tests succeeded successfully.\n");
   else

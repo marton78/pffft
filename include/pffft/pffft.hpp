@@ -589,6 +589,14 @@ public:
     pffft_zreorder(self, input, output, direction);
   }
 
+  void convolveAccumulate(const Scalar* dft_a,
+                          const Scalar* dft_b,
+                          Scalar* dft_ab,
+                          const Scalar scaling)
+  {
+    pffft_zconvolve_accumulate(self, dft_a, dft_b, dft_ab, scaling);
+  }
+
   void convolve(const Scalar* dft_a,
                 const Scalar* dft_b,
                 Scalar* dft_ab,
