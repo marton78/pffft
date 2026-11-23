@@ -35,6 +35,7 @@
 #include "pffft/pffft.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <assert.h>
 #include <cmath>
 #include <math.h>
@@ -42,6 +43,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#if PFFFT_HPP_CXX11
+#include <type_traits>
+#include <utility>
+#endif
 
 /* define own constants required to turn off g++ extensions .. */
 #ifndef M_PI
@@ -71,7 +77,7 @@ Ttest(int N, bool useOrdered)
 
   assert(Fft::isPowerOfTwo(N));
 
-  Fft fft = Fft(N);  // instantiate and prepareLength() for length N
+  Fft fft(N);  // instantiate and prepareLength() for length N
 
 #if __cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1900)
 
@@ -362,6 +368,139 @@ ZPtest(int N)
   return retError;
 }
 
+// convolveAccumulate() must exist for every value type and agree with
+// convolve(): accumulating a*b*0.25 twice into zeros gives a*b*0.5.
+template<typename T>
+bool
+AccumulateTest(int N)
+{
+  typedef pffft::Fft<T> Fft;
+  typedef typename Fft::Scalar FftScalar;
+
+  Fft fft(N);
+  pffft::AlignedVector<T> X = fft.valueVector();
+  pffft::AlignedVector<T> Y = fft.valueVector();
+  pffft::AlignedVector<FftScalar> A = fft.internalLayoutVector();
+  pffft::AlignedVector<FftScalar> B = fft.internalLayoutVector();
+  pffft::AlignedVector<FftScalar> ACC = fft.internalLayoutVector();
+  pffft::AlignedVector<FftScalar> REF = fft.internalLayoutVector();
+  const int layoutSize = fft.getInternalLayoutSize();
+  int j;
+
+  FftScalar* x = reinterpret_cast<FftScalar*>(X.data());
+  FftScalar* y = reinterpret_cast<FftScalar*>(Y.data());
+  for (j = 0; j < layoutSize; ++j) {
+    x[j] = FftScalar(0.5 * sin(0.37 * j) + 0.25 * cos(1.71 * j + 0.3));
+    y[j] = FftScalar(0.3 * cos(0.11 * j) - 0.2 * sin(2.3 * j + 0.7));
+    ACC[j] = FftScalar(0);
+  }
+  fft.forwardToInternalLayout(X.data(), A.data());
+  fft.forwardToInternalLayout(Y.data(), B.data());
+
+  fft.convolve(A.data(), B.data(), REF.data(), FftScalar(0.5));
+  fft.convolveAccumulate(A.data(), B.data(), ACC.data(), FftScalar(0.25));
+  fft.convolveAccumulate(A.data(), B.data(), ACC.data(), FftScalar(0.25));
+
+  // the tolerance scales with the reference, so a non-finite reference
+  // bin would make it infinite (or NaN) and let anything pass: reject it.
+  // !(r <= max) is true for both infinity and NaN.
+  double maxRef = 0;
+  for (j = 0; j < layoutSize; ++j) {
+    const double r = std::abs(double(REF[j]));
+    if (!(r <= std::numeric_limits<double>::max())) {
+      printf("convolveAccumulate (%s): convolve gives non-finite bin %d: %g\n",
+             (Fft::isComplexTransform() ? "complex" : "real"),
+             j, double(REF[j]));
+      return true;
+    }
+    maxRef = std::max(maxRef, r);
+  }
+  const double tolerance = 1e-5 * maxRef;
+
+  // !(err <= tolerance) rather than err > tolerance, so that a NaN in
+  // either result fails the test instead of slipping through
+  for (j = 0; j < layoutSize; ++j) {
+    const double err = std::abs(double(ACC[j]) - double(REF[j]));
+    if (!(err <= tolerance)) {
+      printf("convolveAccumulate (%s): bin %d is %g, convolve gives %g\n",
+             (Fft::isComplexTransform() ? "complex" : "real"),
+             j, double(ACC[j]), double(REF[j]));
+      return true;
+    }
+  }
+  return false;
+}
+
+#if PFFFT_HPP_CXX11
+// Fft<T> owns a setup and (for large sizes) a heap work buffer: it must be
+// move-only, and moved-from objects must not free what they gave away.
+// Run under ASan (PFFFT_USE_DEBUG_ASAN) to catch double frees.
+template<typename T>
+bool
+MoveTest(int N)
+{
+  typedef pffft::Fft<T> Fft;
+  typedef typename Fft::Complex FftComplex;
+
+  static_assert(!std::is_copy_constructible<Fft>::value, "Fft must not be copyable");
+  static_assert(!std::is_copy_assignable<Fft>::value, "Fft must not be copy-assignable");
+  static_assert(std::is_nothrow_move_constructible<Fft>::value, "Fft must be nothrow-movable");
+  static_assert(std::is_nothrow_move_assignable<Fft>::value, "Fft must be nothrow-move-assignable");
+
+  Fft ref(N);
+  pffft::AlignedVector<T> X = ref.valueVector();
+  pffft::AlignedVector<FftComplex> Yref = ref.spectrumVector();
+  pffft::AlignedVector<FftComplex> Y = ref.spectrumVector();
+  for (int j = 0; j < N; ++j)
+    X[j] = T(0.5 * sin(0.37 * j) + 0.25 * cos(1.71 * j + 0.3));
+  ref.forward(X, Yref);
+
+  // no reserve(): growth relocates the elements by move.
+  // even entries use the heap work buffer, odd ones the stack.
+  std::vector<Fft> ffts;
+  for (int k = 0; k < 9; ++k)
+    ffts.push_back(Fft(N, (k % 2) ? N : N - 1));
+
+  bool retError = false;
+  for (size_t k = 0; k < ffts.size(); ++k) {
+    if (!ffts[k].isValid() || ffts[k].getLength() != N) {
+      printf("move: vector element %d invalid after relocation\n", int(k));
+      return true;
+    }
+    ffts[k].forward(X, Y);
+    if (memcmp(Y.data(), Yref.data(), Y.size() * sizeof(FftComplex))) {
+      printf("move: vector element %d transforms differently\n", int(k));
+      retError = true;
+    }
+  }
+
+  // move construction leaves the source invalid but reusable
+  Fft a(std::move(ffts[0]));
+  if (!a.isValid() || ffts[0].isValid() || ffts[0].getLength() != 0) {
+    printf("move: move construction left wrong validity\n");
+    retError = true;
+  }
+  if (!ffts[0].prepareLength(N) || !ffts[0].isValid()) {
+    printf("move: moved-from Fft cannot be prepared again\n");
+    retError = true;
+  }
+
+  // move assignment releases the target's own resources
+  Fft b(2 * N, 0);
+  b = std::move(a);
+  if (!b.isValid() || b.getLength() != N || a.isValid()) {
+    printf("move: move assignment left wrong validity\n");
+    retError = true;
+  }
+  b.forward(X, Y);
+  if (memcmp(Y.data(), Yref.data(), Y.size() * sizeof(FftComplex))) {
+    printf("move: move-assigned Fft transforms differently\n");
+    retError = true;
+  }
+  return retError;
+}
+#endif
+
 bool
 test(int N, bool useComplex, bool useOrdered)
 {
@@ -491,7 +630,33 @@ main(int argc, char** argv)
   if (!resZP)
     printf("zero-phase and unscaled convolve wrapper tests succeeded successfully.\n");
 
-  resAll = resNextPw2 | resIsPw2 | resFFT | resZP;
+  int resAcc = 0;
+#ifdef PFFFT_ENABLE_FLOAT
+  resAcc |= AccumulateTest<float>(64);
+  resAcc |= AccumulateTest< ::std::complex<float> >(64);
+#endif
+#ifdef PFFFT_ENABLE_DOUBLE
+  resAcc |= AccumulateTest<double>(64);
+  resAcc |= AccumulateTest< ::std::complex<double> >(64);
+#endif
+  if (!resAcc)
+    printf("convolveAccumulate wrapper tests succeeded successfully.\n");
+
+  int resMove = 0;
+#if PFFFT_HPP_CXX11
+#ifdef PFFFT_ENABLE_FLOAT
+  resMove |= MoveTest<float>(64);
+  resMove |= MoveTest< ::std::complex<float> >(64);
+#endif
+#ifdef PFFFT_ENABLE_DOUBLE
+  resMove |= MoveTest<double>(64);
+  resMove |= MoveTest< ::std::complex<double> >(64);
+#endif
+  if (!resMove)
+    printf("Fft move semantics tests succeeded successfully.\n");
+#endif
+
+  resAll = resNextPw2 | resIsPw2 | resFFT | resZP | resAcc | resMove;
   if (!resAll)
     printf("all tests succeeded successfully.\n");
   else
