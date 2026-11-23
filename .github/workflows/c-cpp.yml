@@ -192,6 +192,22 @@ jobs:
     - name: build_w64_simd_full
       working-directory: ${{runner.workspace}}
       run: X=$(pwd) && cd $GITHUB_WORKSPACE && bash ./cross_build_mingw64.sh simd_full -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DTARGET_CXX_ARCH=sandybridge -DTARGET_C_ARCH=sandybridge -DMIPP_INCLUDE_DIRS=$X/include/mipp
+    # On Windows a shared library is two files: the DLL, a RUNTIME artifact
+    # that belongs in bin/, and its import library, an ARCHIVE in lib/.
+    # Install both, and check that the exported CMake package points at the DLL.
+    - name: build_w64_shared and install
+      working-directory: ${{runner.workspace}}
+      run: |
+        cd $GITHUB_WORKSPACE
+        bash ./cross_build_mingw64.sh shared -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DBUILD_SHARED_LIBS=ON -DINSTALL_PFFASTCONV=ON -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF
+        cmake --install build_w64_shared --prefix "$PWD/install_w64_shared"
+        find install_w64_shared -type f | sort
+        for lib in pffft pffastconv; do
+          test -f install_w64_shared/bin/lib$lib.dll || { echo "::error::lib$lib.dll was not installed to bin/"; exit 1; }
+          test -f install_w64_shared/lib/lib$lib.dll.a || { echo "::error::lib$lib.dll.a was not installed to lib/"; exit 1; }
+        done
+        grep -q 'bin/libpffft\.dll' install_w64_shared/lib/cmake/pffft/pffft-targets-*.cmake \
+          || { echo "::error::the exported targets do not locate libpffft.dll"; exit 1; }
 
     - name: compress
       run: tar zcvf pffft_cross-build-windows-from-linux-amd64.tar.gz --exclude=CMakeFiles --exclude=*.cmake --exclude=Makefile --exclude=CMakeCache.txt  build_w32_no-simd build_w32_simd_full build_w64_no-simd build_w64_simd_full
