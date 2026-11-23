@@ -91,7 +91,7 @@ jobs:
       matrix:
         os: [ubuntu-26.04, macos-26]
     env:
-      BUILDS: build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full
+      BUILDS: build_simd_full build_simd_float build_simd_double build_no-simd_full build_no-simd_scalar_full build_no-simd_novect
 
     steps:
     - uses: actions/checkout@v7
@@ -110,9 +110,7 @@ jobs:
         build build_no-simd_full -DPFFFT_USE_SIMD=OFF
         build build_no-simd_scalar_full -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=ON
         # the only configuration that compiles the SIMD_SZ==1 nosimd code
-        if [ "$RUNNER_OS" = Linux ]; then
-          build build_no-simd_novect -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=OFF
-        fi
+        build build_no-simd_novect -DPFFFT_USE_SIMD=OFF -DPFFFT_USE_SCALAR_VECT=OFF
     - name: test
       run: |
         for d in $BUILDS; do
@@ -120,11 +118,6 @@ jobs:
           ctest --test-dir $d --output-on-failure
           echo "::endgroup::"
         done
-        # greenffts' octave wrappers cannot run outside their environment;
-        # everything else, the SIMD_SZ==1 nosimd kernels included, must pass
-        if [ "$RUNNER_OS" = Linux ]; then
-          ctest --test-dir build_no-simd_novect -E "convTest|conv2dTest|rfft2d" --output-on-failure
-        fi
 
   cross_build_win_from_linux:
     runs-on: ubuntu-26.04
