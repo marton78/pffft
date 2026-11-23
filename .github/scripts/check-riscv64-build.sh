@@ -11,7 +11,6 @@
 set -euo pipefail
 build=$1
 log=$2
-objdump=${OBJDUMP:-riscv64-linux-gnu-objdump}
 
 grep "SIMD backend for PFFFT" "$log"
 grep -qF "SIMD backend for PFFFT: float: $BACKEND, double: $BACKEND" "$log" \
@@ -30,16 +29,5 @@ expected=${MARCH:+-march=$MARCH}
 echo "-march found: '$found', expected: '$expected'"
 [ "$found" = "$expected" ] || { echo "::error::unexpected -march"; exit 1; }
 
-# the RVV backend is written with GCC vector types, which a compiler may
-# lower to scalar code; vsetvli/vsetivli start every vector operation
-disasm=$("$objdump" -d "$build/libpffft.a") \
-  || { echo "::error::$objdump could not disassemble libpffft.a"; exit 1; }
-grep -q '<pffft_new_setup>:' <<< "$disasm" \
-  || { echo "::error::no pffft code in the disassembly of libpffft.a"; exit 1; }
-n=$(grep -cE '\svseti?vli\s' <<< "$disasm" || true)
-echo "vsetvli/vsetivli in libpffft.a: $n"
-if [ "$BACKEND" = RVV ]; then
-  [ "$n" -gt 0 ] || { echo "::error::the RVV backend compiled to no vector instructions"; exit 1; }
-else
-  [ "$n" -eq 0 ] || { echo "::error::vector instructions in a build without V"; exit 1; }
-fi
+if [ "$BACKEND" = RVV ]; then expect=some; else expect=none; fi
+bash "$(dirname "$0")/check-rvv-code.sh" "$build/libpffft.a" $expect

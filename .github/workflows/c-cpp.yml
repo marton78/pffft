@@ -115,6 +115,14 @@ jobs:
       TEST_CPU: ${{ matrix.test_cpu }}
       BACKEND: ${{ matrix.backend }}
       MARCH: ${{ matrix.march }}
+      # cmake options for the cross toolchain, and for qemu to run what it
+      # builds, expanded unquoted below: no value may contain a space
+      CROSS: >-
+        -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=riscv64
+        -DCMAKE_C_COMPILER=riscv64-linux-gnu-gcc${{ matrix.gcc }}
+        -DCMAKE_CXX_COMPILER=riscv64-linux-gnu-g++${{ matrix.gcc }}
+        -DCMAKE_FIND_ROOT_PATH=/usr/riscv64-linux-gnu
+      EMULATOR: "-DCMAKE_CROSSCOMPILING_EMULATOR=qemu-riscv64;-L;/usr/riscv64-linux-gnu"
 
     steps:
     - uses: actions/checkout@v7
@@ -125,18 +133,9 @@ jobs:
     - name: cmake configure
       run: |
         set -o pipefail
-        emulator=()
-        if [ -n "$BUILD_CPU" ]; then
-          emulator=("-DCMAKE_CROSSCOMPILING_EMULATOR=qemu-riscv64;-L;/usr/riscv64-linux-gnu")
-        fi
-        QEMU_CPU="$BUILD_CPU" cmake -S . -B build_riscv64 \
+        # the emulator only with a CPU for it to emulate
+        QEMU_CPU="$BUILD_CPU" cmake -S . -B build_riscv64 $CROSS ${BUILD_CPU:+$EMULATOR} \
           -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
-          -DCMAKE_SYSTEM_NAME=Linux \
-          -DCMAKE_SYSTEM_PROCESSOR=riscv64 \
-          -DCMAKE_C_COMPILER=riscv64-linux-gnu-gcc$GCC \
-          -DCMAKE_CXX_COMPILER=riscv64-linux-gnu-g++$GCC \
-          -DCMAKE_FIND_ROOT_PATH=/usr/riscv64-linux-gnu \
-          "${emulator[@]}" \
           -DTARGET_C_ARCH=$ARCH -DTARGET_CXX_ARCH=$ARCH \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON $TESTS_ONLY \
           2>&1 | tee configure_riscv64.log
@@ -147,6 +146,111 @@ jobs:
       run: QEMU_CPU="$TEST_CPU" ctest --test-dir build_riscv64 --output-on-failure
     - name: check the backend and -march
       run: bash .github/scripts/check-riscv64-build.sh build_riscv64 configure_riscv64.log
+    # auto chooses the -march itself, so a -march in the compiler flags as
+    # well is a contradiction, which configuring must reject
+    - name: TARGET_C_ARCH=auto rejects a -march in the flags
+      if: matrix.arch == 'auto'
+      run: |
+        configure() {  # <cmake options>
+          rm -rf build_conflict
+          cmake -S . -B build_conflict $CROSS -DCMAKE_BUILD_TYPE=$BUILD_TYPE "$@" > conflict.log 2>&1
+        }
+        expect_conflict() {  # <C|CXX> <cmake option>
+          if configure -DTARGET_C_ARCH=auto -DTARGET_CXX_ARCH=auto "$2"; then
+            echo "::error::configuring with TARGET_$1_ARCH=auto and $2 succeeded"; exit 1
+          fi
+          # cmake wraps the lines of an error
+          tr -s ' \n' '  ' < conflict.log | grep -q "TARGET_$1_ARCH=auto conflicts with -march=rv64gc_zba" \
+            || { cat conflict.log; echo "::error::expected an error about TARGET_$1_ARCH=auto and $2"; exit 1; }
+          echo "rejected, as expected: TARGET_$1_ARCH=auto with $2"
+        }
+        expect_conflict C "-DCMAKE_C_FLAGS_${BUILD_TYPE^^}=-O3 -march=rv64gc_zba"
+        # quoted, as the shell would take it
+        expect_conflict C "-DCMAKE_C_FLAGS_${BUILD_TYPE^^}=-O3 '-march=rv64gc_zba'"
+        expect_conflict CXX "-DCMAKE_CXX_FLAGS=-march=rv64gc_zba"
+        # a project's compile options for C++ only: a conflict for C++, not for C
+        echo 'add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-march=rv64gc_zba>")' > cxx_march.cmake
+        expect_conflict CXX "-DCMAKE_PROJECT_INCLUDE=$PWD/cxx_march.cmake"
+        configure -DTARGET_C_ARCH=auto -DTARGET_CXX_ARCH=none "-DCMAKE_PROJECT_INCLUDE=$PWD/cxx_march.cmake" \
+          || { cat conflict.log; echo "::error::a -march for C++ only blocked TARGET_C_ARCH=auto"; exit 1; }
+        echo "accepted, as expected: TARGET_C_ARCH=auto with a -march for C++ only"
+        # an option group, and an option for the build type being built
+        echo 'add_compile_options("SHELL:-O2 -march=rv64gc_zba")' > shell_march.cmake
+        expect_conflict C "-DCMAKE_PROJECT_INCLUDE=$PWD/shell_march.cmake"
+        echo 'add_compile_options("$<$<CONFIG:'$BUILD_TYPE'>:-march=rv64gc_zba>")' > config_march.cmake
+        expect_conflict C "-DCMAKE_PROJECT_INCLUDE=$PWD/config_march.cmake"
+    # The rest needs auto to add an -march, which it does where the probe
+    # finds V and the compiler doesn't enable it already.
+    # auto caches what its CPU probe found, but not a probe that failed to
+    # build: once the flags that broke it are fixed, it must probe again.
+    - name: TARGET_C_ARCH=auto probes again when the flags change
+      if: matrix.arch == 'auto' && matrix.march != ''
+      run: |
+        configure() {  # <cmake options>
+          QEMU_CPU="$BUILD_CPU" cmake -S . -B build_reprobe $CROSS $EMULATOR \
+            -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+            -DTARGET_C_ARCH=auto -DTARGET_CXX_ARCH=auto \
+            "$@" > reprobe.log 2>&1 \
+            || { cat reprobe.log; exit 1; }
+          grep "TARGET_C_ARCH=auto for target PFFFT" reprobe.log
+        }
+        expect() {  # <-march or "the compiler's default"> <error>
+          grep -q "TARGET_C_ARCH=auto for target PFFFT: $1" reprobe.log || { echo "::error::$2"; exit 1; }
+        }
+        # without the C library the probe cannot link, through the compiler
+        # flags, then through the linker flags
+        configure "-DCMAKE_C_FLAGS_${BUILD_TYPE^^}=-O3 -DNDEBUG -nostdlib"
+        expect "the compiler's default" "the probe was expected to fail"
+        configure "-DCMAKE_C_FLAGS_${BUILD_TYPE^^}=-O3 -DNDEBUG" -DCMAKE_EXE_LINKER_FLAGS=-nostdlib
+        expect "the compiler's default" "the probe was expected to fail"
+        # the same build directory with working flags must probe again
+        configure -DCMAKE_EXE_LINKER_FLAGS=
+        expect "-march=$MARCH" "auto kept the failed probe's result"
+    # an -march that auto cannot recognise, here in a generator expression it
+    # does not evaluate, must still win over auto's own
+    - name: TARGET_C_ARCH=auto yields to a -march it cannot see
+      if: matrix.arch == 'auto' && matrix.march != ''
+      run: |
+        echo 'add_compile_options("$<$<AND:$<CONFIG:'$BUILD_TYPE'>,$<COMPILE_LANGUAGE:C>>:-march=rv64gc_zba>")' > hidden_march.cmake
+        QEMU_CPU="$BUILD_CPU" cmake -S . -B build_hidden $CROSS $EMULATOR \
+          -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+          -DTARGET_C_ARCH=auto -DTARGET_CXX_ARCH=none \
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+          "-DCMAKE_PROJECT_INCLUDE=$PWD/hidden_march.cmake" > hidden.log 2>&1 \
+          || { cat hidden.log; exit 1; }
+        # the last -march on pffft.c's command line is the one the compiler uses
+        last=$(grep -o '"command": "[^"]*/pffft\.c' build_hidden/compile_commands.json | grep -o -- '-march=[^ ]*' | tail -1)
+        echo "last -march for pffft.c: $last"
+        [ "$last" = "-march=rv64gc_zba" ] || { echo "::error::auto's -march overrode the project's"; exit 1; }
+        # so the library has no vector code, and the backend probe, which saw
+        # auto's -march but not the project's, must not claim RVV unqualified
+        cmake --build build_hidden --target PFFFT
+        bash .github/scripts/check-rvv-code.sh build_hidden/libpffft.a none
+        tr -s ' \n' '  ' < hidden.log | grep -o "Detected SIMD backend for PFFFT: [^-]*-[^ ]*" || true
+        tr -s ' \n' '  ' < hidden.log | grep -q "Detected SIMD backend for PFFFT: .*not counting the machine options in generator expressions" \
+          || { echo "::error::the backend report does not say it could not see the project's -march"; exit 1; }
+    # a multi-config build reports the backend of one configuration, Debug
+    # unless CMAKE_TRY_COMPILE_CONFIGURATION says otherwise; an option for
+    # another configuration must not count
+    - name: the backend report follows the configuration it probes
+      if: matrix.arch == 'none' && matrix.gcc == '-14'
+      run: |
+        sudo apt-get install -y ninja-build
+        echo 'add_compile_options("$<$<CONFIG:Release>:-march=rv64gcv>")' > release_v.cmake
+        report() {  # <cmake options>
+          rm -rf build_multi
+          cmake -S . -B build_multi -G "Ninja Multi-Config" $CROSS \
+            -DPFFFT_BUILD_TESTS=OFF -DPFFFT_BUILD_BENCHMARKS=OFF -DPFFFT_BUILD_EXAMPLES=OFF \
+            "-DCMAKE_PROJECT_INCLUDE=$PWD/release_v.cmake" "$@" > multi.log 2>&1 \
+            || { cat multi.log; exit 1; }
+          grep "Detected SIMD backend for PFFFT" multi.log
+        }
+        report
+        grep -qF "float: 4xScalar, double: 4xScalar (Debug configuration)" multi.log \
+          || { echo "::error::the Debug report counted a Release-only -march"; exit 1; }
+        report -DCMAKE_TRY_COMPILE_CONFIGURATION=Release
+        grep -qF "float: RVV, double: RVV (Release configuration)" multi.log \
+          || { echo "::error::the Release report missed its -march"; exit 1; }
 
   # The same, built natively: a riscv64 container that qemu runs through
   # binfmt_misc, CPU model from QEMU_CPU as above. CMake does not
