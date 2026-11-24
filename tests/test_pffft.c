@@ -776,7 +776,11 @@ int main(int argc, char **argv)
   if (!resIsPw2)
     printf("tests for pffft_is_power_of_two() succeeded successfully.\n");
 
-  /* powers of two exercise only the radix-2/4 codelets. The remaining
+  /* powers of two exercise only the radix-2/4 codelets, and the complex
+     radix-8 one, which takes the place of the radix-2 and the last
+     radix-4 pass where the length has an odd power of two (complex 32,
+     128, ..., 32768; also 96, 160, 288, 480, 800, 1152, 2592, 4000,
+     12000). The remaining
      sizes cover radix-3 and radix-5 in every position the factorization
      order {4,2,3,5} can put them: 3*2^k (96, 192), 5*2^k (160), 9*2^k
      (288, 576, 1152), 15*2^k (480), 25*2^k (800), 81*32 (2592), 125*32

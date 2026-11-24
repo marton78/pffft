@@ -70,12 +70,15 @@ DEVICES = {"iPhone12,3": "iPhone 11 Pro (A13)", "iPhone12,1": "iPhone 11 (A13)",
 def device(cpu):
     """A readable name for a CPU or device id: a known name, or the id
     without trademark signs and clock ("Intel(R) Core(TM) i7-8700B CPU @
-    3.20GHz": "Intel Core i7-8700B")."""
+    3.20GHz": "Intel Core i7-8700B"), in mixed case if it is all capitals."""
     if not cpu or cpu in DEVICES:
         return DEVICES.get(cpu, cpu)
     cpu = re.sub(r"\((R|TM|tm|r)\)", "", cpu)
-    cpu = re.sub(r"\s+(CPU\s+)?@\s*[\d.]+\s*GHz", "", cpu)
-    return re.sub(r"\s+", " ", cpu).strip()
+    cpu = re.sub(r"\s+(CPU\s+)?@\s*[\d.]+\s*GHz", "", cpu, flags=re.IGNORECASE)
+    cpu = re.sub(r"\s+", " ", cpu).strip()
+    if cpu.isupper():  # Windows on some Intel CPUs: "INTEL XEON PLATINUM 8573C"
+        cpu = " ".join(w.capitalize() if w.isalpha() and w not in ("AMD", "EPYC") else w for w in cpu.split())
+    return cpu
 
 
 def system(meta) -> str:
