@@ -100,8 +100,49 @@ static inline float hsum(v4sf v)
  * loaded from the start, so aligned. The filter length is a multiple of
  * SIMD_SZ, which conv_float_simd_size() returns.
  *
- * Each output is summed in four accumulators, so that four multiply-adds
- * are in flight, not one that waits for the previous one. */
+ * The kernels are limited by the loads, two per multiply-add if each output
+ * is computed by itself. So they compute eight real outputs (four complex
+ * ones) per pass, which share each load of the filter: 9 loads for 8
+ * multiply-adds. Their accumulators also keep eight multiply-adds in flight.
+ * The outputs left over at the end are computed one at a time, each with
+ * four accumulators. */
+
+
+/* out[j] = the sum of the lanes of a<j>, for j < 4 */
+static inline void hsum4(v4sf a0, v4sf a1, v4sf a2, v4sf a3, float * RESTRICT out)
+{
+#if SIMD_SZ == 4
+    VTRANSPOSE4(a0, a1, a2, a3);
+    v4sf_union u;
+    u.v = VADD(VADD(a0, a1), VADD(a2, a3));
+    out[0] = u.f[0]; out[1] = u.f[1]; out[2] = u.f[2]; out[3] = u.f[3];
+#else
+    out[0] = hsum(a0); out[1] = hsum(a1); out[2] = hsum(a2); out[3] = hsum(a3);
+#endif
+}
+
+
+/* out[j] = sum_k s[j+k] * filter[k], for k < sz_filter, for j < 8 */
+static inline void dot8(const float * RESTRICT s, const float * RESTRICT filter, const int sz_filter, float * RESTRICT out)
+{
+    v4sf a0 = VZERO(), a1 = VZERO(), a2 = VZERO(), a3 = VZERO();
+    v4sf a4 = VZERO(), a5 = VZERO(), a6 = VZERO(), a7 = VZERO();
+    for (int k = 0; k < sz_filter; k += SIMD_SZ)
+    {
+        const v4sf h = VLOAD_ALIGNED(&filter[k]);
+        const float * RESTRICT sk = &s[k];
+        a0 = VMADD(VLOAD_UNALIGNED(sk    ), h, a0);
+        a1 = VMADD(VLOAD_UNALIGNED(sk + 1), h, a1);
+        a2 = VMADD(VLOAD_UNALIGNED(sk + 2), h, a2);
+        a3 = VMADD(VLOAD_UNALIGNED(sk + 3), h, a3);
+        a4 = VMADD(VLOAD_UNALIGNED(sk + 4), h, a4);
+        a5 = VMADD(VLOAD_UNALIGNED(sk + 5), h, a5);
+        a6 = VMADD(VLOAD_UNALIGNED(sk + 6), h, a6);
+        a7 = VMADD(VLOAD_UNALIGNED(sk + 7), h, a7);
+    }
+    hsum4(a0, a1, a2, a3, out);
+    hsum4(a4, a5, a6, a7, out + 4);
+}
 
 
 /* sum_k s[k] * filter[k], for k < sz_filter */
@@ -133,11 +174,16 @@ int ARCHFUNCNAME(conv_float_inplace)(
     const int sz_s = state->size;
     int offset;
 
-    for ( offset = off0; offset + sz_filter <= sz_s; ++offset)
+    // s[offset] is read by no later offset: written after it is read
+    for ( offset = off0; offset + 8 + sz_filter <= sz_s + 1; offset += 8)
     {
-        // s[offset] is read by no later offset
-        s[offset] = dot(&s[offset], filter, sz_filter);
+        float out[8];
+        dot8(&s[offset], filter, sz_filter, out);
+        for (int j = 0; j < 8; ++j)
+            s[offset + j] = out[j];
     }
+    for ( ; offset + sz_filter <= sz_s; ++offset)
+        s[offset] = dot(&s[offset], filter, sz_filter);
 
     state->offset = offset;
     return offset - off0;
@@ -157,14 +203,34 @@ int ARCHFUNCNAME(conv_float_oop)(
     const int sz_s = state->size;
     int offset;
 
-    for ( offset = off0; offset + sz_filter <= sz_s; ++offset)
-    {
+    for ( offset = off0; offset + 8 + sz_filter <= sz_s + 1; offset += 8)
+        dot8(&s[offset], filter, sz_filter, &y[offset]);
+    for ( ; offset + sz_filter <= sz_s; ++offset)
         y[offset] = dot(&s[offset], filter, sz_filter);
-    }
 
     state->offset = offset;
     return offset - off0;
 }
+
+
+#if SIMD_SZ > 1
+/* *y = the sums of the even lanes (real parts) and of the odd lanes
+ * (imaginary parts) of v */
+static inline void cplx_sum(v4sf v, complexf * RESTRICT y)
+{
+    v4sf_union u;
+    u.v = v;
+    float accu_re = u.f[0];
+    float accu_im = u.f[1];
+    for (int k = 2; k < SIMD_SZ; k += 2)
+    {
+        accu_re += u.f[k];
+        accu_im += u.f[k+1];
+    }
+    y->i = accu_re;
+    y->q = accu_im;
+}
+#endif
 
 
 int ARCHFUNCNAME(conv_cplx_float_oop)(
@@ -197,11 +263,36 @@ int ARCHFUNCNAME(conv_cplx_float_oop)(
     /* SIMD_SZ complex samples are two vectors of interleaved real and
      * imaginary parts, which are multiplied with SIMD_SZ filter taps, each
      * duplicated: the even lanes accumulate real parts, the odd lanes
-     * imaginary parts. Two blocks of SIMD_SZ taps at a time, for four
-     * accumulators. */
+     * imaginary parts. Four outputs per pass share the filter, eight
+     * accumulators; one output at a time at the end, with four. */
     const float * RESTRICT s = &(s_cplx[0].i);
 
-    for ( offset = off0; offset + sz_filter <= sz_s; ++offset)
+    for ( offset = off0; offset + 4 + sz_filter <= sz_s + 1; offset += 4)
+    {
+        const float * RESTRICT so = &s[2*offset];
+        v4sf a0 = VZERO(), a1 = VZERO(), b0 = VZERO(), b1 = VZERO();
+        v4sf c0 = VZERO(), c1 = VZERO(), d0 = VZERO(), d1 = VZERO();
+        for (int k = 0; k < sz_filter; k += SIMD_SZ)
+        {
+            v4sf rH = VLOAD_ALIGNED(&filter[k]), rH0, rH1;
+            INTERLEAVE2(rH, rH, rH0, rH1);
+            const float * RESTRICT sk = &so[2*k];
+            a0 = VMADD(VLOAD_UNALIGNED(sk        ), rH0, a0);
+            a1 = VMADD(VLOAD_UNALIGNED(sk + SIMD_SZ    ), rH1, a1);
+            b0 = VMADD(VLOAD_UNALIGNED(sk + 2      ), rH0, b0);
+            b1 = VMADD(VLOAD_UNALIGNED(sk + SIMD_SZ + 2), rH1, b1);
+            c0 = VMADD(VLOAD_UNALIGNED(sk + 4      ), rH0, c0);
+            c1 = VMADD(VLOAD_UNALIGNED(sk + SIMD_SZ + 4), rH1, c1);
+            d0 = VMADD(VLOAD_UNALIGNED(sk + 6      ), rH0, d0);
+            d1 = VMADD(VLOAD_UNALIGNED(sk + SIMD_SZ + 6), rH1, d1);
+        }
+        cplx_sum(VADD(a0, a1), &y_cplx[offset    ]);
+        cplx_sum(VADD(b0, b1), &y_cplx[offset + 1]);
+        cplx_sum(VADD(c0, c1), &y_cplx[offset + 2]);
+        cplx_sum(VADD(d0, d1), &y_cplx[offset + 3]);
+    }
+
+    for ( ; offset + sz_filter <= sz_s; ++offset)
     {
         const float * RESTRICT so = &s[2*offset];
         v4sf accu0 = VZERO(), accu1 = VZERO(), accu2 = VZERO(), accu3 = VZERO();
@@ -224,17 +315,7 @@ int ARCHFUNCNAME(conv_cplx_float_oop)(
             accu0 = VMADD(VLOAD_UNALIGNED(&so[2*k          ]), rH0, accu0);
             accu1 = VMADD(VLOAD_UNALIGNED(&so[2*k + SIMD_SZ]), rH1, accu1);
         }
-        v4sf_union u;
-        u.v = VADD(VADD(accu0, accu1), VADD(accu2, accu3));
-        float accu_re = u.f[0];
-        float accu_im = u.f[1];
-        for (int k = 2; k < SIMD_SZ; k += 2)
-        {
-            accu_re += u.f[k];
-            accu_im += u.f[k+1];
-        }
-        y_cplx[offset].i = accu_re;
-        y_cplx[offset].q = accu_im;
+        cplx_sum(VADD(VADD(accu0, accu1), VADD(accu2, accu3)), &y_cplx[offset]);
     }
 #endif
 

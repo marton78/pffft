@@ -80,7 +80,9 @@ static void test_arch(const conv_f_ptrs & c, int L, std::mt19937 & rng)
         }
         cs[M].i = cs[M].q = GUARD;
 
-        for (int off0 = 0; off0 < 3; ++off0)
+        // 0 to 7: with the eight outputs per pass, every number of outputs
+        // left over for the end, on every SIMD size
+        for (int off0 = 0; off0 < 8; ++off0)
         {
             conv_buffer_state st;
 
