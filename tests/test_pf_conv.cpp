@@ -15,6 +15,7 @@
 #include "pffft/pffft.hpp"  // pffft::AlignedVector
 
 #include <stdio.h>
+#include <string.h>
 #include <math.h>
 #include <float.h>
 
@@ -222,6 +223,16 @@ int main()
             test_arch(c, n_vecs[i] * sz, rng);
         ++n_tested;
     }
+
+#ifdef PF_CONV_DFLT_IS_PFFFT_BACKEND
+    // dflt is compiled like PFFFT: if pf_conv.cmake left out a definition
+    // of PFFFT's, dflt would test another backend, e.g. 4xScalar for Helium
+    if (n_arch > 1 && arches[1] && strcmp(arches[1]->simd_arch, pffft::Types<float>::simd_arch()) != 0)
+    {
+        fprintf(stderr, "FAIL: dflt uses the SIMD backend %s, PFFFT %s\n", arches[1]->simd_arch, pffft::Types<float>::simd_arch());
+        ++n_failures;
+    }
+#endif
 
     printf("%d architectures, %d outputs checked, %d failures\n", n_tested, n_checks, n_failures);
     return (n_failures || !n_tested) ? 1 : 0;

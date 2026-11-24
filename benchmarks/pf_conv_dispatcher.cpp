@@ -12,7 +12,7 @@
 
 
 /* Which of the architecture variants can this CPU run? Each is compiled
- * with its own -march / /arch (benchmarks/CMakeLists.txt), so the compiler
+ * with its own -march / /arch (benchmarks/pf_conv.cmake), so the compiler
  * may use every instruction that implies. A variant the CPU lacks is left
  * as nullptr: running it would end in an illegal instruction. */
 

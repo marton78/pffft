@@ -170,19 +170,43 @@ if (PFFFT_USE_TYPE_FLOAT)
 
 endif()
 
-if (PFFFT_BUILD_BENCHMARKS AND PFFFT_USE_TYPE_FLOAT)
+if (PFFFT_USE_TYPE_FLOAT)
   # the "slow" convolution kernels of bench_pf_conv_float, every architecture
-  # variant of benchmarks/pf_conv.cpp against a plain convolution
+  # variant of benchmarks/pf_conv.cpp against a plain convolution; built here
+  # also without the benchmarks, for the SIMD backends of every CI job
+  include(${PFFFT_SOURCE_DIR}/benchmarks/pf_conv.cmake)
   add_executable(test_pf_conv test_pf_conv.cpp)
   set_property(TARGET test_pf_conv PROPERTY CXX_STANDARD 11)
   set_property(TARGET test_pf_conv PROPERTY CXX_STANDARD_REQUIRED ON)
   target_compile_definitions(test_pf_conv PRIVATE PFFFT_ENABLE_FLOAT)
   target_include_directories(test_pf_conv PRIVATE ${PFFFT_SOURCE_DIR}/benchmarks)
   target_activate_cxx_compiler_warnings(test_pf_conv)
+  # Is pf_conv_arch_dflt (C++) compiled for the same target as PFFFT (C)?
+  # Then it must get the same SIMD backend. That needs the same arch options
+  # and the same flags, of which MSVC gives C++ /GR and /EHsc on top.
+  set(pf_conv_same_target TRUE)
+  if (NOT (("${TARGET_C_ARCH}" STREQUAL "${TARGET_CXX_ARCH}") AND ("${TARGET_C_EXTRA}" STREQUAL "${TARGET_CXX_EXTRA}")))
+    set(pf_conv_same_target FALSE)
+  endif()
+  foreach (cfg "" _DEBUG _RELEASE _RELWITHDEBINFO _MINSIZEREL)
+    # as lists of options, which drops the spaces between them
+    string(REGEX REPLACE "[ \t]+" ";" c_flags "${CMAKE_C_FLAGS${cfg}}")
+    string(REGEX REPLACE "[ \t]+" ";" cxx_flags "${CMAKE_CXX_FLAGS${cfg}}")
+    list(REMOVE_ITEM c_flags "")
+    list(REMOVE_ITEM cxx_flags "")
+    if (MSVC AND cxx_flags)
+      list(REMOVE_ITEM cxx_flags /GR -GR /EHsc -EHsc)
+    endif()
+    if (NOT "${c_flags}" STREQUAL "${cxx_flags}")
+      set(pf_conv_same_target FALSE)
+    endif()
+  endforeach()
+  if (pf_conv_same_target)
+    target_compile_definitions(test_pf_conv PRIVATE PF_CONV_DFLT_IS_PFFFT_BACKEND=1)
+  endif()
   if (PFFFT_USE_DEBUG_ASAN)
     target_compile_options(test_pf_conv PRIVATE "-fsanitize=address")
   endif()
-  # pf_conv_dispatcher is a target of benchmarks/
   target_link_libraries(test_pf_conv pf_conv_dispatcher PFFFT ${STDCXXLIB} ${ASANLIB} ${MATHLIB})
 
   add_test(NAME test_pf_conv

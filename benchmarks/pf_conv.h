@@ -13,10 +13,10 @@
  *
  * requirement(s):
  * - compiler definitions for the different architecture types:
- *   see CMakeLists.txt CONV_ARCH_MSVC_AMD64, CONV_ARCH_GCC_ARM32NEON, ..
+ *   see pf_conv.cmake CONV_ARCH_MSVC_AMD64, CONV_ARCH_GCC_ARM32NEON, ..
  * - one cmake library target pf_conv_arch_<opt> for each architecture option.
  *   each one gets it's specific  architecture/compiler  options
- *    utilizing the target_set_cxx_arch_option() macro in the CMakeLists.txt
+ *    utilizing the target_set_cxx_arch_option() macro in pf_conv.cmake
  *
  * the filter must be aligned for SIMD (pffft_aligned_malloc()), and its
  * length a multiple of conv_float_simd_size().
