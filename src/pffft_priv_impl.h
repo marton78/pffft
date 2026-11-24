@@ -117,6 +117,15 @@ const char * FUNC_SIMD_ARCH(void) { return VARCH; }
 
 
 /*
+  a + fsign*b and a - fsign*b, for fsign == -1 or +1, as one VSUB or VADD.
+  In the always-inline helpers below fsign is a constant, so the choice is
+  made at compile time, with any compiler (MSVC, for one, does not fold a
+  multiply by a constant -1 into an addition).
+*/
+#define VADD_FSIGN(a, b) (fsign < 0 ? VSUB(a, b) : VADD(a, b))
+#define VSUB_FSIGN(a, b) (fsign < 0 ? VADD(a, b) : VSUB(a, b))
+
+/*
   passf2 and passb2 has been merged here, fsign = -1 for passf2, +1 for passb2
 */
 static NEVER_INLINE(void) passf2_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float *wa1, float fsign) {
@@ -336,16 +345,11 @@ static NEVER_INLINE(void) passf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v
   and the twiddles are all 1, as in the ido == 2 branch of passf4_ps. So
   this pass takes no twiddles, and the strides are constants.
 */
-static NEVER_INLINE(void) passf8_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, float fsign) {
+static ALWAYS_INLINE(void) passf8_loop_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float fsign) {
   static const float K8 = (float)M_SQRT1_2;   /* cos(pi/4) = sin(pi/4) = 1/sqrt(2) */
-  const float K8s = fsign * K8;
   const float nK8 = -K8;
-  const float nfsign = -fsign;
   const int l1ido = 2*l1;
   int k;
-
-  assert(ido == 2);
-  (void)ido;
 
   for (k = 0; k < l1ido; k += 2, cc += 16, ch += 2) {
     /* Load 8 inputs: cc[2*leg + 0] = real, cc[2*leg + 1] = imag */
@@ -370,52 +374,72 @@ static NEVER_INLINE(void) passf8_ps(int ido, int l1, const v4sf * RESTRICT cc, v
 
     /* Step 2: twiddle diffs by W8^k */
     /* d0 *= W8^0 = 1 (no-op) */
-    /* d1 *= W8^1: VCPLXMUL with (K8, fsign*K8) */
-    VCPLXMUL(d1r, d1i, LD_PS1(K8), LD_PS1(K8s));
-    /* d2 *= W8^2 = -j rotation */
-    { v4sf tr = VMUL(LD_PS1(nfsign), d2i);
-      v4sf ti = VMUL(LD_PS1(fsign), d2r);
-      d2r = tr; d2i = ti; }
-    /* d3 *= W8^3: VCPLXMUL with (-K8, fsign*K8) */
-    VCPLXMUL(d3r, d3i, LD_PS1(nK8), LD_PS1(K8s));
+    /* d1 *= W8^1 = K8*(1 + fsign*j) */
+    { v4sf a = d1r, b = d1i;
+      d1r = VMUL(LD_PS1(K8), VSUB_FSIGN(a, b));
+      d1i = VMUL(LD_PS1(K8), VADD_FSIGN(b, a)); }
+    /* d2 *= W8^2 = fsign*j: in Step 4 */
+    /* d3 *= W8^3 = K8*(-1 + fsign*j) */
+    { v4sf a = d3r, b = d3i;
+      d3r = VMUL(LD_PS1(nK8), VADD_FSIGN(a, b));
+      d3i = VMUL(LD_PS1(nK8), VSUB_FSIGN(b, a)); }
 
     /* Step 3: DFT-4 on sums -> even outputs (0,2,4,6) */
     {
       v4sf t1r = VSUB(s0r, s2r), t1i = VSUB(s0i, s2i);
       v4sf t2r = VADD(s0r, s2r), t2i = VADD(s0i, s2i);
-      v4sf t4i = VMUL(VSUB(s1r, s3r), LD_PS1(fsign));
-      v4sf t4r = VMUL(VSUB(s3i, s1i), LD_PS1(fsign));
+      v4sf t4i = VSUB(s1r, s3r);  /* times fsign below */
+      v4sf t4r = VSUB(s3i, s1i);
       v4sf t3r = VADD(s1r, s3r), t3i = VADD(s1i, s3i);
 
       ch[0*l1ido + 0] = VADD(t2r, t3r);
       ch[0*l1ido + 1] = VADD(t2i, t3i);
-      ch[2*l1ido + 0] = VADD(t1r, t4r);
-      ch[2*l1ido + 1] = VADD(t1i, t4i);
+      ch[2*l1ido + 0] = VADD_FSIGN(t1r, t4r);
+      ch[2*l1ido + 1] = VADD_FSIGN(t1i, t4i);
       ch[4*l1ido + 0] = VSUB(t2r, t3r);
       ch[4*l1ido + 1] = VSUB(t2i, t3i);
-      ch[6*l1ido + 0] = VSUB(t1r, t4r);
-      ch[6*l1ido + 1] = VSUB(t1i, t4i);
+      ch[6*l1ido + 0] = VSUB_FSIGN(t1r, t4r);
+      ch[6*l1ido + 1] = VSUB_FSIGN(t1i, t4i);
     }
 
     /* Step 4: DFT-4 on diffs -> odd outputs (1,3,5,7) */
     {
-      v4sf t1r = VSUB(d0r, d2r), t1i = VSUB(d0i, d2i);
-      v4sf t2r = VADD(d0r, d2r), t2i = VADD(d0i, d2i);
-      v4sf t4i = VMUL(VSUB(d1r, d3r), LD_PS1(fsign));
-      v4sf t4r = VMUL(VSUB(d3i, d1i), LD_PS1(fsign));
+      /* d2 times fsign*j: d2r' = -fsign*d2i, d2i' = fsign*d2r */
+      v4sf t1r = VADD_FSIGN(d0r, d2i), t1i = VSUB_FSIGN(d0i, d2r);
+      v4sf t2r = VSUB_FSIGN(d0r, d2i), t2i = VADD_FSIGN(d0i, d2r);
+      v4sf t4i = VSUB(d1r, d3r);  /* times fsign below */
+      v4sf t4r = VSUB(d3i, d1i);
       v4sf t3r = VADD(d1r, d3r), t3i = VADD(d1i, d3i);
 
       ch[1*l1ido + 0] = VADD(t2r, t3r);
       ch[1*l1ido + 1] = VADD(t2i, t3i);
-      ch[3*l1ido + 0] = VADD(t1r, t4r);
-      ch[3*l1ido + 1] = VADD(t1i, t4i);
+      ch[3*l1ido + 0] = VADD_FSIGN(t1r, t4r);
+      ch[3*l1ido + 1] = VADD_FSIGN(t1i, t4i);
       ch[5*l1ido + 0] = VSUB(t2r, t3r);
       ch[5*l1ido + 1] = VSUB(t2i, t3i);
-      ch[7*l1ido + 0] = VSUB(t1r, t4r);
-      ch[7*l1ido + 1] = VSUB(t1i, t4i);
+      ch[7*l1ido + 0] = VSUB_FSIGN(t1r, t4r);
+      ch[7*l1ido + 1] = VSUB_FSIGN(t1i, t4i);
     }
   }
+}
+
+/*
+  fsign goes to passf8_loop_ps as a constant: VADD_FSIGN and VSUB_FSIGN
+  are then one VADD or VSUB, and each multiply by W8^1 or W8^3 takes 2
+  vector multiplies instead of 4.
+*/
+static NEVER_INLINE(void) passf8_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, float fsign) {
+  assert(ido == 2);
+  (void)ido;
+  if (fsign < 0) {
+    passf8_loop_ps(l1, cc, ch, -1);
+  } else {
+    passf8_loop_ps(l1, cc, ch, +1);
+  }
 } /* passf8 */
+
+#undef VADD_FSIGN
+#undef VSUB_FSIGN
 
 
 static NEVER_INLINE(void) radf2_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float *wa1) {
