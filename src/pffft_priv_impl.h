@@ -195,8 +195,8 @@ static NEVER_INLINE(void) passf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v
   }
 } /* passf3 */
 
-static NEVER_INLINE(void) passf4_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
-                                    const float *wa1, const float *wa2, const float *wa3, float fsign) {
+static ALWAYS_INLINE(void) passf4_loop_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                                          const float *wa1, const float *wa2, const float *wa3, const float fsign) {
   /* isign == -1 for forward transform and +1 for backward transform */
 
   int i, k;
@@ -208,19 +208,19 @@ static NEVER_INLINE(void) passf4_ps(int ido, int l1, const v4sf * RESTRICT cc, v
       tr2 = VADD(cc[0], cc[2*ido + 0]);
       ti1 = VSUB(cc[1], cc[2*ido + 1]);
       ti2 = VADD(cc[1], cc[2*ido + 1]);
-      ti4 = VMUL(VSUB(cc[1*ido + 0], cc[3*ido + 0]), LD_PS1(fsign));
-      tr4 = VMUL(VSUB(cc[3*ido + 1], cc[1*ido + 1]), LD_PS1(fsign));
+      ti4 = VSUB(cc[1*ido + 0], cc[3*ido + 0]);  /* times fsign below */
+      tr4 = VSUB(cc[3*ido + 1], cc[1*ido + 1]);
       tr3 = VADD(cc[ido + 0], cc[3*ido + 0]);
       ti3 = VADD(cc[ido + 1], cc[3*ido + 1]);
 
       ch[0*l1ido + 0] = VADD(tr2, tr3);
       ch[0*l1ido + 1] = VADD(ti2, ti3);
-      ch[1*l1ido + 0] = VADD(tr1, tr4);
-      ch[1*l1ido + 1] = VADD(ti1, ti4);
+      ch[1*l1ido + 0] = VADD_FSIGN(tr1, tr4);
+      ch[1*l1ido + 1] = VADD_FSIGN(ti1, ti4);
       ch[2*l1ido + 0] = VSUB(tr2, tr3);
       ch[2*l1ido + 1] = VSUB(ti2, ti3);
-      ch[3*l1ido + 0] = VSUB(tr1, tr4);
-      ch[3*l1ido + 1] = VSUB(ti1, ti4);
+      ch[3*l1ido + 0] = VSUB_FSIGN(tr1, tr4);
+      ch[3*l1ido + 1] = VSUB_FSIGN(ti1, ti4);
     }
   } else {
     for (k=0; k < l1ido; k += ido, ch+=ido, cc += 4*ido) {
@@ -230,8 +230,8 @@ static NEVER_INLINE(void) passf4_ps(int ido, int l1, const v4sf * RESTRICT cc, v
         tr2 = VADD(cc[i + 0], cc[i + 2*ido + 0]);
         ti1 = VSUB(cc[i + 1], cc[i + 2*ido + 1]);
         ti2 = VADD(cc[i + 1], cc[i + 2*ido + 1]);
-        tr4 = VMUL(VSUB(cc[i + 3*ido + 1], cc[i + 1*ido + 1]), LD_PS1(fsign));
-        ti4 = VMUL(VSUB(cc[i + 1*ido + 0], cc[i + 3*ido + 0]), LD_PS1(fsign));
+        tr4 = VSUB(cc[i + 3*ido + 1], cc[i + 1*ido + 1]);  /* times fsign below */
+        ti4 = VSUB(cc[i + 1*ido + 0], cc[i + 3*ido + 0]);
         tr3 = VADD(cc[i + ido + 0], cc[i + 3*ido + 0]);
         ti3 = VADD(cc[i + ido + 1], cc[i + 3*ido + 1]);
 
@@ -240,10 +240,10 @@ static NEVER_INLINE(void) passf4_ps(int ido, int l1, const v4sf * RESTRICT cc, v
         ch[i + 1] = VADD(ti2, ti3);
         ci3 = VSUB(ti2, ti3);
 
-        cr2 = VADD(tr1, tr4);
-        cr4 = VSUB(tr1, tr4);
-        ci2 = VADD(ti1, ti4);
-        ci4 = VSUB(ti1, ti4);
+        cr2 = VADD_FSIGN(tr1, tr4);
+        cr4 = VSUB_FSIGN(tr1, tr4);
+        ci2 = VADD_FSIGN(ti1, ti4);
+        ci4 = VSUB_FSIGN(ti1, ti4);
         wr1=wa1[i]; wi1=fsign*wa1[i+1];
         VCPLXMUL(cr2, ci2, LD_PS1(wr1), LD_PS1(wi1));
         wr2=wa2[i]; wi2=fsign*wa2[i+1];
@@ -260,6 +260,20 @@ static NEVER_INLINE(void) passf4_ps(int ido, int l1, const v4sf * RESTRICT cc, v
         ch[i + 3*l1ido + 1] = ci4;
       }
     }
+  }
+}
+
+/*
+  fsign goes to passf4_loop_ps as a constant: VADD_FSIGN and VSUB_FSIGN
+  are then one VADD or VSUB. gcc and clang also make the twiddles'
+  fsign*wa a negation; MSVC does that only for fsign == +1.
+*/
+static NEVER_INLINE(void) passf4_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                                    const float *wa1, const float *wa2, const float *wa3, float fsign) {
+  if (fsign < 0) {
+    passf4_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, -1);
+  } else {
+    passf4_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, +1);
   }
 } /* passf4 */
 
