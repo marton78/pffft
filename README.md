@@ -463,11 +463,13 @@ The `bench_*` tests are excluded because they allocate about 1 GiB.
 ## Benchmarks
 
 pffft is faster than most FFT libraries: on nine machines, from phones to
-servers, arm64 and x86, it beat PocketFFT, KISS FFT, FFTPACK and Green FFT
-at nearly every length. Only FFTW and Apple's vDSP are sometimes faster.
-Thanks to performance fixes, pffft is now on average 16 to 17% faster than
-Julien Pommier's original below n = 4096 on arm64, and 7.5 to 10.5% faster at
-larger n; on x86 with Intel CPUs, 13 to 14% and 13 to 14.5%.
+servers, arm64 and x86, it beat PocketFFT, KISS FFT, FFTPACK, Green FFT and
+Ooura's FFT at nearly every length. Only FFTW and Apple's vDSP are often
+faster; Ooura's FFT is in double precision at large powers of two, and
+PocketFFT at some complex lengths on an AMD EPYC.
+Thanks to performance fixes, pffft is now on average 21 to 22% faster than
+Julien Pommier's original below n = 4096 on arm64, and 10.5 to 13% faster at
+larger n; on x86 with Intel CPUs, 20 to 23% and 17 to 19%.
 [docs/benchmarks.md](docs/benchmarks.md) has the details.
 
 `bench_fft` measures pffft against other FFT libraries (FFTPACK, FFTW,
