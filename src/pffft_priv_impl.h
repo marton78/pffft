@@ -126,6 +126,69 @@ const char * FUNC_SIMD_ARCH(void) { return VARCH; }
 #define VSUB_FSIGN(a, b) (fsign < 0 ? VADD(a, b) : VSUB(a, b))
 
 /*
+  Prefetching the output of the radix passes (x86).
+
+  Out of L1 these passes are bound by their stores: each iteration writes to
+  2 to 8 output streams. On a Xeon 6975P-C, perf counted 40-50% of the cycles
+  of the real transform stalled on a full store buffer, with no more L1/L2
+  traffic than without the prefetches; the lines of the store misses
+  apparently do not arrive fast enough. Prefetching each output stream
+  PFFFT_PREFETCH_DIST bytes ahead made the transforms out of L1 up to 40%
+  faster on Intel CPUs (Xeon 6975P-C, Xeon Platinum 8573C, Core i7-8700B);
+  docs/benchmarks.md has the numbers. A read prefetch measured as good as one
+  for writing (PREFETCHW), and every x86 with SSE has it.
+
+  - Passes over less than PFFFT_PREFETCH_MIN bytes mostly stay in L1, where
+    the prefetches cost 0.5-5%. All passes of a transform write the same
+    number of vectors, so the transform picks the kernels once (PF_CALL):
+    f_pf_ps with the prefetches or f_ps without, both from one f_loop_ps
+    that takes pf as a constant. Deciding in each kernel instead cost up to
+    4% at small n.
+  - Not in passf5_ps, where they cost more than they gave (see there).
+  - AMD Zen cores did not gain (up to 6% slower with gcc and 14% with MSVC
+    at single lengths), so the default is off when the compiler targets Zen:
+    -march=znverN, which -march=native picks on compilers that know the CPU.
+    Builds for generic x86, for other CPUs or with MSVC cannot tell: the
+    README asks to set PFFFT_PREFETCH_DIST to 0 there for AMD CPUs.
+  - Never on WebAssembly, where Emscripten's _mm_prefetch does nothing.
+  The x86 SIMD headers have already included pf_fma_x86.h and _mm_prefetch.
+*/
+#ifndef PFFFT_PREFETCH_DIST
+   /* extend this list when compilers add later Zen targets */
+#  if defined(__znver1__) || defined(__znver2__) || defined(__znver3__) || \
+      defined(__znver4__) || defined(__znver5__) || defined(__znver6__)
+#    define PFFFT_PREFETCH_DIST 0
+#  else
+#    define PFFFT_PREFETCH_DIST 128
+#  endif
+#endif
+#ifndef PFFFT_PREFETCH_MIN
+#  define PFFFT_PREFETCH_MIN 24576
+#endif
+#if PFFFT_PREFETCH_DIST > 0 && defined(PFFFT_X86_HAVE_SSE) && !defined(PFFFT_SIMD_DISABLE) && \
+    !defined(__EMSCRIPTEN__) && !defined(__wasm__)
+   /* Prefetch the line PFFFT_PREFETCH_DIST bytes after (dir = 1) or before
+      (dir = -1) p if pf. Near the ends of a pass that address lies outside
+      the array: a prefetch never faults, and pointer arithmetic (rather than
+      integer arithmetic, which cost clang an instruction per prefetch and up
+      to 5% on a Core i7-8700B) lets the compiler fold the offset into the
+      instruction. */
+#  define PF_PREFETCH(pf, p, dir) do { if (pf) \
+     _mm_prefetch((const char *)(p) + (dir) * PFFFT_PREFETCH_DIST, _MM_HINT_T0); } while (0)
+   /* whether the passes over nvec vectors (every pass of a transform writes
+      all of them) take the kernels with the prefetches */
+#  define PF_USE_PREFETCH(nvec) ((size_t)(nvec) * sizeof(v4sf) >= (size_t)PFFFT_PREFETCH_MIN)
+   /* call the kernel f##_pf_ps, with the prefetches, if pf, else f##_ps */
+#  define PF_CALL(pf, f, args) do { if (pf) f##_pf_ps args; else f##_ps args; } while (0)
+#  define PF_ON 1
+#else
+#  define PF_PREFETCH(pf, p, dir) ((void)(pf))
+#  define PF_USE_PREFETCH(nvec) 0
+#  define PF_CALL(pf, f, args) f##_ps args
+#  define PF_ON 0
+#endif
+
+/*
   passf2 and passb2 has been merged here, fsign = -1 for passf2, +1 for passb2
 */
 static NEVER_INLINE(void) passf2_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float *wa1, float fsign) {
@@ -162,7 +225,8 @@ static NEVER_INLINE(void) passf2_ps(int ido, int l1, const v4sf * RESTRICT cc, v
   In the float build, the values round to the same floats as the old suffixed literals.
 */
 static ALWAYS_INLINE(void) passf3_loop_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
-                                          const float *wa1, const float *wa2, const float fsign) {
+                                          const float *wa1, const float *wa2, const float fsign,
+                                          const int pf) {
   static const float taur = (float)-0.5;                     /* cos(2*pi/3)   */
   float taui = (float)0.86602540378443864676*fsign;          /* sin(2*pi/3) = sqrt(3)/2 */
   int i, k;
@@ -172,6 +236,9 @@ static ALWAYS_INLINE(void) passf3_loop_ps(int ido, int l1, const v4sf * RESTRICT
   assert(ido > 2);
   for (k=0; k< l1ido; k += ido, cc+= 3*ido, ch +=ido) {
     for (i=0; i<ido-1; i+=2) {
+      PF_PREFETCH(pf, ch + i, 1);
+      PF_PREFETCH(pf, ch + i + l1ido, 1);
+      PF_PREFETCH(pf, ch + i + 2*l1ido, 1);
       tr2 = VADD(cc[i+ido], cc[i+2*ido]);
       cr2 = SVMADD(taur, tr2, cc[i]);
       ch[i]    = VADD(cc[i], tr2);
@@ -202,14 +269,25 @@ static ALWAYS_INLINE(void) passf3_loop_ps(int ido, int l1, const v4sf * RESTRICT
 static NEVER_INLINE(void) passf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
                                     const float *wa1, const float *wa2, float fsign) {
   if (fsign < 0) {
-    passf3_loop_ps(ido, l1, cc, ch, wa1, wa2, -1);
+    passf3_loop_ps(ido, l1, cc, ch, wa1, wa2, -1, 0);
   } else {
-    passf3_loop_ps(ido, l1, cc, ch, wa1, wa2, +1);
+    passf3_loop_ps(ido, l1, cc, ch, wa1, wa2, +1, 0);
   }
 } /* passf3 */
+#if PF_ON
+static NEVER_INLINE(void) passf3_pf_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                                       const float *wa1, const float *wa2, float fsign) {
+  if (fsign < 0) {
+    passf3_loop_ps(ido, l1, cc, ch, wa1, wa2, -1, 1);
+  } else {
+    passf3_loop_ps(ido, l1, cc, ch, wa1, wa2, +1, 1);
+  }
+}
+#endif
 
 static ALWAYS_INLINE(void) passf4_loop_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
-                                          const float *wa1, const float *wa2, const float *wa3, const float fsign) {
+                                          const float *wa1, const float *wa2, const float *wa3, const float fsign,
+                                          const int pf) {
   /* isign == -1 for forward transform and +1 for backward transform */
 
   int i, k;
@@ -217,6 +295,10 @@ static ALWAYS_INLINE(void) passf4_loop_ps(int ido, int l1, const v4sf * RESTRICT
   int l1ido = l1*ido;
   if (ido == 2) {
     for (k=0; k < l1ido; k += ido, ch += ido, cc += 4*ido) {
+      PF_PREFETCH(pf, ch, 1);
+      PF_PREFETCH(pf, ch + 1*l1ido, 1);
+      PF_PREFETCH(pf, ch + 2*l1ido, 1);
+      PF_PREFETCH(pf, ch + 3*l1ido, 1);
       tr1 = VSUB(cc[0], cc[2*ido + 0]);
       tr2 = VADD(cc[0], cc[2*ido + 0]);
       ti1 = VSUB(cc[1], cc[2*ido + 1]);
@@ -239,6 +321,10 @@ static ALWAYS_INLINE(void) passf4_loop_ps(int ido, int l1, const v4sf * RESTRICT
     for (k=0; k < l1ido; k += ido, ch+=ido, cc += 4*ido) {
       for (i=0; i<ido-1; i+=2) {
         float wr1, wi1, wr2, wi2, wr3, wi3;
+        PF_PREFETCH(pf, ch + i, 1);
+        PF_PREFETCH(pf, ch + i + 1*l1ido, 1);
+        PF_PREFETCH(pf, ch + i + 2*l1ido, 1);
+        PF_PREFETCH(pf, ch + i + 3*l1ido, 1);
         tr1 = VSUB(cc[i + 0], cc[i + 2*ido + 0]);
         tr2 = VADD(cc[i + 0], cc[i + 2*ido + 0]);
         ti1 = VSUB(cc[i + 1], cc[i + 2*ido + 1]);
@@ -284,11 +370,21 @@ static ALWAYS_INLINE(void) passf4_loop_ps(int ido, int l1, const v4sf * RESTRICT
 static NEVER_INLINE(void) passf4_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
                                     const float *wa1, const float *wa2, const float *wa3, float fsign) {
   if (fsign < 0) {
-    passf4_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, -1);
+    passf4_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, -1, 0);
   } else {
-    passf4_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, +1);
+    passf4_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, +1, 0);
   }
 } /* passf4 */
+#if PF_ON
+static NEVER_INLINE(void) passf4_pf_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                                       const float *wa1, const float *wa2, const float *wa3, float fsign) {
+  if (fsign < 0) {
+    passf4_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, -1, 1);
+  } else {
+    passf4_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, +1, 1);
+  }
+}
+#endif
 
 /*
   passf5 and passb5 has been merged here, fsign = -1 for passf5, +1 for passb5
@@ -364,6 +460,9 @@ static ALWAYS_INLINE(void) passf5_loop_ps(int ido, int l1, const v4sf * RESTRICT
 static NEVER_INLINE(void) passf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
                                     const float *wa1, const float *wa2,
                                     const float *wa3, const float *wa4, float fsign) {
+  /* no prefetches here: with them, single-precision complex lengths with
+     radix-5 passes were up to 2.6% slower on a Xeon 6975P-C, about as much as
+     double precision gained there */
   if (fsign < 0) {
     passf5_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, wa4, -1);
   } else {
@@ -383,13 +482,23 @@ static NEVER_INLINE(void) passf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v
   and the twiddles are all 1, as in the ido == 2 branch of passf4_ps. So
   this pass takes no twiddles, and the strides are constants.
 */
-static ALWAYS_INLINE(void) passf8_loop_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float fsign) {
+static ALWAYS_INLINE(void) passf8_loop_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float fsign,
+                                          const int pf) {
   static const float K8 = (float)M_SQRT1_2;   /* cos(pi/4) = sin(pi/4) = 1/sqrt(2) */
   const float nK8 = -K8;
   const int l1ido = 2*l1;
   int k;
 
   for (k = 0; k < l1ido; k += 2, cc += 16, ch += 2) {
+    /* written out: MSVC does not unroll a loop of these */
+    PF_PREFETCH(pf, ch, 1);
+    PF_PREFETCH(pf, ch + 1*l1ido, 1);
+    PF_PREFETCH(pf, ch + 2*l1ido, 1);
+    PF_PREFETCH(pf, ch + 3*l1ido, 1);
+    PF_PREFETCH(pf, ch + 4*l1ido, 1);
+    PF_PREFETCH(pf, ch + 5*l1ido, 1);
+    PF_PREFETCH(pf, ch + 6*l1ido, 1);
+    PF_PREFETCH(pf, ch + 7*l1ido, 1);
     /* Load 8 inputs: cc[2*leg + 0] = real, cc[2*leg + 1] = imag */
     v4sf x0r = cc[ 0], x0i = cc[ 1];
     v4sf x1r = cc[ 2], x1i = cc[ 3];
@@ -470,17 +579,29 @@ static NEVER_INLINE(void) passf8_ps(int ido, int l1, const v4sf * RESTRICT cc, v
   assert(ido == 2);
   (void)ido;
   if (fsign < 0) {
-    passf8_loop_ps(l1, cc, ch, -1);
+    passf8_loop_ps(l1, cc, ch, -1, 0);
   } else {
-    passf8_loop_ps(l1, cc, ch, +1);
+    passf8_loop_ps(l1, cc, ch, +1, 0);
   }
 } /* passf8 */
+#if PF_ON
+static NEVER_INLINE(void) passf8_pf_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, float fsign) {
+  assert(ido == 2);
+  (void)ido;
+  if (fsign < 0) {
+    passf8_loop_ps(l1, cc, ch, -1, 1);
+  } else {
+    passf8_loop_ps(l1, cc, ch, +1, 1);
+  }
+}
+#endif
 
 #undef VADD_FSIGN
 #undef VSUB_FSIGN
 
 
-static NEVER_INLINE(void) radf2_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float *wa1) {
+static ALWAYS_INLINE(void) radf2_loop_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float *wa1,
+                                         const int pf) {
   static const float minus_one = -1.f;
   int i, k, l1ido = l1*ido;
   for (k=0; k < l1ido; k += ido) {
@@ -492,8 +613,11 @@ static NEVER_INLINE(void) radf2_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
   if (ido != 2) {
     for (k=0; k < l1ido; k += ido) {
       for (i=2; i<ido; i+=2) {
-        v4sf tr2 = cc[i - 1 + k + l1ido], ti2 = cc[i + k + l1ido];
-        v4sf br = cc[i - 1 + k], bi = cc[i + k];
+        v4sf tr2, ti2, br, bi;
+        PF_PREFETCH(pf, ch + i - 1 + 2*k, 1);
+        PF_PREFETCH(pf, ch + 2*(k+ido) - i - 1, -1);
+        tr2 = cc[i - 1 + k + l1ido]; ti2 = cc[i + k + l1ido];
+        br = cc[i - 1 + k]; bi = cc[i + k];
         VCPLXMULCONJ(tr2, ti2, LD_PS1(wa1[i - 2]), LD_PS1(wa1[i - 1]));
         ch[i + 2*k] = VADD(bi, ti2);
         ch[2*(k+ido) - i] = VSUB(ti2, bi);
@@ -507,10 +631,20 @@ static NEVER_INLINE(void) radf2_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
     ch[2*k + ido] = SVMUL(minus_one, cc[ido-1 + k + l1ido]);
     ch[2*k + ido-1] = cc[k + ido-1];
   }
+}
+
+static NEVER_INLINE(void) radf2_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float *wa1) {
+  radf2_loop_ps(ido, l1, cc, ch, wa1, 0);
 } /* radf2 */
+#if PF_ON
+static NEVER_INLINE(void) radf2_pf_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float *wa1) {
+  radf2_loop_ps(ido, l1, cc, ch, wa1, 1);
+}
+#endif
 
 
-static NEVER_INLINE(void) radb2_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float *wa1) {
+static ALWAYS_INLINE(void) radb2_loop_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float *wa1,
+                                         const int pf) {
   static const float minus_two=-2;
   int i, k, l1ido = l1*ido;
   v4sf a,b,c,d, tr2, ti2;
@@ -523,6 +657,8 @@ static NEVER_INLINE(void) radb2_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
   if (ido != 2) {
     for (k = 0; k < l1ido; k += ido) {
       for (i = 2; i < ido; i += 2) {
+        PF_PREFETCH(pf, ch + i - 1 + k, 1);
+        PF_PREFETCH(pf, ch + i - 1 + k + l1ido, 1);
         a = cc[i-1 + 2*k]; b = cc[2*(k + ido) - i - 1];
         c = cc[i+0 + 2*k]; d = cc[2*(k + ido) - i + 0];
         ch[i-1 + k] = VADD(a, b);
@@ -541,10 +677,19 @@ static NEVER_INLINE(void) radb2_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
     ch[k + ido-1] = VADD(a,a);
     ch[k + ido-1 + l1ido] = SVMUL(minus_two, b);
   }
-} /* radb2 */
+}
 
-static NEVER_INLINE(void) radf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
-                     const float *wa1, const float *wa2) {
+static NEVER_INLINE(void) radb2_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float *wa1) {
+  radb2_loop_ps(ido, l1, cc, ch, wa1, 0);
+} /* radb2 */
+#if PF_ON
+static NEVER_INLINE(void) radb2_pf_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float *wa1) {
+  radb2_loop_ps(ido, l1, cc, ch, wa1, 1);
+}
+#endif
+
+static ALWAYS_INLINE(void) radf3_loop_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                     const float *wa1, const float *wa2, const int pf) {
   static const float taur = (float)-0.5;                     /* cos(2*pi/3)   */
   static const float taui = (float)0.86602540378443864676;   /* sin(2*pi/3) = sqrt(3)/2 */
   int i, k, ic;
@@ -583,6 +728,9 @@ static NEVER_INLINE(void) radf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
   for (k=0; k<l1; k++) {
     for (i=2; i<ido; i+=2) {
       ic = ido - i;
+      PF_PREFETCH(pf, ch + i - 1 + 3*k*ido, 1);
+      PF_PREFETCH(pf, ch + i - 1 + (3*k + 2)*ido, 1);
+      PF_PREFETCH(pf, ch + ic - 1 + (3*k + 1)*ido, -1);
       wr1 = LD_PS1(wa1[i - 2]); wi1 = LD_PS1(wa1[i - 1]);
       dr2 = cc[i - 1 + (k + l1)*ido]; di2 = cc[i + (k + l1)*ido];
       VCPLXMULCONJ(dr2, di2, wr1, wi1);
@@ -605,11 +753,22 @@ static NEVER_INLINE(void) radf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
       ch[ic + (3*k + 1)*ido] = VSUB(ti3, ti2);
     }
   }
+}
+
+static NEVER_INLINE(void) radf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                     const float *wa1, const float *wa2) {
+  radf3_loop_ps(ido, l1, cc, ch, wa1, wa2, 0);
 } /* radf3 */
+#if PF_ON
+static NEVER_INLINE(void) radf3_pf_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                     const float *wa1, const float *wa2) {
+  radf3_loop_ps(ido, l1, cc, ch, wa1, wa2, 1);
+}
+#endif
 
 
-static NEVER_INLINE(void) radb3_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
-                     const float *wa1, const float *wa2)
+static ALWAYS_INLINE(void) radb3_loop_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
+                     const float *wa1, const float *wa2, const int pf)
 {
   static const float taur = (float)-0.5;                     /* cos(2*pi/3)   */
   static const float taui = (float)0.86602540378443864676;   /* sin(2*pi/3) = sqrt(3)/2 */
@@ -654,6 +813,9 @@ static NEVER_INLINE(void) radb3_ps(int ido, int l1, const v4sf *RESTRICT cc, v4s
   for (k=0; k<l1; k++) {
     for (i=2; i<ido; i+=2) {
       ic = ido - i;
+      PF_PREFETCH(pf, ch + i - 1 + k*ido, 1);
+      PF_PREFETCH(pf, ch + i - 1 + (k + l1)*ido, 1);
+      PF_PREFETCH(pf, ch + i - 1 + (k + 2*l1)*ido, 1);
       tr2 = VADD(cc[i - 1 + (3*k + 2)*ido], cc[ic - 1 + (3*k + 1)*ido]);
       cr2 = SVMADD(taur, tr2, cc[i - 1 + 3*k*ido]);
       ch[i - 1 + k*ido] = VADD(cc[i - 1 + 3*k*ido], tr2);
@@ -674,10 +836,22 @@ static NEVER_INLINE(void) radb3_ps(int ido, int l1, const v4sf *RESTRICT cc, v4s
       ch[i + (k + 2*l1)*ido] = di3;
     }
   }
-} /* radb3 */
+}
 
-static NEVER_INLINE(void) radf4_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf * RESTRICT ch,
-                                   const float * RESTRICT wa1, const float * RESTRICT wa2, const float * RESTRICT wa3)
+static NEVER_INLINE(void) radb3_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
+                     const float *wa1, const float *wa2) {
+  radb3_loop_ps(ido, l1, cc, ch, wa1, wa2, 0);
+} /* radb3 */
+#if PF_ON
+static NEVER_INLINE(void) radb3_pf_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
+                     const float *wa1, const float *wa2) {
+  radb3_loop_ps(ido, l1, cc, ch, wa1, wa2, 1);
+}
+#endif
+
+static ALWAYS_INLINE(void) radf4_loop_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf * RESTRICT ch,
+                                   const float * RESTRICT wa1, const float * RESTRICT wa2, const float * RESTRICT wa3,
+                                   const int pf)
 {
   static const float minus_hsqt2 = (float)-M_SQRT1_2;  /* -sin(pi/4) = -1/sqrt(2) */
   int i, k, l1ido = l1*ido;
@@ -746,6 +920,10 @@ static NEVER_INLINE(void) radf4_ps(int ido, int l1, const v4sf *RESTRICT cc, v4s
         v4sf wr, wi, cr2, ci2, cr3, ci3, cr4, ci4;
         v4sf tr1, ti1, tr2, ti2, tr3, ti3, tr4, ti4;
 
+        PF_PREFETCH(pf, ch + i - 1 + 4*k, 1);
+        PF_PREFETCH(pf, ch + i - 1 + 4*k + 2*ido, 1);
+        PF_PREFETCH(pf, ch + ic - 1 + 4*k + 1*ido, -1);
+        PF_PREFETCH(pf, ch + ic - 1 + 4*k + 3*ido, -1);
         cr2 = pc[1*l1ido+0];
         ci2 = pc[1*l1ido+1];
         wr=LD_PS1(wa1[i - 2]);
@@ -796,11 +974,23 @@ static NEVER_INLINE(void) radf4_ps(int ido, int l1, const v4sf *RESTRICT cc, v4s
     ch[4*k + 1*ido] = VSUB(ti1, d);
     ch[4*k + 3*ido] = VADD(ti1, d);
   }
+}
+
+static NEVER_INLINE(void) radf4_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf * RESTRICT ch,
+                                   const float * RESTRICT wa1, const float * RESTRICT wa2, const float * RESTRICT wa3) {
+  radf4_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, 0);
 } /* radf4 */
+#if PF_ON
+static NEVER_INLINE(void) radf4_pf_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf * RESTRICT ch,
+                                      const float * RESTRICT wa1, const float * RESTRICT wa2, const float * RESTRICT wa3) {
+  radf4_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, 1);
+}
+#endif
 
 
-static NEVER_INLINE(void) radb4_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
-                                   const float * RESTRICT wa1, const float * RESTRICT wa2, const float *RESTRICT wa3)
+static ALWAYS_INLINE(void) radb4_loop_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                                   const float * RESTRICT wa1, const float * RESTRICT wa2, const float *RESTRICT wa3,
+                                   const int pf)
 {
   static const float minus_sqrt2 = (float)-M_SQRT2;     /* -2*sin(pi/4) = -sqrt(2) */
   static const float two = 2.f;
@@ -868,6 +1058,10 @@ static NEVER_INLINE(void) radb4_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
       const v4sf * RESTRICT pc = (v4sf*)(cc - 1 + 4*k);
       v4sf * RESTRICT ph = (v4sf*)(ch + k + 1);
       for (i = 2; i < ido; i += 2) {
+        PF_PREFETCH(pf, ph, 1);
+        PF_PREFETCH(pf, ph + l1ido, 1);
+        PF_PREFETCH(pf, ph + 2*l1ido, 1);
+        PF_PREFETCH(pf, ph + 3*l1ido, 1);
 
         tr1 = VSUB(pc[i], pc[4*ido - i]);
         tr2 = VADD(pc[i], pc[4*ido - i]);
@@ -914,10 +1108,22 @@ static NEVER_INLINE(void) radb4_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
     ch[ido-1 + k + 2*l1ido] = VADD(ti2, ti2);
     ch[ido-1 + k + 3*l1ido] = SVMUL(minus_sqrt2, VADD(ti1, tr1));
   }
-} /* radb4 */
+}
 
-static NEVER_INLINE(void) radf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
-                     const float *wa1, const float *wa2, const float *wa3, const float *wa4)
+static NEVER_INLINE(void) radb4_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                                   const float * RESTRICT wa1, const float * RESTRICT wa2, const float *RESTRICT wa3) {
+  radb4_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, 0);
+} /* radb4 */
+#if PF_ON
+static NEVER_INLINE(void) radb4_pf_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                                      const float * RESTRICT wa1, const float * RESTRICT wa2, const float *RESTRICT wa3) {
+  radb4_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, 1);
+}
+#endif
+
+static ALWAYS_INLINE(void) radf5_loop_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                     const float *wa1, const float *wa2, const float *wa3, const float *wa4,
+                     const int pf)
 {
   static const float tr11 = (float)0.30901699437494742410;   /* cos(2*pi/5) = (sqrt(5)-1)/4 */
   static const float ti11 = (float)0.95105651629515357212;   /* sin(2*pi/5) */
@@ -963,6 +1169,11 @@ static NEVER_INLINE(void) radf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
   for (k = 1; k <= l1; ++k) {
     for (i = 3; i <= ido; i += 2) {
       ic = idp2 - i;
+      PF_PREFETCH(pf, &ch_ref(i - 1, 1, k), 1);
+      PF_PREFETCH(pf, &ch_ref(i - 1, 3, k), 1);
+      PF_PREFETCH(pf, &ch_ref(i - 1, 5, k), 1);
+      PF_PREFETCH(pf, &ch_ref(ic - 1, 2, k), -1);
+      PF_PREFETCH(pf, &ch_ref(ic - 1, 4, k), -1);
       dr2 = LD_PS1(wa1[i-3]); di2 = LD_PS1(wa1[i-2]);
       dr3 = LD_PS1(wa2[i-3]); di3 = LD_PS1(wa2[i-2]);
       dr4 = LD_PS1(wa3[i-3]); di4 = LD_PS1(wa3[i-2]);
@@ -1001,10 +1212,22 @@ static NEVER_INLINE(void) radf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v4
   }
 #undef cc_ref
 #undef ch_ref
-} /* radf5 */
+}
 
-static NEVER_INLINE(void) radb5_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
-                  const float *wa1, const float *wa2, const float *wa3, const float *wa4)
+static NEVER_INLINE(void) radf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                     const float *wa1, const float *wa2, const float *wa3, const float *wa4) {
+  radf5_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, wa4, 0);
+} /* radf5 */
+#if PF_ON
+static NEVER_INLINE(void) radf5_pf_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                     const float *wa1, const float *wa2, const float *wa3, const float *wa4) {
+  radf5_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, wa4, 1);
+}
+#endif
+
+static ALWAYS_INLINE(void) radb5_loop_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
+                  const float *wa1, const float *wa2, const float *wa3, const float *wa4,
+                  const int pf)
 {
   static const float tr11 = (float)0.30901699437494742410;   /* cos(2*pi/5) = (sqrt(5)-1)/4 */
   static const float ti11 = (float)0.95105651629515357212;   /* sin(2*pi/5) */
@@ -1051,6 +1274,11 @@ static NEVER_INLINE(void) radb5_ps(int ido, int l1, const v4sf *RESTRICT cc, v4s
   for (k = 1; k <= l1; ++k) {
     for (i = 3; i <= ido; i += 2) {
       ic = idp2 - i;
+      PF_PREFETCH(pf, &ch_ref(i - 1, k, 1), 1);
+      PF_PREFETCH(pf, &ch_ref(i - 1, k, 2), 1);
+      PF_PREFETCH(pf, &ch_ref(i - 1, k, 3), 1);
+      PF_PREFETCH(pf, &ch_ref(i - 1, k, 4), 1);
+      PF_PREFETCH(pf, &ch_ref(i - 1, k, 5), 1);
       ti5 = VADD(cc_ref(i  , 3, k), cc_ref(ic  , 2, k));
       ti2 = VSUB(cc_ref(i  , 3, k), cc_ref(ic  , 2, k));
       ti4 = VADD(cc_ref(i  , 5, k), cc_ref(ic  , 4, k));
@@ -1090,7 +1318,18 @@ static NEVER_INLINE(void) radb5_ps(int ido, int l1, const v4sf *RESTRICT cc, v4s
   }
 #undef cc_ref
 #undef ch_ref
+}
+
+static NEVER_INLINE(void) radb5_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
+                  const float *wa1, const float *wa2, const float *wa3, const float *wa4) {
+  radb5_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, wa4, 0);
 } /* radb5 */
+#if PF_ON
+static NEVER_INLINE(void) radb5_pf_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
+                  const float *wa1, const float *wa2, const float *wa3, const float *wa4) {
+  radb5_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, wa4, 1);
+}
+#endif
 
 static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2,
                                       const float *wa, const int *ifac) {
@@ -1099,6 +1338,8 @@ static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *w
   int nf = ifac[1], k1;
   int l2 = n;
   int iw = n-1;
+  const int pf = PF_USE_PREFETCH(n); /* the same for every pass */
+  (void)pf;
   assert(in != out && work1 != work2);
   for (k1 = 1; k1 <= nf; ++k1) {
     int kh = nf - k1;
@@ -1111,19 +1352,19 @@ static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *w
         int ix2 = iw + ido;
         int ix3 = ix2 + ido;
         int ix4 = ix3 + ido;
-        radf5_ps(ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], &wa[ix4]);
+        PF_CALL(pf, radf5, (ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], &wa[ix4]));
       } break;
       case 4: {
         int ix2 = iw + ido;
         int ix3 = ix2 + ido;
-        radf4_ps(ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3]);
+        PF_CALL(pf, radf4, (ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3]));
       } break;
       case 3: {
         int ix2 = iw + ido;
-        radf3_ps(ido, l1, in, out, &wa[iw], &wa[ix2]);
+        PF_CALL(pf, radf3, (ido, l1, in, out, &wa[iw], &wa[ix2]));
       } break;
       case 2:
-        radf2_ps(ido, l1, in, out, &wa[iw]);
+        PF_CALL(pf, radf2, (ido, l1, in, out, &wa[iw]));
         break;
       default:
         assert(0);
@@ -1146,6 +1387,8 @@ static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *w
   int nf = ifac[1], k1;
   int l1 = 1;
   int iw = 0;
+  const int pf = PF_USE_PREFETCH(n); /* the same for every pass */
+  (void)pf;
   assert(in != out);
   for (k1=1; k1<=nf; k1++) {
     int ip = ifac[k1 + 1];
@@ -1156,19 +1399,19 @@ static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *w
         int ix2 = iw + ido;
         int ix3 = ix2 + ido;
         int ix4 = ix3 + ido;
-        radb5_ps(ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], &wa[ix4]);
+        PF_CALL(pf, radb5, (ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], &wa[ix4]));
       } break;
       case 4: {
         int ix2 = iw + ido;
         int ix3 = ix2 + ido;
-        radb4_ps(ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3]);
+        PF_CALL(pf, radb4, (ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3]));
       } break;
       case 3: {
         int ix2 = iw + ido;
-        radb3_ps(ido, l1, in, out, &wa[iw], &wa[ix2]);
+        PF_CALL(pf, radb3, (ido, l1, in, out, &wa[iw], &wa[ix2]));
       } break;
       case 2:
-        radb2_ps(ido, l1, in, out, &wa[iw]);
+        PF_CALL(pf, radb2, (ido, l1, in, out, &wa[iw]));
         break;
       default:
         assert(0);
@@ -1309,6 +1552,8 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
   int nf = ifac[1], k1;
   int l1 = 1;
   int iw = 0;
+  const int pf = PF_USE_PREFETCH(2*n); /* the same for every pass */
+  (void)pf;
   assert(in != out && work1 != work2);
   for (k1=2; k1<=nf+1; k1++) {
     int ip = ifac[k1];
@@ -1317,7 +1562,7 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
     int idot = ido + ido;
     switch (ip) {
       case 8: {
-        passf8_ps(idot, l1, in, out, isign);
+        PF_CALL(pf, passf8, (idot, l1, in, out, isign));
       } break;
       case 5: {
         int ix2 = iw + idot;
@@ -1328,14 +1573,14 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
       case 4: {
         int ix2 = iw + idot;
         int ix3 = ix2 + idot;
-        passf4_ps(idot, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], isign);
+        PF_CALL(pf, passf4, (idot, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], isign));
       } break;
       case 2: {
         passf2_ps(idot, l1, in, out, &wa[iw], isign);
       } break;
       case 3: {
         int ix2 = iw + idot;
-        passf3_ps(idot, l1, in, out, &wa[iw], &wa[ix2], isign);
+        PF_CALL(pf, passf3, (idot, l1, in, out, &wa[iw], &wa[ix2], isign));
       } break;
       default:
         assert(0);
@@ -1351,6 +1596,11 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
 
   return in; /* this is in fact the output .. */
 }
+
+#undef PF_PREFETCH
+#undef PF_USE_PREFETCH
+#undef PF_CALL
+#undef PF_ON
 
 
 struct SETUP_STRUCT {

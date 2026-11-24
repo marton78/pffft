@@ -22,6 +22,8 @@ option(PFFFT_USE_SIMD        "use SIMD (SSE/AVX/NEON/ALTIVEC) CPU features? - " 
 option(PFFFT_USE_SCALAR_VECT "use 4-element vector scalar operations (if no other SIMD)" ON)
 option(PFFFT_USE_HELIUM "use the experimental, unbenchmarked Arm Helium (MVE) backend on Armv8.1-M?" OFF)
 option(PFFFT_USE_WASM_RELAXED_SIMD "use WebAssembly Relaxed SIMD for higher performance? requires a browser/runtime with Relaxed SIMD support" OFF)
+set(PFFFT_PREFETCH_DIST "" CACHE STRING "x86: prefetch distance in bytes for the FFT passes; 0 turns prefetching off (set it for AMD CPUs, see README); empty: the default")
+set(PFFFT_PREFETCH_MIN "" CACHE STRING "x86: smallest pass in bytes that prefetches; empty: the default (24576)")
 
 # what to install?
 option(INSTALL_PFFFT      "install pffft to CMAKE_INSTALL_PREFIX?" ON)
@@ -188,6 +190,15 @@ target_set_c_arch_flags(PFFFT)
 if (NOT PFFFT_USE_SIMD)
   target_compile_definitions(PFFFT PRIVATE PFFFT_SIMD_DISABLE=1)
 endif()
+foreach(knob PFFFT_PREFETCH_DIST PFFFT_PREFETCH_MIN)
+  if (NOT ${knob} STREQUAL "")
+    # decimal only: a leading 0 would make the preprocessor read octal
+    if (NOT ${knob} MATCHES "^(0|[1-9][0-9]*)$")
+      message(FATAL_ERROR "${knob} must be empty or a number of bytes, not '${${knob}}'")
+    endif()
+    target_compile_definitions(PFFFT PRIVATE "${knob}=${${knob}}")
+  endif()
+endforeach()
 pffft_report_simd_backend(PFFFT)
 target_link_libraries( PFFFT ${ASANLIB} ${MATHLIB} )
 target_include_directories(PFFFT
