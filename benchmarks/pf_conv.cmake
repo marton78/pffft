@@ -48,18 +48,17 @@ target_link_libraries(pf_conv_dispatcher pf_conv_arch_none pf_conv_arch_dflt)
 
 if (PFFFT_TARGET_IS_X86 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
 
+  # The kernels are 4 wide (SSE) on every x86. Of the variants for core2,
+  # nehalem and sandybridge, none was faster than avx2 (haswell: FMA) on the
+  # x86 CPUs measured, and with gcc core2 and nehalem were slower than dflt,
+  # the SSE2 baseline of x86-64. So avx2 is the only one besides dflt.
   if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-      set(PF_CONV_ARCHES "sse3;sse4;avx;avx2")
-      set(PF_CONV_OPT_sse3 "core2")  # emulate a map
-      set(PF_CONV_OPT_sse4 "nehalem")
-      set(PF_CONV_OPT_avx  "sandybridge")
-      set(PF_CONV_OPT_avx2 "haswell")
+      set(PF_CONV_ARCHES "avx2")
+      set(PF_CONV_OPT_avx2 "haswell")  # emulate a map
       target_compile_definitions(pf_conv_dispatcher PRIVATE CONV_ARCH_GCC_AMD64)
   elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-      set(PF_CONV_ARCHES "sse2;avx;avx2")
-      set(PF_CONV_OPT_sse2 "SSE2")  # emulate a map
-      set(PF_CONV_OPT_avx  "AVX")
-      set(PF_CONV_OPT_avx2 "AVX2")
+      set(PF_CONV_ARCHES "avx2")
+      set(PF_CONV_OPT_avx2 "AVX2")  # emulate a map
       target_compile_definitions(pf_conv_dispatcher PRIVATE CONV_ARCH_MSVC_AMD64)
   else()
       set(PF_CONV_ARCHES "")
