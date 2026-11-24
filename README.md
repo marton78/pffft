@@ -298,7 +298,8 @@ separate multiply and add round twice.
 
 Out of L1, the passes of the FFT are bound by their stores. On x86, pffft
 therefore prefetches the output of each pass of at least 24 KiB, 128 bytes
-ahead (all passes but the radix-5 one of complex transforms). On Intel CPUs
+ahead (all passes but the radix-5 one of complex transforms and the first
+pass of a forward real transform, which writes a single stream). On Intel CPUs
 (Xeon 6975P-C, Xeon Platinum 8573C, Core i7-8700B), real transforms out of L1
 ran up to 43% faster and complex ones up to 23%;
 [docs/benchmarks.md](docs/benchmarks.md) has the details. AMD Zen CPUs did

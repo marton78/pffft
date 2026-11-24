@@ -1661,11 +1661,23 @@ static NEVER_INLINE(void) radf8_ps(int l1, const v4sf * RESTRICT cc, v4sf * REST
   }
 }
 
-static NEVER_INLINE(void) radb8_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+/* The backward passes write 8 (radb6: 6) output streams, l1 vectors
+   apart, which they prefetch on x86 as passf8_ps does (see PF_PREFETCH);
+   the forward ones write a single stream, 8 (6) vectors per k, and read
+   the 8 (6), which the hardware prefetchers follow. */
+static ALWAYS_INLINE(void) radb8_loop_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const int pf) {
   static const float two = 2.f;
   static const float sqrt2 = (float)M_SQRT2;
   v4sf * RESTRICT ch_end = ch + l1;
   while (ch < ch_end) {
+    PF_PREFETCH(pf, ch + 0*l1, 1);
+    PF_PREFETCH(pf, ch + 1*l1, 1);
+    PF_PREFETCH(pf, ch + 2*l1, 1);
+    PF_PREFETCH(pf, ch + 3*l1, 1);
+    PF_PREFETCH(pf, ch + 4*l1, 1);
+    PF_PREFETCH(pf, ch + 5*l1, 1);
+    PF_PREFETCH(pf, ch + 6*l1, 1);
+    PF_PREFETCH(pf, ch + 7*l1, 1);
     v4sf x0 = cc[0], r1 = cc[1], i1 = cc[2], r2 = cc[3];
     v4sf i2 = cc[4], r3 = cc[5], i3 = cc[6], x4 = cc[7];
     /* x_j = e_j + o_j, x_{j+4} = e_j - o_j: e_j from X0, X2, X4 and
@@ -1690,6 +1702,14 @@ static NEVER_INLINE(void) radb8_ps(int l1, const v4sf * RESTRICT cc, v4sf * REST
     cc += 8; ch += 1;
   }
 }
+static NEVER_INLINE(void) radb8_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+  radb8_loop_ps(l1, cc, ch, 0);
+}
+#if PF_ON
+static NEVER_INLINE(void) radb8_pf_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+  radb8_loop_ps(l1, cc, ch, 1);
+}
+#endif
 
 /*
   Real radix-6 passes, forward and backward, only for ido == 1.
@@ -1730,11 +1750,17 @@ static NEVER_INLINE(void) radf6_ps(int l1, const v4sf * RESTRICT cc, v4sf * REST
   }
 }
 
-static NEVER_INLINE(void) radb6_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+static ALWAYS_INLINE(void) radb6_loop_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const int pf) {
   static const float two = 2.f;
   static const float sqrt3 = (float)1.7320508075688772935;  /* 2*sin(2*pi/3) = sqrt(3) */
   v4sf * RESTRICT ch_end = ch + l1;
   while (ch < ch_end) {
+    PF_PREFETCH(pf, ch + 0*l1, 1);
+    PF_PREFETCH(pf, ch + 1*l1, 1);
+    PF_PREFETCH(pf, ch + 2*l1, 1);
+    PF_PREFETCH(pf, ch + 3*l1, 1);
+    PF_PREFETCH(pf, ch + 4*l1, 1);
+    PF_PREFETCH(pf, ch + 5*l1, 1);
     v4sf x0 = cc[0], r1 = cc[1], i1 = cc[2];
     v4sf r2 = cc[3], i2 = cc[4], x3 = cc[5];
     /* the inverse 3-point DFTs, of X0, X4, X2 into u and of X3, X1, X5
@@ -1752,6 +1778,14 @@ static NEVER_INLINE(void) radb6_ps(int l1, const v4sf * RESTRICT cc, v4sf * REST
     cc += 6; ch += 1;
   }
 }
+static NEVER_INLINE(void) radb6_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+  radb6_loop_ps(l1, cc, ch, 0);
+}
+#if PF_ON
+static NEVER_INLINE(void) radb6_pf_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+  radb6_loop_ps(l1, cc, ch, 1);
+}
+#endif
 
 static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2,
                                       const float *wa, const int *ifac) {
@@ -1833,11 +1867,11 @@ static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *w
       } break;
       case 8:
         assert(ido == 1);
-        radb8_ps(l1, in, out);
+        PF_CALL(pf, radb8, (l1, in, out));
         break;
       case 6:
         assert(ido == 1);
-        radb6_ps(l1, in, out);
+        PF_CALL(pf, radb6, (l1, in, out));
         break;
       case 4: {
         int ix2 = iw + ido;
