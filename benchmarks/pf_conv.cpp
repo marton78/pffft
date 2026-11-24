@@ -146,8 +146,8 @@ int ARCHFUNCNAME(conv_cplx_float_oop)(
         float accu_im = 0.0F;
         for (int k = 0; k < sz_filter; ++k)
         {
-            accu_re = s_cplx[offset+k].i * filter[k];   // accu += rS * rH;
-            accu_im = s_cplx[offset+k].q * filter[k];   // accu += rS * rH;
+            accu_re += s_cplx[offset+k].i * filter[k];
+            accu_im += s_cplx[offset+k].q * filter[k];
         }
         y_cplx[offset].i = accu_re;  // == hadd() == sum of real parts
         y_cplx[offset].q = accu_im;  // == hadd() == sum of imag parts
