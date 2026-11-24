@@ -66,19 +66,15 @@ if (PFFFT_TARGET_IS_X86 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       message(WARNING "unknown compiler ${CMAKE_CXX_COMPILER_ID} on target processor ${PFFFT_TARGET_PROCESSOR}: can't do architecture specific compilation")
   endif()
 
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+elseif (PFFFT_TARGET_PROCESSOR MATCHES "^(aarch64|arm64)$"
+        AND CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
 
-    if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-        set(PF_CONV_ARCHES "armv8a")
-        set(PF_CONV_OPT_armv8a   "armv8-a")  # emulate a map for arch
+    set(PF_CONV_ARCHES "armv8a")
+    set(PF_CONV_OPT_armv8a   "armv8-a")  # emulate a map for arch
 
-        target_compile_definitions(pf_conv_dispatcher PRIVATE CONV_ARCH_GCC_AARCH64)
-    else()
-        set(PF_CONV_ARCHES "")
-        message(WARNING "unknown compiler ${CMAKE_CXX_COMPILER_ID} on CMAKE_SYSTEM_PROCESSOR ${CMAKE_SYSTEM_PROCESSOR}: can't do architecture specific compilation")
-    endif()
+    target_compile_definitions(pf_conv_dispatcher PRIVATE CONV_ARCH_GCC_AARCH64)
 
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "armv7l")
+elseif (PFFFT_TARGET_PROCESSOR STREQUAL "armv7l")
 
   if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
       set(PF_CONV_ARCHES "neon_vfpv4;neon_rpi3_a53;neon_rpi4_a72")
@@ -92,7 +88,7 @@ elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "armv7l")
       target_compile_definitions(pf_conv_dispatcher PRIVATE CONV_ARCH_GCC_ARM32NEON)
   else()
       set(PF_CONV_ARCHES "")
-      message(WARNING "unknown compiler ${CMAKE_CXX_COMPILER_ID} on CMAKE_SYSTEM_PROCESSOR ${CMAKE_SYSTEM_PROCESSOR}: can't do architecture specific compilation")
+      message(WARNING "unknown compiler ${CMAKE_CXX_COMPILER_ID} on target processor ${PFFFT_TARGET_PROCESSOR}: can't do architecture specific compilation")
   endif()
 
 else()

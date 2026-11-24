@@ -69,13 +69,23 @@ set(GCC_EXTRA_OPT_apple_m1      "-mcpu=apple-m1")
 #     CMAKE_SYSTEM_PROCESSOR is the host's there, e.g. "AMD64" in a Visual
 #     Studio -A ARM64 build on x64. CMake 3.20 and later report ARM64EC;
 #     older ones report it as "x64".
+#   - Apple platforms with CMAKE_OSX_ARCHITECTURES: its one architecture,
+#     "x86_64" or "arm64". CMAKE_SYSTEM_PROCESSOR is the host's there unless
+#     cross-compiling, e.g. "arm64" for an x86_64 build on Apple Silicon.
+#     With several architectures (a universal binary), "universal", which
+#     gets no extra handling, as no single target is built.
 #   - otherwise CMAKE_SYSTEM_PROCESSOR, whatever the platform or toolchain file
 #     calls the target: uname -m on Linux ("x86_64", "i686", "armv7l"),
 #     uname -p on FreeBSD ("amd64", "i386"), "armv7-a" / "i686" for the
 #     Android NDK, "armv8l" for 32-bit ARM code on a 64-bit Linux kernel.
+list(LENGTH CMAKE_OSX_ARCHITECTURES _pffft_n_osx_archs)
 if ((CMAKE_C_COMPILER_ID STREQUAL "MSVC" OR CMAKE_C_SIMULATE_ID STREQUAL "MSVC")
     AND CMAKE_C_COMPILER_ARCHITECTURE_ID)
     string(TOLOWER "${CMAKE_C_COMPILER_ARCHITECTURE_ID}" PFFFT_TARGET_PROCESSOR)
+elseif (APPLE AND _pffft_n_osx_archs EQUAL 1)
+    string(TOLOWER "${CMAKE_OSX_ARCHITECTURES}" PFFFT_TARGET_PROCESSOR)
+elseif (APPLE AND _pffft_n_osx_archs GREATER 1)
+    set(PFFFT_TARGET_PROCESSOR "universal")
 else()
     string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" PFFFT_TARGET_PROCESSOR)
 endif()
