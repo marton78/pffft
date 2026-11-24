@@ -199,8 +199,10 @@ if (PFFFT_USE_TYPE_FLOAT)
   # pf_conv.cpp is compiled once per architecture option, as
   # pf_conv_arch_<opt>, with the SIMD macros of pffft (src/simd/pf_float.h)
   # under the same definitions as PFFFT. pf_conv_arch_none is always scalar.
+  # The libraries are static also with BUILD_SHARED_LIBS: they export nothing,
+  # so MSVC would make no import library for them.
   function(pf_conv_arch_target target arch_post)
-    add_library(${target} pf_conv.cpp pf_conv.h ${PFFFT_SOURCE_DIR}/include/pffft/pf_cplx.h ${SIMD_FLOAT_HDRS})
+    add_library(${target} STATIC pf_conv.cpp pf_conv.h ${PFFFT_SOURCE_DIR}/include/pffft/pf_cplx.h ${SIMD_FLOAT_HDRS})
     target_include_directories(${target} PRIVATE ${PFFFT_SOURCE_DIR}/include ${PFFFT_SOURCE_DIR}/src)
     target_compile_definitions(${target} PRIVATE CONV_ARCH_POST=${arch_post})
     if ("${arch_post}" STREQUAL "none" OR NOT PFFFT_USE_SIMD)
@@ -222,7 +224,7 @@ if (PFFFT_USE_TYPE_FLOAT)
   endfunction()
 
   pf_conv_arch_target(pf_conv_arch_none none)
-  add_library(pf_conv_dispatcher  pf_conv_dispatcher.cpp pf_conv_dispatcher.h pf_conv.h ${PFFFT_SOURCE_DIR}/include/pffft/pf_cplx.h)
+  add_library(pf_conv_dispatcher STATIC pf_conv_dispatcher.cpp pf_conv_dispatcher.h pf_conv.h ${PFFFT_SOURCE_DIR}/include/pffft/pf_cplx.h)
   target_include_directories(pf_conv_dispatcher PRIVATE ${PFFFT_SOURCE_DIR}/include)
   set_property(TARGET pf_conv_dispatcher PROPERTY CXX_STANDARD 11)
   set_property(TARGET pf_conv_dispatcher PROPERTY CXX_STANDARD_REQUIRED ON)
