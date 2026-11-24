@@ -779,14 +779,17 @@ int main(int argc, char **argv)
   /* powers of two exercise only the radix-2/4 codelets, and the radix-8
      ones, which take the place of the radix-2 pass and a radix-4 one
      where N/SIMD_SZ has an odd power of two (with SIMD_SZ == 4, complex
-     and real 32, 128, ..., 32768 and 96, 160, 288, 480, 800, 1152, 2592,
-     4000, 12000). The remaining
+     and real 32, 128, ..., 32768 and 160, 800, 4000, 12000; complex also
+     96, 288, 480, 1152, 2592). Where there is also a 3, the real transform
+     merges the radix-2 pass and a radix-3 one into a radix-6 pass instead
+     while an array takes at most 32 KiB (with SIMD_SZ == 4, real 96, 288,
+     480, 1152, 2592). The remaining
      sizes cover radix-3 and radix-5 in every position the factorization
      order {4,2,3,5} can put them: 3*2^k (96, 192), 5*2^k (160), 9*2^k
      (288, 576, 1152), 15*2^k (480), 25*2^k (800), 81*32 (2592), 125*32
-     (4000) and 375*32 (12000). In the real transform the radix-8 pass
-     comes after the 3s and 5s, which then have an even ido (with
-     SIMD_SZ == 4, 96 but not 192, 288 but not 576), else an odd one. All
+     (4000) and 375*32 (12000). In the real transform the radix-8 or
+     radix-6 pass comes after the 3s and 5s, which then have an even ido
+     (with SIMD_SZ == 4, 160 and 288 but not 192 or 576), else an odd one. All
      are multiples of 32, so they are valid REAL and COMPLEX sizes for
      every SIMD_SZ. */
   {

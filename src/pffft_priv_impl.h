@@ -690,8 +690,8 @@ static NEVER_INLINE(void) radb2_pf_ps(int ido, int l1, const v4sf * RESTRICT cc,
 
 /*
   The odd-radix passes, radf3/radb3 and radf5/radb5, take an even ido
-  too, so that rffti1_ps can put a radix-8 pass last, after the 3s and
-  5s. The i-loop handles the complex pairs (i-1, i) of each leg; with ido
+  too, so that rffti1_ps can put a radix-8 or radix-6 pass last, after
+  the 3s and 5s. The i-loop handles the complex pairs (i-1, i) of each leg; with ido
   even, that leaves the last element, ido-1: the leg's Nyquist term, a
   real x_j at frequency ido/2. Its twiddle is exp(-i*pi*j/p), the table's
   exp(-2*i*pi*j*f/(p*ido)) at f = ido/2, so it needs no table entry. For
@@ -1595,6 +1595,68 @@ static NEVER_INLINE(void) radb8_ps(int l1, const v4sf * RESTRICT cc, v4sf * REST
   }
 }
 
+/*
+  Real radix-6 passes, forward and backward, only for ido == 1.
+
+  rffti1_ps puts a factor 6 only last, in place of the lone 2 and a 3,
+  where the transform is small (see there). The layout is that of the 8
+  above: legs cc[k + j*l1], half-complex block X0, Re X1, Im X1, Re X2,
+  Im X2, X3 at 6*k.
+
+  2 and 3 are coprime, so the 6-point DFT is a 2-point DFT on each of the
+  pairs (x0, x3), (x2, x5), (x4, x1) followed by a 3-point DFT on the
+  sums and one on the differences, with no twiddles in between (Good-Thomas:
+  input index 3*j1 + 2*j2, output index 3*k1 + 4*k2, mod 6). The sums give
+  X0, X4, X2 and the differences X3, X1, X5, of which only X0..X3 are
+  stored. That is 12 adds, 2 multiply-adds and 2 multiplies each way. The
+  direct real 6-point DFT with the symmetric sums x_j +- x_{6-j} costs the
+  same; the Cooley-Tukey 2x3 split would add twiddles by W6^j.
+*/
+static NEVER_INLINE(void) radf6_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+  static const float taur = (float)-0.5;                     /* cos(2*pi/3) */
+  static const float taui = (float)0.86602540378443864676;   /* sin(2*pi/3) = sqrt(3)/2 */
+  const v4sf * RESTRICT cc_end = cc + l1;
+  while (cc < cc_end) {
+    v4sf x0 = cc[0],    x1 = cc[1*l1], x2 = cc[2*l1];
+    v4sf x3 = cc[3*l1], x4 = cc[4*l1], x5 = cc[5*l1];
+    /* the 2-point DFTs, in Good-Thomas order */
+    v4sf u0 = VADD(x0, x3), u1 = VADD(x2, x5), u2 = VADD(x4, x1);
+    v4sf v0 = VSUB(x0, x3), v1 = VSUB(x2, x5), v2 = VSUB(x4, x1);
+    /* the 3-point DFTs: of u into X0, X4 = conj(X2); of v into X3, X1 */
+    v4sf su = VADD(u1, u2), sv = VADD(v1, v2);
+    ch[0] = VADD(u0, su);                      /* X0 */
+    ch[1] = SVMADD(taur, sv, v0);              /* Re X1 */
+    ch[2] = SVMUL(taui, VSUB(v2, v1));         /* Im X1 */
+    ch[3] = SVMADD(taur, su, u0);              /* Re X2 */
+    ch[4] = SVMUL(taui, VSUB(u1, u2));         /* Im X2 */
+    ch[5] = VADD(v0, sv);                      /* X3 */
+    cc += 1; ch += 6;
+  }
+}
+
+static NEVER_INLINE(void) radb6_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+  static const float two = 2.f;
+  static const float sqrt3 = (float)1.7320508075688772935;  /* 2*sin(2*pi/3) = sqrt(3) */
+  v4sf * RESTRICT ch_end = ch + l1;
+  while (ch < ch_end) {
+    v4sf x0 = cc[0], r1 = cc[1], i1 = cc[2];
+    v4sf r2 = cc[3], i2 = cc[4], x3 = cc[5];
+    /* the inverse 3-point DFTs, of X0, X4, X2 into u and of X3, X1, X5
+       into v, then the 2-point ones into the legs in Good-Thomas order */
+    v4sf u0 = SVMADD(two, r2, x0), a = VSUB(x0, r2), b = SVMUL(sqrt3, i2);
+    v4sf v0 = SVMADD(two, r1, x3), c = VSUB(x3, r1), d = SVMUL(sqrt3, i1);
+    v4sf u1 = VADD(a, b), u2 = VSUB(a, b);
+    v4sf v1 = VSUB(c, d), v2 = VADD(c, d);
+    ch[0*l1] = VADD(u0, v0);
+    ch[3*l1] = VSUB(u0, v0);
+    ch[2*l1] = VADD(u1, v1);
+    ch[5*l1] = VSUB(u1, v1);
+    ch[4*l1] = VADD(u2, v2);
+    ch[1*l1] = VSUB(u2, v2);
+    cc += 6; ch += 1;
+  }
+}
+
 static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2,
                                       const float *wa, const int *ifac) {
   v4sf *in  = (v4sf*)input_readonly;
@@ -1621,6 +1683,10 @@ static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *w
       case 8:
         assert(ido == 1);
         radf8_ps(l1, in, out);
+        break;
+      case 6:
+        assert(ido == 1);
+        radf6_ps(l1, in, out);
         break;
       case 4: {
         int ix2 = iw + ido;
@@ -1672,6 +1738,10 @@ static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *w
       case 8:
         assert(ido == 1);
         radb8_ps(l1, in, out);
+        break;
+      case 6:
+        assert(ido == 1);
+        radb6_ps(l1, in, out);
         break;
       case 4: {
         int ix2 = iw + ido;
@@ -1730,6 +1800,10 @@ static int decompose(int n, int *ifac, const int *ntryh) {
 
 
 
+/* the largest transform, in bytes per array of n vectors, that takes a
+   radix-6 instead of a radix-8 pass where it can (see rffti1_ps) */
+#define RADIX6_MAX_BYTES 32768
+
 static void rffti1_ps(int n, float *wa, int *ifac)
 {
   static const int ntryh[] = { 4,2,3,5,0 };
@@ -1744,10 +1818,26 @@ static void rffti1_ps(int n, float *wa, int *ifac)
      3s and 5s, which {4,2,3,5} puts last so that their ido is odd, then
      get an even ido, which their passes handle (see radf3_loop_ps). The
      twiddle table is filled the same way for an even ido: (ido-1)/2 pairs
-     per leg, i.e. none for the element ido-1, which needs none. */
+     per leg, i.e. none for the element ido-1, which needs none.
+
+     Where there is a 3 and an array of the transform takes at most
+     RADIX6_MAX_BYTES, merge the 2 and a 3 into a radix-6 pass at the end
+     instead: [4, ..., 3 (one fewer), ..., 5, ..., 6]. In cache that was
+     faster than the radix-8 merge (transform length N = 384, i.e.
+     n = 96: f32 8-10% on two Xeons, 1% on an Apple M2; f64 3-9%), out of
+     cache slower (N = 24576, f32 and f64: 1-5%). */
   if (nf >= 2 && ifac[2] == 2 && ifac[3] == 4) {
-    for (k1 = 2; k1 < nf; ++k1) ifac[k1] = ifac[k1+2];
-    ifac[nf] = 8;
+    int i3 = 0;
+    if ((size_t)n * sizeof(v4sf) <= RADIX6_MAX_BYTES)
+      for (k1 = 4; k1 <= nf+1; ++k1) if (ifac[k1] == 3) { i3 = k1; break; }
+    if (i3) {
+      for (k1 = 2; k1 < i3-1; ++k1) ifac[k1] = ifac[k1+1];
+      for (k1 = i3-1; k1 < nf; ++k1) ifac[k1] = ifac[k1+2];
+      ifac[nf] = 6;
+    } else {
+      for (k1 = 2; k1 < nf; ++k1) ifac[k1] = ifac[k1+2];
+      ifac[nf] = 8;
+    }
     ifac[1] = --nf;
   }
 
@@ -1894,7 +1984,7 @@ struct SETUP_STRUCT {
   int     N;
   int     Ncvec;  /* nb of complex simd vectors (N/4 if PFFFT_COMPLEX, N/8 if PFFFT_REAL) */
   /* hold the decomposition into small integers of N */
-  int ifac[IFAC_MAX_SIZE]; /* N, number of factors, factors (admitted values: 2, 3, 4, 5 or 8) */
+  int ifac[IFAC_MAX_SIZE]; /* N, number of factors, factors (admitted values: 2, 3, 4, 5, 6 or 8) */
   pffft_transform_t transform;
   v4sf *data;     /* allocated room for twiddle coefs */
   float *e;       /* points into 'data', N/4*3 elements */
