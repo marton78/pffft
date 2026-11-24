@@ -11,14 +11,7 @@
 
 #include "papi_perf_counter.h"
 
-//#if defined(HAVE_MIPP) && !defined(NO_MIPP)
-#if defined(HAVE_MIPP)
-#include <mipp.h>
-
-#define MIPP_VECTOR  mipp::vector
-#else
-#define MIPP_VECTOR  ::std::vector
-#endif
+#include "pffft/pffft.hpp"  // pffft::AlignedVector: the kernels load the filter aligned
 
 #include "pf_conv_dispatcher.h"
 #include "pf_conv.h"
@@ -27,9 +20,9 @@
 #define TEST_WITH_MIN_LEN     0
 
 
-MIPP_VECTOR<float> generate_rng_vec(int M, int N = -1, int seed_value = 1)
+pffft::AlignedVector<float> generate_rng_vec(int M, int N = -1, int seed_value = 1)
 {
-    MIPP_VECTOR<float> v(N < 0 ? M : N);
+    pffft::AlignedVector<float> v(N < 0 ? M : N);
     ::std::mt19937 g;
     g.seed(seed_value);
     constexpr float scale = 1.0F / (1.0F + float(INT_FAST32_MAX));
@@ -214,9 +207,6 @@ int main(int argc, char *argv[])
         fprintf(stderr, "PAPI is NOT available!\n");
         #endif
     }
-    #if !defined(HAVE_MIPP)
-    fprintf(stderr, "MIPP is NOT available!\n");
-    #endif
 
     //int float_simd_size[num_arch];
     int max_simd_size = -1;
@@ -257,16 +247,16 @@ int main(int argc, char *argv[])
     }
     const conv_f_ptrs & conv_arch =  *conv_arch_ptrs[arch];
     if (verbose)
-        fprintf(stderr, "arch is using mipp: %d\n", conv_arch.using_mipp);
+        fprintf(stderr, "arch uses SIMD backend %s\n", conv_arch.simd_arch);
 
     fprintf(stderr, "processing N = %d MSamples with block length of %d samples with filter length %d taps on '%s'\n",
         N / (1024 * 1024), blockLen, filterLen, conv_arch.id );
 
-    MIPP_VECTOR<float> s = generate_rng_vec(N + 1, N + 1, seed_sig);
-    MIPP_VECTOR<float> y(N + 1, 0.0F);
-    MIPP_VECTOR<float> filter = generate_rng_vec(filterLen, filterLen, seed_filter);
-    MIPP_VECTOR<float> buffer(blockLen + filterLen + 1, 0.0F);
-    MIPP_VECTOR<complexf> buffer_cx(blockLen + filterLen + 1);
+    pffft::AlignedVector<float> s = generate_rng_vec(N + 1, N + 1, seed_sig);
+    pffft::AlignedVector<float> y(N + 1, 0.0F);
+    pffft::AlignedVector<float> filter = generate_rng_vec(filterLen, filterLen, seed_filter);
+    pffft::AlignedVector<float> buffer(blockLen + filterLen + 1, 0.0F);
+    pffft::AlignedVector<complexf> buffer_cx(blockLen + filterLen + 1);
 
 #if 1 && TEST_WITH_MIN_LEN
     for (int k = 0; k < N; ++k)

@@ -25,11 +25,11 @@
 # arm32_rpi2 untested
 #   "-march=armv7-a"   "-mfloat-abi=hard" "-mfpu=neon-vfpv4"
 #   "-march=armv8-a"   "-mfloat-abi=hard" "-mfpu=neon-vfpv4"
-# arm32_rpi3 with "armv7-a" tested on Raspbian GNU/Linux 10 (buster), 32-bit  => MIPP test reports: NEONv1, 128 bits
+# arm32_rpi3 with "armv7-a" tested on Raspbian GNU/Linux 10 (buster), 32-bit: NEON, 128 bits
 #   "-march=armv7-a"   "-mfloat-abi=hard" "-mfpu=neon-vfpv4"
-# arm32_rpi3 with "armv8-a" tested on Raspbian GNU/Linux 10 (buster), 32-bit  => MIPP test reports: NEONv1, 128 bits
+# arm32_rpi3 with "armv8-a" tested on Raspbian GNU/Linux 10 (buster), 32-bit: NEON, 128 bits
 #   "-march=armv8-a"   "-mfloat-abi=hard" "-mfpu=neon-vfpv4"
-# arm32_rpi3 with "armv8-a" tested on Raspbian GNU/Linux 10 (buster), 32-bit  => MIPP test reports: NEONv1, 128 bits
+# arm32_rpi3 with "armv8-a" tested on Raspbian GNU/Linux 10 (buster), 32-bit: NEON, 128 bits
 #   "-march=armv8-a"   "-mfloat-abi=hard" "-mfpu=neon-vfpv4" "-mtune=cortex-a53"
 # arm32_rpi4 untested
 #   RPi 4 Model B:    Cortex-A72  =>  "-mtune=cortex-a72"  ?

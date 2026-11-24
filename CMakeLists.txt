@@ -77,13 +77,6 @@ include(cmake/target_optimizations.cmake)
 include(cmake/compiler_warnings.cmake)
 include(cmake/simd_backend_probe.cmake)
 find_package(PAPI)
-find_package(MIPP)
-if (MIPP_FOUND)
-# if (TARGET MIPP)
-    message(STATUS "found MIPP")
-else()
-    message(STATUS "NOT found MIPP")
-endif()
 
 
 if (PFFFT_USE_DEBUG_ASAN)
