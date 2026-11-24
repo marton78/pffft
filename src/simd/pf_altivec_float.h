@@ -56,9 +56,18 @@ typedef union v4sf_union {
 #  define VMADD(a,b,c) vec_madd(a,b,c)
 #  define VMSUB(a,b,c) vec_nmsub(a,b,c)
 #  define VSUB(a,b) vec_sub(a,b)
+/* VSX (POWER7 and later, so every ppc64le) loads from any address; there,
+ * vec_lvsl is deprecated for little endian. AltiVec alone (G4, G5) loads
+ * aligned vectors only, so an unaligned load is two aligned ones and a
+ * permute. */
+#if defined(__VSX__)
+static inline v4sf ld_ps1(const float *p) { return vec_splats(*p); }
+#  define VLOAD_UNALIGNED(ptr)  vec_xl(0, (const float *)(ptr))
+#else
 static inline v4sf ld_ps1(const float *p) { v4sf v=vec_lde(0,p); return vec_splat(vec_perm(v, v, vec_lvsl(0, p)), 0); }
-#  define LD_PS1(p) ld_ps1(&p)
 #  define VLOAD_UNALIGNED(ptr)  vec_perm(vec_ld(0, ptr), vec_ld(15, ptr), vec_lvsl(0, ptr))
+#endif
+#  define LD_PS1(p) ld_ps1(&p)
 #  define VLOAD_ALIGNED(ptr)    vec_ld(0, ptr)
 #  define INTERLEAVE2(in1, in2, out1, out2) { v4sf tmp__ = vec_mergeh(in1, in2); out2 = vec_mergel(in1, in2); out1 = tmp__; }
 #  define UNINTERLEAVE2(in1, in2, out1, out2) {                           \
