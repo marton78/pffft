@@ -1331,6 +1331,73 @@ static NEVER_INLINE(void) radb5_pf_ps(int ido, int l1, const v4sf *RESTRICT cc, 
 }
 #endif
 
+/*
+  Real radix-8 passes, forward and backward, only for ido == 1.
+
+  rffti1_ps puts a factor 8 only last, in place of the lone 2 and a 4.
+  That factor's pass is the first of rfftf1_ps and the last of rfftb1_ps,
+  where ido == 1, so it takes no twiddles: one pass fewer over the data,
+  and the radix-2 pass that goes away is the one with the largest ido,
+  with twiddles. For each k, the 8 legs are the real vectors cc[k + j*l1]
+  (forward input, backward output), and the half-complex block
+  X0, Re X1, Im X1, Re X2, Im X2, Re X3, Im X3, X4 at 8*k (forward
+  output, backward input), as radf4_ps lays out X0, Re X1, Im X1, X2.
+*/
+static NEVER_INLINE(void) radf8_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+  static const float minus_hsqt2 = (float)-M_SQRT1_2;  /* -sin(pi/4) = -1/sqrt(2) */
+  const v4sf * RESTRICT cc_end = cc + l1;
+  while (cc < cc_end) {
+    v4sf x0 = cc[0],    x1 = cc[1*l1], x2 = cc[2*l1], x3 = cc[3*l1];
+    v4sf x4 = cc[4*l1], x5 = cc[5*l1], x6 = cc[6*l1], x7 = cc[7*l1];
+    /* the even outputs are the DFT-4 of the sums at stride 4 */
+    v4sf a0 = VADD(x0, x4), a1 = VADD(x1, x5), a2 = VADD(x2, x6), a3 = VADD(x3, x7);
+    /* the odd ones that of the differences times W8^j */
+    v4sf b0 = VSUB(x0, x4), b1 = VSUB(x1, x5), b2 = VSUB(x2, x6), b3 = VSUB(x3, x7);
+    v4sf s02 = VADD(a0, a2), s13 = VADD(a1, a3);
+    v4sf t1 = SVMUL(minus_hsqt2, VSUB(b3, b1));
+    v4sf t2 = SVMUL(minus_hsqt2, VADD(b1, b3));
+    ch[0] = VADD(s02, s13);   /* X0 */
+    ch[1] = VADD(b0, t1);     /* Re X1 */
+    ch[2] = VSUB(t2, b2);     /* Im X1 */
+    ch[3] = VSUB(a0, a2);     /* Re X2 */
+    ch[4] = VSUB(a3, a1);     /* Im X2 */
+    ch[5] = VSUB(b0, t1);     /* Re X3 */
+    ch[6] = VADD(b2, t2);     /* Im X3 */
+    ch[7] = VSUB(s02, s13);   /* X4 */
+    cc += 1; ch += 8;
+  }
+}
+
+static NEVER_INLINE(void) radb8_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+  static const float two = 2.f;
+  static const float sqrt2 = (float)M_SQRT2;
+  v4sf * RESTRICT ch_end = ch + l1;
+  while (ch < ch_end) {
+    v4sf x0 = cc[0], r1 = cc[1], i1 = cc[2], r2 = cc[3];
+    v4sf i2 = cc[4], r3 = cc[5], i3 = cc[6], x4 = cc[7];
+    /* x_j = e_j + o_j, x_{j+4} = e_j - o_j: e_j from X0, X2, X4 and
+       o_j from X1, X3 */
+    v4sf s = VADD(x0, x4), d = VSUB(x0, x4);
+    v4sf r2x2 = SVMUL(two, r2), i2x2 = SVMUL(two, i2);
+    v4sf e0 = VADD(s, r2x2), e2 = VSUB(s, r2x2);
+    v4sf e1 = VSUB(d, i2x2), e3 = VADD(d, i2x2);
+    v4sf p = VSUB(r1, r3), q = VADD(i1, i3);
+    v4sf o0 = SVMUL(two, VADD(r1, r3));
+    v4sf o2 = SVMUL(two, VSUB(i3, i1));
+    v4sf o1 = SVMUL(sqrt2, VSUB(p, q));
+    v4sf o3 = SVMUL(sqrt2, VADD(p, q));   /* minus o_3 */
+    ch[0*l1] = VADD(e0, o0);
+    ch[4*l1] = VSUB(e0, o0);
+    ch[1*l1] = VADD(e1, o1);
+    ch[5*l1] = VSUB(e1, o1);
+    ch[2*l1] = VADD(e2, o2);
+    ch[6*l1] = VSUB(e2, o2);
+    ch[3*l1] = VSUB(e3, o3);
+    ch[7*l1] = VADD(e3, o3);
+    cc += 8; ch += 1;
+  }
+}
+
 static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2,
                                       const float *wa, const int *ifac) {
   v4sf *in  = (v4sf*)input_readonly;
@@ -1354,6 +1421,10 @@ static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *w
         int ix4 = ix3 + ido;
         PF_CALL(pf, radf5, (ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], &wa[ix4]));
       } break;
+      case 8:
+        assert(ido == 1);
+        radf8_ps(l1, in, out);
+        break;
       case 4: {
         int ix2 = iw + ido;
         int ix3 = ix2 + ido;
@@ -1401,6 +1472,10 @@ static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *w
         int ix4 = ix3 + ido;
         PF_CALL(pf, radb5, (ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], &wa[ix4]));
       } break;
+      case 8:
+        assert(ido == 1);
+        radb8_ps(l1, in, out);
+        break;
       case 4: {
         int ix2 = iw + ido;
         int ix3 = ix2 + ido;
@@ -1464,6 +1539,18 @@ static void rffti1_ps(int n, float *wa, int *ifac)
   int k1, j, ii;
 
   int nf = decompose(n,ifac,ntryh);
+
+  /* decompose() puts the lone factor 2, if there is one, first: [2, 4, ...].
+     Merge it and a 4 into a radix-8 pass at the end, where ido == 1 and
+     radf8_ps/radb8_ps need no twiddles, as cffti1_ps does. For now only
+     where the last factor is a 4 (powers of two): elsewhere the 8 would take
+     the twiddle-free place of the last 3 or 5. */
+  if (nf >= 2 && ifac[2] == 2 && ifac[nf+1] == 4) {
+    for (k1 = 2; k1 <= nf; ++k1) ifac[k1] = ifac[k1+1];
+    ifac[nf] = 8;
+    ifac[1] = --nf;
+  }
+
   float argh = (2*(float)M_PI) / n;
   int is = 0;
   int nfm1 = nf - 1;
