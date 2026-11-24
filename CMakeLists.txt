@@ -42,7 +42,7 @@ if (APPLE)
   option(PFFFT_USE_BENCH_VDSP "use vDSP of Apple's Accelerate framework in fft benchmark?" ON)
 endif()
 
-option(PFFFT_USE_DEBUG_ASAN  "use GCC's address sanitizer?" OFF)
+option(PFFFT_USE_DEBUG_ASAN  "use the address sanitizer (gcc, clang)?" OFF)
 
 option(PFFFT_DISABLE_LINK_WITH_M "Disables linking with m library to build with clangCL from MSVC" OFF)
 
@@ -77,18 +77,14 @@ include(cmake/target_optimizations.cmake)
 include(cmake/compiler_warnings.cmake)
 include(cmake/simd_backend_probe.cmake)
 find_package(PAPI)
-find_package(MIPP)
-if (MIPP_FOUND)
-# if (TARGET MIPP)
-    message(STATUS "found MIPP")
-else()
-    message(STATUS "NOT found MIPP")
-endif()
 
 
-if (PFFFT_USE_DEBUG_ASAN)
-  set(ASANLIB "asan")
+if (PFFFT_USE_DEBUG_ASAN AND NOT MSVC)
+  # the compiler driver links its own runtime: libasan for gcc, the
+  # compiler-rt one for clang and AppleClang, which have no -lasan
+  set(ASANLIB "-fsanitize=address")
 else()
+  # MSVC needs /fsanitize=address only when compiling
   set(ASANLIB "")
 endif()
 

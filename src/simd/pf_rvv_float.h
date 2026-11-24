@@ -52,6 +52,15 @@ typedef union v4sf_union {
   float f[SIMD_SZ];
 } v4sf_union;
 
+/* a vector from its lanes: a compound literal in C; C++ has none (only as
+ * an extension, which -pedantic warns about), but initializes vector types
+ * from a list */
+#ifdef __cplusplus
+#  define PF_RVV_VEC4(type, a, b, c, d)  (type{(a), (b), (c), (d)})
+#else
+#  define PF_RVV_VEC4(type, a, b, c, d)  ((type){(a), (b), (c), (d)})
+#endif
+
 /* Both clang and recent GCC accept __builtin_shufflevector; older GCC
  * only ships __builtin_shuffle. Pick whichever is available. GCC < 10 has
  * no __has_builtin at all, so it must not appear in the same #if as the
@@ -66,18 +75,18 @@ typedef union v4sf_union {
      __builtin_shufflevector((a), (b), i0, i1, i2, i3)
 #else
 #  define PF_RVV_SHUF4(a, b, i0, i1, i2, i3) \
-     __builtin_shuffle((a), (b), (v4si){i0, i1, i2, i3})
+     __builtin_shuffle((a), (b), PF_RVV_VEC4(v4si, i0, i1, i2, i3))
 #endif
 
 #  define VARCH "RVV"
 #  define VREQUIRES_ALIGN 0
-#  define VZERO()       ((v4sf){0.f, 0.f, 0.f, 0.f})
+#  define VZERO()       PF_RVV_VEC4(v4sf, 0.f, 0.f, 0.f, 0.f)
 #  define VMUL(a,b)     ((a) * (b))
 #  define VADD(a,b)     ((a) + (b))
 #  define VSUB(a,b)     ((a) - (b))
 #  define VMADD(a,b,c)  ((a) * (b) + (c))
 #  define VMSUB(a,b,c)  ((c) - (a) * (b))
-#  define LD_PS1(p)     ((v4sf){(p), (p), (p), (p)})
+#  define LD_PS1(p)     PF_RVV_VEC4(v4sf, (p), (p), (p), (p))
 #  define VLOAD_UNALIGNED(ptr)  (*(const v4sf *)(ptr))
 #  define VLOAD_ALIGNED(ptr)    (*(const v4sf *)(ptr))
 

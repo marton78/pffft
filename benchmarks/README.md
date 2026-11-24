@@ -10,8 +10,8 @@ adb, or an iPhone attached to a Mac. It answers three questions:
 3. Did a change make pffft faster or slower?
 
 The other two programs here, `bench_pf_mixer_float` and `bench_pf_conv_float`,
-measure the mixers (PFDSP) and the fast convolution (PFFASTCONV); this file
-is about bench_fft only.
+measure the mixers (PFDSP) and the direct convolution kernels of `pf_conv`,
+one build per architecture option; this file is about bench_fft only.
 
 ## Quick start
 

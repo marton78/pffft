@@ -3,7 +3,7 @@
 /* pf_conv.h/.cpp implements linear "slow" convolution.
  * this code is primarily for test/demonstration of runtime dispatching.
  * each "kernel" is compiled with different compiler/architecture options,
- * that activates different implementations in the MIPP headers.
+ * with pffft's own SIMD macros (src/simd/pf_float.h).
  *
  * the dispatcher library 'pf_conv_dispatcher' collects (links agains)
  * all the pf_conv_arch_<opt> libraries ..
@@ -12,12 +12,14 @@
  * containing the function pointers for the different implementations.
  *
  * requirement(s):
- * - installed MIPP headers
  * - compiler definitions for the different architecture types:
- *   see CMakeLists.txt CONV_ARCH_MSVC_AMD64, CONV_ARCH_GCC_ARM32NEON, ..
+ *   see pf_conv.cmake CONV_ARCH_MSVC_AMD64, CONV_ARCH_GCC_ARM32NEON, ..
  * - one cmake library target pf_conv_arch_<opt> for each architecture option.
  *   each one gets it's specific  architecture/compiler  options
- *    utilizing the target_set_cxx_arch_option() macro in the CMakeLists.txt
+ *    utilizing the target_set_cxx_arch_option() macro in pf_conv.cmake
+ *
+ * the filter must be aligned for SIMD (pffft_aligned_malloc()), and its
+ * length a multiple of conv_float_simd_size().
  */
 
 #include "pffft/pf_cplx.h"
@@ -68,7 +70,7 @@ typedef int  (*f_conv_cplx_float_oop)(
 struct conv_f_ptrs
 {
     const char * id;
-    const int using_mipp;
+    const char * simd_arch;     // pffft's SIMD backend: SSE1, NEON, Scalar, ..
     f_conv_id               fp_id;
     f_conv_float_simd_size  fp_conv_float_simd_size;
 
@@ -91,16 +93,9 @@ typedef const conv_f_ptrs* (*f_conv_ptrs)();
 
 // declare all functions - returning the structs with the function pointers
 extern const conv_f_ptrs* CONV_FN_ARCH(conv_ptrs, none)();  // = conv_ptrs_none()
-extern const conv_f_ptrs* CONV_FN_ARCH(conv_ptrs, dflt)();  // simd / mipp is activated
+extern const conv_f_ptrs* CONV_FN_ARCH(conv_ptrs, dflt)();  // simd is activated
 
-extern const conv_f_ptrs* CONV_FN_ARCH(conv_ptrs, sse3)();  // = conv_ptrs_sse3()
-extern const conv_f_ptrs* CONV_FN_ARCH(conv_ptrs, sse4)();
-extern const conv_f_ptrs* CONV_FN_ARCH(conv_ptrs, avx)();
-extern const conv_f_ptrs* CONV_FN_ARCH(conv_ptrs, avx2)();
-
-extern const conv_f_ptrs* CONV_FN_ARCH(conv_ptrs, sse2)();
-//extern const conv_f_ptrs* CONV_FN_ARCH(conv_ptrs, avx)();  // already declared
-//extern const conv_f_ptrs* CONV_FN_ARCH(conv_ptrs, avx2)(); // already declared
+extern const conv_f_ptrs* CONV_FN_ARCH(conv_ptrs, avx2)();  // = conv_ptrs_avx2(), x86-64
 
 extern const conv_f_ptrs* CONV_FN_ARCH(conv_ptrs, neon_vfpv4)();    // for armv7l / 32-bit ARM
 extern const conv_f_ptrs* CONV_FN_ARCH(conv_ptrs, neon_rpi3_a53)();
