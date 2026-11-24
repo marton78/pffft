@@ -1,9 +1,11 @@
 # pffft benchmark results
 
 Measured with [bench_fft](../benchmarks/README.md) in November 2026: pffft
-(commit 5ffaad7) against the FFT libraries it is usually compared with, on
-nine machines, and against pffft 1.1.0, which is as fast as Julien
-Pommier's original, on six. Every chart has a panel per precision (f32, f64)
+against the FFT libraries it is usually compared with, on nine machines, and
+against pffft 1.1.0, which is as fast as Julien Pommier's original, on six.
+pffft is commit 1b88190 on the x86 machines and commit 5ffaad7 on the arm64
+ones, where the two compile to the same code: 1b88190 adds prefetching of
+the output of the FFT passes on x86 (pull request #129). Every chart has a panel per precision (f32, f64)
 and transform kind (real, complex) and covers 44 lengths from 32 to 2^20:
 the powers of two and 28 other lengths with factors 3 and 5.
 
@@ -21,21 +23,21 @@ is not available there.
 | MediaTek MT6878, Android | 1.12 | 1.41 | - | 2.01 | 4.32 | 2.24 | 2.08 |
 | Arm Neoverse N2, Linux | 1.22 | 1.65 | - | 1.87 | 4.71 | 2.71 | 4.37 |
 | Microsoft Cobalt 100 (Neoverse N2), Windows | - | - | - | 2.34 | 4.06 | 2.50 | - |
-| Intel Xeon 6975P-C, Linux | 0.57 | 0.87 | - | 1.55 | 5.75 | 2.18 | 3.45 |
-| Intel Xeon Platinum 8573C, Windows | 0.62 | 1.22 | - | 2.54 | 4.12 | 2.65 | - |
-| AMD EPYC 9V45, Linux | 0.68 | 1.34 | - | 1.54 | 6.73 | 2.83 | 4.90 |
-| Intel Core i7-8700B, macOS (VM) | 0.78 | 1.30 | 0.63 | 2.03 | 4.38 | 2.20 | 2.43 |
+| Intel Xeon 6975P-C, Linux | 0.59 | 0.89 | - | 1.61 | 5.85 | 2.26 | 3.57 |
+| Intel Xeon Platinum 8573C, Windows | 0.62 | 1.26 | - | 2.63 | 4.13 | 2.74 | - |
+| AMD EPYC 9V45, Linux | 0.68 | 1.33 | - | 1.54 | 6.69 | 2.81 | 4.82 |
+| Intel Core i7-8700B, macOS (VM) | 0.81 | 1.36 | 0.68 | 2.09 | 4.52 | 2.29 | 2.62 |
 
 KISS FFT and Green FFT are measured in single precision only.
 
 - **Portable libraries.** pffft was faster than PocketFFT, KISS FFT, FFTPACK
-  and Green FFT in 1554 of the 1584 cases. 21 of the 30 exceptions are on
+  and Green FFT in 1555 of the 1584 cases. 21 of the 29 exceptions are on
   the AMD EPYC 9V45, all against PocketFFT and all complex: 18 single
   precision lengths that are not powers of two, from 960 to 1000000, where
-  pffft was up to 14.4% slower, and 3 double precision ones, up to 3.3%. The
-  other 9 are complex transforms out of cache, at n of 65536 and more (5 on
-  the Xeon 6975P-C, 2 on the Core i7-8700B, 1 each on the M2 and the
-  iPhone), where pffft was at most 7.6% slower.
+  pffft was up to 16.3% slower, and 3 double precision ones, up to 4.2%. The
+  other 8 are complex transforms out of cache, at n of 65536 and more (6 on
+  the Xeon 6975P-C, 2 of them slower than both PocketFFT and FFTPACK, and 1
+  each on the M2 and the iPhone), where pffft was at most 7.8% slower.
 - **FFTW** plans a transform in one of several modes; two are measured here.
   `FFTW_ESTIMATE` plans at once, as pffft and the other libraries do.
   `FFTW_MEASURE` times candidate algorithms on the machine and keeps the
@@ -43,16 +45,16 @@ KISS FFT and Green FFT are measured in single precision only.
   that planning time out, so the comparison favours `FFTW_MEASURE`: in an
   application its cost pays off only over many transforms of one length.
   - *Real transforms.* pffft was faster than `FFTW_ESTIMATE` on every
-    machine (geometric means from 1.02 on the Xeon 6975P-C to 1.74 on the
+    machine (geometric means from 1.07 on the Xeon 6975P-C to 1.74 on the
     Neoverse N2). On arm64 it was also faster than `FFTW_MEASURE` on the
     iPhone, the MediaTek phone and the Neoverse N2 (1.10, 1.27 and 1.39)
     and level with it on the M2 (1.00).
   - *Complex transforms.* pffft was faster than `FFTW_ESTIMATE` everywhere
-    but on the Xeon 6975P-C (1.07 to 1.56; 0.73 there). `FFTW_MEASURE` was
+    but on the Xeon 6975P-C (1.07 to 1.56; 0.74 there). `FFTW_MEASURE` was
     faster on Apple's chips (pffft 0.77 and 0.83), level with pffft on the
     MediaTek phone (1.00) and slower on the Neoverse N2 (1.06).
-  - *x86.* `FFTW_MEASURE` was faster on the x86 machines (pffft 0.57 to
-    0.78 over all cases): FFTW has AVX2 and AVX-512 code, while pffft's
+  - *x86.* `FFTW_MEASURE` was faster on the x86 machines (pffft 0.59 to
+    0.81 over all cases): FFTW has AVX2 and AVX-512 code, while pffft's
     single precision uses 4-wide SSE there (its double precision uses AVX).
 - **vDSP**, Apple's FFT, was faster in single precision. On Apple's chips it
   hands single-precision FFTs from n = 256 or 512 to the AMX matrix unit, a
@@ -63,7 +65,7 @@ KISS FFT and Green FFT are measured in single precision only.
   [How it was measured](#how-it-was-measured)). In double precision, where
   vDSP did not lower the clock, pffft was faster on Apple's chips
   (geometric means 1.03 to 1.32 per kind) and slower on the Intel Mac
-  (0.73 real, 0.65 complex).
+  (0.80 real, 0.68 complex).
 
 ## Performance improvements since Pommier's pffft
 
@@ -77,8 +79,8 @@ NEON double precision with native intrinsics instead of an emulation, faster
 NEON transposes, fast paths in the radix-3 and radix-4 real butterflies,
 code layout that keeps the radix-3 and radix-5 real kernels out of line, a
 radix-8 last pass for the complex lengths whose n/4 has an odd power of two,
-and complex butterflies that get the direction of the transform as a
-constant.
+complex butterflies that get the direction of the transform as a
+constant, and, on x86, prefetching of the output of the passes out of L1.
 
 Both versions run in one process and take turns, batch by batch
 (benchmarks/compare.py). Averaged over the lengths, the current pffft was 16
@@ -89,22 +91,32 @@ to 16384) it was faster at every length, by 2% at least; out of cache the
 gain shrinks, and on the MediaTek phone a few real lengths from 2^16 up are
 within the noise (1.2% slower at most).
 
-![pffft 5ffaad7 vs 1.1.0 on Intel Xeon 6975P-C, Intel Core i7-8700B and AMD EPYC 7763](benchmarks/pffft-vs-1.1.0-x86.png)
+![pffft 1b88190 vs 1.1.0 on Intel Xeon 6975P-C, Intel Core i7-8700B and AMD EPYC 7763](benchmarks/pffft-vs-1.1.0-x86.png)
 
-On x86 the gain is smaller, as much of the work above was for NEON; what
-applies there is FMA (where the build targets AVX2 or newer), the radix-3
-and radix-4 fast paths, the code layout, the radix-8 pass and the constant
-direction. Below n = 4096, pffft was 13.8% faster on the Xeon 6975P-C
-(Linux, gcc), 12.8% on the Core i7-8700B (macOS, Clang) and 7.9% on the EPYC
-7763 (Windows, MSVC); from 4096 up 5.4%, 3.8% and 4.9%. The largest gains
-are at complex n = 32: in single precision 33% on the Xeon, 44% on the Core
-i7 and 25% on the EPYC. No complex length was slower (in a second run on the
-Xeon, one by 0.2%, within the noise). Some real lengths were slower: on the
-Xeon and the Core i7 several from n = 4000 up, by 2.3% at most in cache and
-5.0% out of cache; on the EPYC f32 n = 96 by 7.2% and f64 n = 32 by 4.2%.
-The averages of two runs of this comparison on the Xeon 6975P-C, on
-different hosts, differed by less than 0.1%, single lengths by 0.25% on
-average.
+On x86 the work above for NEON doesn't apply; what does is FMA (where the
+build targets AVX2 or newer), the radix-3 and radix-4 fast paths, the code
+layout, the radix-8 pass, the constant direction and the output
+prefetching. On the Intel machines pffft was faster than 1.1.0 at every
+length but one (apart from a few complex lengths out of cache on the Xeon,
+slower by 0.1% at most, within the noise): below n = 4096 by 14.0% on the Xeon 6975P-C (Linux, gcc)
+and 13.2% on the Core i7-8700B (macOS, Clang), from 4096 up by 14.5% and
+13.0%. The largest gains are at complex n = 32 (in single precision 32% on
+the Xeon and 43% on the Core i7), and out of L1 (single-precision complex
+n = 32768 34% and double-precision real n = 15360 31% on the Xeon,
+double-precision real n = 8192 27% on the Core i7). The exception is single
+precision real n = 32 on the Core i7, 1.1% slower. Two runs of this
+comparison on the Xeon 6975P-C, on different hosts, differed by less than
+0.2% on average.
+
+The AMD EPYC 7763 (Windows, MSVC) is the case the README warns about: MSVC
+cannot tell AMD from Intel, so the default build prefetches there too, and
+Zen does not gain from it. pffft was 6.5% faster than 1.1.0 below n = 4096
+but 0.5% slower from 4096 up, up to 12.0% at single lengths (complex
+n = 64; real lengths out of L1 lost up to 7%). Built with
+`PFFFT_PREFETCH_DIST=0`, as the README recommends for AMD CPUs, pffft was
+8.6% and 4.8% faster than 1.1.0 there, as fast as without the prefetching
+code (measured in another run, which also had the default build 6.4% faster
+and 0.1% slower).
 
 ## Machines
 
@@ -189,12 +201,14 @@ This runner exposes no cycle counter, so the chart is in measured time.
   where the CPU has it), except on Windows, where its CMake build has AVX2
   at most and no NEON (hence no FFTW on the Cobalt 100). vDSP is the
   system's Accelerate.
-- **Versions.** pffft is commit 5ffaad7, measured as commits 677d4ae and
-  3de6600, which have the same code (the CSV headers name those); 1.1.0 is
-  commit c14802c. The phones and the M2 ran the benchmark locally; the other
-  machines are GitHub-hosted runners (shared virtual machines), measured by
+- **Versions.** On the arm64 machines pffft is commit 5ffaad7, measured as
+  commits 677d4ae and 3de6600, which have the same code (the CSV headers
+  name those); on the x86 machines it is commit 1b88190, measured as an
+  earlier commit with the same code. 1.1.0 is commit c14802c. The phones
+  and the M2 ran the benchmark locally; the other machines are
+  GitHub-hosted runners (shared virtual machines), measured by
   .github/workflows/bench.yml, the comparisons on x86 with its `compare`
-  input set to `c14802c 3de6600`. GitHub's ubuntu-26.04 label lands on Intel
+  input set to c14802c and the measured commit. GitHub's ubuntu-26.04 label lands on Intel
   and AMD CPUs, some without a cycle counter; its runs were repeated until
   one ran on the Xeon 6975P-C with one.
 
