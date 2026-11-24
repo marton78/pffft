@@ -470,7 +470,7 @@ larger n; on x86 with Intel CPUs, 13 to 14% and 13 to 14.5%.
 [docs/benchmarks.md](docs/benchmarks.md) has the details.
 
 `bench_fft` measures pffft against other FFT libraries (FFTPACK, FFTW,
-KissFFT, PocketFFT, Green FFT, Apple's vDSP and Intel's MKL), across transform
+KissFFT, PocketFFT, Green FFT, Ooura's FFT, Apple's vDSP and Intel's MKL), across transform
 lengths, and against other revisions of pffft, on this computer, an attached
 Android phone or an attached iPhone. [benchmarks/README.md](benchmarks/README.md)
 explains how to use it and how it measures.
@@ -480,10 +480,11 @@ python3 benchmarks/run.py -o local.csv           # build and run the benchmark h
 python3 benchmarks/compare.py master .           # the working tree against master
 ```
 
-### Git submodules for Green-, Kiss-, and Pocket-FFT
+### Git submodules for Green-, Kiss-, Pocket- and Ooura's FFT
 The benchmarks compare against other FFT libraries. Sources for [Green-](https://github.com/hayguen/greenffts),
-[Kiss-](https://github.com/hayguen/kissfft)
-and [Pocket-FFT](https://github.com/hayguen/pocketfft)
+[Kiss-](https://github.com/hayguen/kissfft),
+[Pocket-FFT](https://github.com/hayguen/pocketfft)
+and [Ooura's FFT](https://github.com/hayguen/OouraFFT)
 can be downloaded directly with the sources of this repository - using git submodules:
 ```
 git clone --recursive https://github.com/marton78/pffft.git

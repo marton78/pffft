@@ -35,6 +35,7 @@ option(PFFFT_USE_BENCH_FFTW   "use FFTW3 from FFTW3_ROOT (see benchmarks/build_f
 option(PFFFT_USE_BENCH_GREEN  "use Green FFT in fft benchmark? - if exists in subdir" ON)
 option(PFFFT_USE_BENCH_KISS   "use KissFFT in fft benchmark? - if exists in subdir" ON)
 option(PFFFT_USE_BENCH_POCKET "use PocketFFT in fft benchmark? - if exists in subdir" ON)
+option(PFFFT_USE_BENCH_OOURA  "use Ooura's FFT in fft benchmark? - if exists in subdir" ON)
 option(PFFFT_USE_BENCH_MKL    "use Intel MKL in fft benchmark? needs to be installed" OFF)
 option(PFFFT_USE_FFTPACK      "compile and use FFTPACK in fft benchmark & validation?" ON)
 if (APPLE)

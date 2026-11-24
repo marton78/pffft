@@ -86,7 +86,7 @@ uv run --with matplotlib python3 benchmarks/plot.py mac-cmp.csv ios-cmp.csv --na
   `--time` takes the measured time throughout, `--per-cycle` plots flops per
   CPU cycle. A panel per precision and transform kind; per engine a solid
   line through the powers of two and a dashed one through the other lengths,
-  with a band for the range over trials. vdsp and green, which do only powers
+  with a band for the range over trials. vdsp, green and ooura, which do only powers
   of two, get a dotted line there as if padded: the flops of n at the cost of
   the next power of two. Vertical lines mark where 4 arrays of n samples fill
   a cache (a rough guide), if the CSV header gives cache sizes and all files
@@ -187,6 +187,7 @@ What it cannot do:
 | `kissfft` | submodule `kissfft` | f32 | any (real: even) | |
 | `pocketfft` | submodule `pocketfft` | f32, f64 | any | |
 | `green` | submodule `greenffts` | f32 | powers of two | not on Windows, where it crashes |
+| `ooura` | submodule `ooura`, Takuya Ooura's split-radix `fftsg.c` | f32, f64 | powers of two | |
 | `vdsp` | Apple Accelerate | f32, f64 | powers of two | Apple only; f32 from n = 256 or 512 slows the clock while it runs, and is charged for it (see above) |
 | `mkl` | Intel oneMKL | f32, f64 | any | not yet run with bench_fft |
 
@@ -284,7 +285,7 @@ There is one row per engine, precision (`f32`, `f64`), transform kind
 | `PFFFT_BUILD_BENCHMARKS` | ON if pffft is the top-level project | builds bench_fft, and the mixer and convolution benchmarks in `benchmarks/` |
 | `PFFFT_USE_TYPE_FLOAT`, `PFFFT_USE_TYPE_DOUBLE` | ON | the precisions bench_fft has |
 | `PFFFT_USE_FFTPACK` | ON | `fftpack` |
-| `PFFFT_USE_BENCH_KISS`, `_POCKET`, `_GREEN` | ON | `kissfft`, `pocketfft`, `green`, if the submodule is there (`git submodule update --init`) |
+| `PFFFT_USE_BENCH_KISS`, `_POCKET`, `_GREEN`, `_OOURA` | ON | `kissfft`, `pocketfft`, `green`, `ooura`, if the submodule is there (`git submodule update --init`) |
 | `PFFFT_USE_BENCH_VDSP` | ON (Apple only) | `vdsp` |
 | `PFFFT_USE_BENCH_FFTW` | OFF | `fftw-est`, `fftw-meas`; needs `FFTW3_ROOT`, a prefix made by `build_fftw.py` |
 | `PFFFT_USE_BENCH_MKL` | OFF | `mkl`; MKL's libraries and `<mkl/mkl_dfti.h>` must be on the compiler's paths |

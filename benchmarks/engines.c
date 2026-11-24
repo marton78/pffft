@@ -8,8 +8,9 @@
  *
  * pffft is always there. The build announces every other library with a
  * definition: HAVE_FFTPACK, HAVE_FFTW, HAVE_KISS_FFT, HAVE_POCKET_FFT,
- * HAVE_GREEN_FFTS, HAVE_VECLIB (Apple vDSP), HAVE_MKL. KissFFT and Green exist
- * for float only and drop out of the double build by themselves.
+ * HAVE_GREEN_FFTS, HAVE_OOURA_FFT, HAVE_VECLIB (Apple vDSP), HAVE_MKL.
+ * KissFFT and Green exist for float only and drop out of the double build by
+ * themselves.
  *
  * What keeps the comparison fair:
  *   - Every engine transforms the arrays of the driver, so that all engines
@@ -581,6 +582,79 @@ static void destroy_mkl(bench_instance *inst)
 #endif /* HAVE_MKL */
 
 /* ------------------------------------------------------------------------
+ * Ooura's FFT, the split-radix version (fftsg.c): powers of two only, in
+ * place. Its header compiles fftsg.c right here.
+ * ---------------------------------------------------------------------- */
+#ifdef HAVE_OOURA_FFT
+#include "engines_ooura.h"
+
+typedef struct state_ooura {
+  int *ip;   /* bit reversal work area; ip[0] == 0 asks for initialization */
+  scalar *w; /* cos/sin table */
+  int n, cplx;
+} state_ooura;
+
+static int create_ooura(const bench_engine *e, int n, int cplx, const bench_bufs *bufs,
+                        bench_instance *inst)
+{
+  scalar *x = bufs->buf[0];
+  state_ooura *s;
+  int root = 1;
+  (void)e;
+  if (n < 2 || (n & (n - 1)) != 0) return 1;
+  /* ip wants 2 + sqrt(n) ints, of n complex or n/2 real points; w n/2
+   * scalars */
+  while (root * root < n) root *= 2;
+  s = malloc(sizeof *s);
+  if (!s) return 1;
+  s->ip = malloc((size_t)(2 + root) * sizeof(int));
+  s->w = malloc((size_t)(n / 2) * sizeof(scalar));
+  if (!s->ip || !s->w) {
+    free(s->ip);
+    free(s->w);
+    free(s);
+    return 1;
+  }
+  s->n = n;
+  s->cplx = cplx;
+  /* the first call makes the tables */
+  s->ip[0] = 0;
+  if (cplx)
+    cdft(2 * n, -1, x, s->ip, s->w);
+  else
+    rdft(n, 1, x, s->ip, s->w);
+  /* the real pair scales by n/2: the inverse lacks a factor 2 */
+  return instance_ready(inst, s, bufs, IN_PLACE, n, cplx, cplx ? (double)n : 0.5 * n);
+}
+
+static void run_ooura(const bench_instance *inst, int pairs)
+{
+  const state_ooura *s = inst->state;
+  scalar *x = inst->in;
+  int i;
+  if (s->cplx) {
+    for (i = 0; i < pairs; i++) {
+      cdft(2 * s->n, -1, x, s->ip, s->w);
+      cdft(2 * s->n, 1, x, s->ip, s->w);
+    }
+  } else {
+    for (i = 0; i < pairs; i++) {
+      rdft(s->n, 1, x, s->ip, s->w);
+      rdft(s->n, -1, x, s->ip, s->w);
+    }
+  }
+}
+
+static void destroy_ooura(bench_instance *inst)
+{
+  state_ooura *s = inst->state;
+  free(s->ip);
+  free(s->w);
+  free(s);
+}
+#endif /* HAVE_OOURA_FFT */
+
+/* ------------------------------------------------------------------------
  * FFTPACK, the scalar code that pffft descends from: in place. This section
  * comes last because its header compiles fftpack.c right here, and that
  * brings short names such as real and integer with it.
@@ -666,6 +740,9 @@ int BENCH_ENGINES(bench_engine *list, int max)
 #endif
 #if defined(HAVE_GREEN_FFTS) && defined(BENCH_PREC_F32)
     {"green", create_green, run_green, destroy_green, NULL, 0},
+#endif
+#ifdef HAVE_OOURA_FFT
+    {"ooura", create_ooura, run_ooura, destroy_ooura, NULL, 0},
 #endif
 #ifdef HAVE_VECLIB
     {"vdsp", create_vdsp, run_vdsp, destroy_vdsp, NULL, 0},

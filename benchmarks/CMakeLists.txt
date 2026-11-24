@@ -28,7 +28,7 @@ if (PFFFT_USE_FFTPACK)
   list(APPEND bench_defs HAVE_FFTPACK)
 endif()
 
-# Green, Kiss and Pocket FFT are git submodules: git submodule update --init
+# Green, Kiss, Pocket and Ooura's FFT are git submodules: git submodule update --init
 # Their CMakeLists.txt ask for CMake 2.8, which CMake 4 rejects, so they get
 # the policies of this project instead.
 if (NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
@@ -74,6 +74,16 @@ if (PFFFT_USE_BENCH_KISS AND PFFFT_USE_TYPE_FLOAT)  # built for single precision
 endif()
 if (PFFFT_USE_BENCH_POCKET)
   bench_submodule(pocketfft PocketFFT HAVE_POCKET_FFT)
+endif()
+if (PFFFT_USE_BENCH_OOURA)
+  # not built with its own CMakeLists.txt, which makes many variants, tests and
+  # flags of its own: engines.c includes ooura/fftsg.c, like FFTPACK
+  if (EXISTS "${PFFFT_SOURCE_DIR}/ooura/fftsg.c")
+    list(APPEND bench_defs HAVE_OOURA_FFT)
+    list(APPEND bench_incs "${PFFFT_SOURCE_DIR}/ooura/include")
+  else()
+    message(WARNING "Ooura's FFT not found in subdir ooura: fetch it with 'git submodule update --init'")
+  endif()
 endif()
 
 if (PFFFT_USE_BENCH_FFTW)
