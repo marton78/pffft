@@ -776,19 +776,26 @@ int main(int argc, char **argv)
   if (!resIsPw2)
     printf("tests for pffft_is_power_of_two() succeeded successfully.\n");
 
-  /* powers of two exercise only the radix-2/4 codelets, and the complex
-     radix-8 one, which takes the place of the radix-2 and the last
-     radix-4 pass where the length has an odd power of two (complex 32,
-     128, ..., 32768; also 96, 160, 288, 480, 800, 1152, 2592, 4000,
-     12000). The remaining
+  /* powers of two exercise only the radix-4 codelets and the radix-8
+     ones, which take the place of the radix-2 pass and a radix-4 one
+     where N/SIMD_SZ has an odd power of two (with SIMD_SZ == 4, complex
+     and real 32, 128, ..., 32768 and 160, 800, 4000; real also 12000).
+     Where there is also a 3, a radix-6 pass takes the place of the
+     radix-2 pass and a radix-3 one instead: in the complex transform at
+     any size (96, 288, 480, 1152, 2592, 12000), in the real one while an
+     array takes at most 32 KiB (96, 288, 480, 1152, 2592). The remaining
      sizes cover radix-3 and radix-5 in every position the factorization
      order {4,2,3,5} can put them: 3*2^k (96, 192), 5*2^k (160), 9*2^k
-     (288, 576, 1152), 15*2^k (480), 25*2^k (800), 81*32 (2592), 125*32
-     (4000) and 375*32 (12000). All are multiples of 32, so they are
-     valid REAL and COMPLEX sizes for every SIMD_SZ. */
+     (288, 576, 1152), 15*2^k (480, 960), 25*2^k (800, 1600), 81*32
+     (2592), 125*32 (4000) and 375*32 (12000). In the real transform the
+     radix-8 or radix-6 pass comes after the 3s and 5s, which then have an
+     even ido (with SIMD_SZ == 4, 160 and 288); where N/SIMD_SZ has no
+     lone 2, they have an odd one (960: a 3 at ido 5, 1600: a 5 at ido 5,
+     192 and 576: a 3 at ido 1 and 3). All are multiples of 32, so they
+     are valid REAL and COMPLEX sizes for every SIMD_SZ. */
   {
     static const int sizes[] = { 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536,
-                                 96, 160, 192, 288, 480, 576, 800, 1152, 2592, 4000, 12000 };
+                                 96, 160, 192, 288, 480, 576, 800, 960, 1152, 1600, 2592, 4000, 12000 };
     resFFT = 0;
     for ( i = 0; i < (int)(sizeof(sizes)/sizeof(sizes[0])); ++i )
     {
@@ -811,6 +818,30 @@ int main(int argc, char **argv)
 
       if (!resN)
         printf("tests for size %d succeeded successfully.\n", N);
+    }
+  }
+  /* the real radix-2 codelets, which run only where N/SIMD_SZ has a lone 2
+     and no 4 to merge it into a radix-8 pass: never with SIMD_SZ == 4,
+     where these sizes are not valid; with SIMD_SZ == 1, N = 2 mod 4 */
+  {
+    static const int sizes[] = { 150, 162, 250 };
+    for ( i = 0; i < (int)(sizeof(sizes)/sizeof(sizes[0])); ++i )
+    {
+      N = sizes[i];
+#ifdef PFFFT_ENABLE_FLOAT
+      if (!pffft_is_valid_size(N, PFFFT_REAL))
+#else
+      if (!pffftd_is_valid_size(N, PFFFT_REAL))
+#endif
+        continue;
+      result = test(N, 0 /* cplx fft */, 1 /* useOrdered */);
+      resN = result;
+      resFFT |= result;
+      result = test(N, 0 /* cplx fft */, 0 /* useOrdered */);
+      resN |= result;
+      resFFT |= result;
+      if (!resN)
+        printf("tests for real size %d succeeded successfully.\n", N);
     }
   }
 

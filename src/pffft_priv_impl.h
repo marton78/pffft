@@ -596,6 +596,102 @@ static NEVER_INLINE(void) passf8_pf_ps(int ido, int l1, const v4sf * RESTRICT cc
 }
 #endif
 
+/*
+  passf6 and passb6 merged here, fsign = -1 for passf6, +1 for passb6
+
+  cffti1_ps puts a factor 6 only last, in place of the lone 2 and a 3, so
+  as for passf8_ps the ido passed here is 2: each leg is one complex
+  vector, and no twiddles. As 2 and 3 are coprime, the 6-point DFT needs
+  no twiddles inside either (Good-Thomas): with the input index
+  n = 3*n1 + 2*n2 mod 6 and the output index m = m1 mod 2, m = m2 mod 3,
+  w6^(n*m) = (-1)^(n1*m1) * w3^(n2*m2). So a DFT-2 of each pair (x0, x3),
+  (x2, x5), (x4, x1) (n1 = 0, 1 for n2 = 0, 1, 2), then a DFT-3 of the
+  sums (m1 = 0) gives y0, y4, y2 and one of the differences (m1 = 1)
+  y3, y1, y5 (m2 = 0, 1, 2). That is 32 vector adds, 4 multiply-adds and
+  4 multiplies per k, for 6 legs; passf8_ps takes 52 adds and 4
+  multiplies for its 8.
+*/
+static ALWAYS_INLINE(void) passf6_loop_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float fsign,
+                                          const int pf) {
+  static const float taur = (float)-0.5;                    /* cos(2*pi/3) */
+  static const float taui = (float)0.86602540378443864676;  /* sin(2*pi/3) = sqrt(3)/2 */
+  const int l1ido = 2*l1;
+  int k;
+
+  for (k = 0; k < l1ido; k += 2, cc += 12, ch += 2) {
+    PF_PREFETCH(pf, ch, 1);
+    PF_PREFETCH(pf, ch + 1*l1ido, 1);
+    PF_PREFETCH(pf, ch + 2*l1ido, 1);
+    PF_PREFETCH(pf, ch + 3*l1ido, 1);
+    PF_PREFETCH(pf, ch + 4*l1ido, 1);
+    PF_PREFETCH(pf, ch + 5*l1ido, 1);
+    /* Load 6 inputs: cc[2*leg + 0] = real, cc[2*leg + 1] = imag */
+    v4sf x0r = cc[ 0], x0i = cc[ 1];
+    v4sf x1r = cc[ 2], x1i = cc[ 3];
+    v4sf x2r = cc[ 4], x2i = cc[ 5];
+    v4sf x3r = cc[ 6], x3i = cc[ 7];
+    v4sf x4r = cc[ 8], x4i = cc[ 9];
+    v4sf x5r = cc[10], x5i = cc[11];
+
+    /* DFT-2 of (x0, x3), (x2, x5), (x4, x1) */
+    v4sf s0r = VADD(x0r, x3r), s0i = VADD(x0i, x3i);
+    v4sf s1r = VADD(x2r, x5r), s1i = VADD(x2i, x5i);
+    v4sf s2r = VADD(x4r, x1r), s2i = VADD(x4i, x1i);
+    v4sf d0r = VSUB(x0r, x3r), d0i = VSUB(x0i, x3i);
+    v4sf d1r = VSUB(x2r, x5r), d1i = VSUB(x2i, x5i);
+    v4sf d2r = VSUB(x4r, x1r), d2i = VSUB(x4i, x1i);
+
+    /* DFT-3 of the sums -> y0, y4, y2. With c = s0 + taur*(s1 + s2) and
+       u = taui*(s1 - s2): Y1 = c + fsign*j*u, Y2 = c - fsign*j*u */
+    {
+      v4sf tr = VADD(s1r, s2r), ti = VADD(s1i, s2i);
+      v4sf cr = SVMADD(taur, tr, s0r), ci = SVMADD(taur, ti, s0i);
+      v4sf ur = SVMUL(taui, VSUB(s1r, s2r)), ui = SVMUL(taui, VSUB(s1i, s2i));
+      ch[0*l1ido + 0] = VADD(s0r, tr);
+      ch[0*l1ido + 1] = VADD(s0i, ti);
+      ch[4*l1ido + 0] = VSUB_FSIGN(cr, ui);
+      ch[4*l1ido + 1] = VADD_FSIGN(ci, ur);
+      ch[2*l1ido + 0] = VADD_FSIGN(cr, ui);
+      ch[2*l1ido + 1] = VSUB_FSIGN(ci, ur);
+    }
+
+    /* DFT-3 of the differences -> y3, y1, y5 */
+    {
+      v4sf tr = VADD(d1r, d2r), ti = VADD(d1i, d2i);
+      v4sf cr = SVMADD(taur, tr, d0r), ci = SVMADD(taur, ti, d0i);
+      v4sf ur = SVMUL(taui, VSUB(d1r, d2r)), ui = SVMUL(taui, VSUB(d1i, d2i));
+      ch[3*l1ido + 0] = VADD(d0r, tr);
+      ch[3*l1ido + 1] = VADD(d0i, ti);
+      ch[1*l1ido + 0] = VSUB_FSIGN(cr, ui);
+      ch[1*l1ido + 1] = VADD_FSIGN(ci, ur);
+      ch[5*l1ido + 0] = VADD_FSIGN(cr, ui);
+      ch[5*l1ido + 1] = VSUB_FSIGN(ci, ur);
+    }
+  }
+}
+
+/* fsign as a constant, as in passf8_ps */
+static NEVER_INLINE(void) passf6_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, float fsign) {
+  assert(ido == 2);
+  (void)ido;
+  if (fsign < 0) {
+    passf6_loop_ps(l1, cc, ch, -1, 0);
+  } else {
+    passf6_loop_ps(l1, cc, ch, +1, 0);
+  }
+} /* passf6 */
+#if PF_ON
+static NEVER_INLINE(void) passf6_pf_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, float fsign) {
+  assert(ido == 2);
+  (void)ido;
+  if (fsign < 0) {
+    passf6_loop_ps(l1, cc, ch, -1, 1);
+  } else {
+    passf6_loop_ps(l1, cc, ch, +1, 1);
+  }
+}
+#endif
+
 #undef VADD_FSIGN
 #undef VSUB_FSIGN
 
@@ -688,11 +784,81 @@ static NEVER_INLINE(void) radb2_pf_ps(int ido, int l1, const v4sf * RESTRICT cc,
 }
 #endif
 
+/*
+  The odd-radix passes, radf3/radb3 and radf5/radb5, take an even ido
+  too, so that rffti1_ps can put a radix-8 or radix-6 pass last, after
+  the 3s and 5s. The i-loop handles the complex pairs (i-1, i) of each leg; with ido
+  even, that leaves the last element, ido-1: the leg's Nyquist term, a
+  real x_j at frequency ido/2. Its twiddle is exp(-i*pi*j/p), the table's
+  exp(-2*i*pi*j*f/(p*ido)) at f = ido/2, so it needs no table entry. For
+  a radix p pass, the p of them make the output frequencies (2m+1)*ido/2:
+    X_m = sum_j x_j exp(-i*pi*j*(2m+1)/p),  m = 0 .. (p-1)/2,
+  the rest being their conjugates. Re X_m goes to ch(ido-1, 2m) and
+  Im X_m to ch(0, 2m+1), the half-complex places of frequency
+  (2m+1)*ido/2 in the output block of p*ido, and the real
+  X_(p-1)/2 = x0 - x1 + x2 - ... is the block's Nyquist term, at
+  ch(ido-1, p-1). Backward, unnormalized like the rest,
+    x_j = 2 Re sum_{m < (p-1)/2} X_m exp(i*pi*j*(2m+1)/p) + (-1)^j X_(p-1)/2.
+  radf4/radb4 do the same in their ido % 2 == 0 tails.
+*/
+/* the i-loop of radf3_loop_ps over all k; with even (ido even), each k
+   ends with its Nyquist terms, while its blocks are still in cache.
+   even is a constant, as pf is, so the odd-ido loop compiles as if
+   the tail were not there. */
+static ALWAYS_INLINE(void) radf3_rows_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                                       const float *wa1, const float *wa2,
+                                       const int pf, const int even)
+{
+  static const float taur = (float)-0.5;                     /* cos(2*pi/3)   */
+  static const float taui = (float)0.86602540378443864676;   /* sin(2*pi/3) = sqrt(3)/2 */
+  static const float minus_taui = (float)-0.86602540378443864676;
+  int i, k, ic;
+  v4sf ci2, di2, di3, cr2, dr2, dr3, ti2, ti3, tr2, tr3, wr1, wi1, wr2, wi2;
+  for (k=0; k<l1; k++) {
+    for (i=2; i<ido; i+=2) {
+      ic = ido - i;
+      PF_PREFETCH(pf, ch + i - 1 + 3*k*ido, 1);
+      PF_PREFETCH(pf, ch + i - 1 + (3*k + 2)*ido, 1);
+      PF_PREFETCH(pf, ch + ic - 1 + (3*k + 1)*ido, -1);
+      wr1 = LD_PS1(wa1[i - 2]); wi1 = LD_PS1(wa1[i - 1]);
+      dr2 = cc[i - 1 + (k + l1)*ido]; di2 = cc[i + (k + l1)*ido];
+      VCPLXMULCONJ(dr2, di2, wr1, wi1);
+
+      wr2 = LD_PS1(wa2[i - 2]); wi2 = LD_PS1(wa2[i - 1]);
+      dr3 = cc[i - 1 + (k + l1*2)*ido]; di3 = cc[i + (k + l1*2)*ido];
+      VCPLXMULCONJ(dr3, di3, wr2, wi2);
+
+      cr2 = VADD(dr2, dr3);
+      ci2 = VADD(di2, di3);
+      ch[i - 1 + 3*k*ido] = VADD(cc[i - 1 + k*ido], cr2);
+      ch[i + 3*k*ido] = VADD(cc[i + k*ido], ci2);
+      tr2 = SVMADD(taur, cr2, cc[i - 1 + k*ido]);
+      ti2 = SVMADD(taur, ci2, cc[i + k*ido]);
+      tr3 = SVMUL(taui, VSUB(di2, di3));
+      ti3 = SVMUL(taui, VSUB(dr3, dr2));
+      ch[i - 1 + (3*k + 2)*ido] = VADD(tr2, tr3);
+      ch[ic - 1 + (3*k + 1)*ido] = VSUB(tr2, tr3);
+      ch[i + (3*k + 2)*ido] = VADD(ti2, ti3);
+      ch[ic + (3*k + 1)*ido] = VSUB(ti3, ti2);
+    }
+    if (even) {
+      /* the Nyquist terms x_j (see above): with W = exp(-i*pi/3),
+         X0 = x0 + x1 W + x2 W^2 = x0 + (x1 - x2)/2 - i sin(pi/3) (x1 + x2)
+         and X1 = x0 - x1 + x2 */
+      v4sf x0 = cc[ido-1 + k*ido], x1 = cc[ido-1 + (k + l1)*ido], x2 = cc[ido-1 + (k + 2*l1)*ido];
+      v4sf d = VSUB(x2, x1);
+      ch[ido-1 + 3*k*ido] = SVMADD(taur, d, x0);                /* Re X0 */
+      ch[(3*k + 1)*ido] = SVMUL(minus_taui, VADD(x1, x2));      /* Im X0 */
+      ch[ido-1 + (3*k + 2)*ido] = VADD(x0, d);                  /* X1 */
+    }
+  }
+}
+
 static ALWAYS_INLINE(void) radf3_loop_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
                      const float *wa1, const float *wa2, const int pf) {
   static const float taur = (float)-0.5;                     /* cos(2*pi/3)   */
   static const float taui = (float)0.86602540378443864676;   /* sin(2*pi/3) = sqrt(3)/2 */
-  int i, k, ic;
+  int k;
   v4sf ci2, di2, di3, cr2, dr2, dr3, ti2, ti3, tr2, tr3, wr1, wi1, wr2, wi2;
   for (k=0; k<l1; k++) {
     cr2 = VADD(cc[(k + l1)*ido], cc[(k + 2*l1)*ido]);
@@ -725,33 +891,10 @@ static ALWAYS_INLINE(void) radf3_loop_ps(int ido, int l1, const v4sf * RESTRICT 
     }
     return;
   }
-  for (k=0; k<l1; k++) {
-    for (i=2; i<ido; i+=2) {
-      ic = ido - i;
-      PF_PREFETCH(pf, ch + i - 1 + 3*k*ido, 1);
-      PF_PREFETCH(pf, ch + i - 1 + (3*k + 2)*ido, 1);
-      PF_PREFETCH(pf, ch + ic - 1 + (3*k + 1)*ido, -1);
-      wr1 = LD_PS1(wa1[i - 2]); wi1 = LD_PS1(wa1[i - 1]);
-      dr2 = cc[i - 1 + (k + l1)*ido]; di2 = cc[i + (k + l1)*ido];
-      VCPLXMULCONJ(dr2, di2, wr1, wi1);
-
-      wr2 = LD_PS1(wa2[i - 2]); wi2 = LD_PS1(wa2[i - 1]);
-      dr3 = cc[i - 1 + (k + l1*2)*ido]; di3 = cc[i + (k + l1*2)*ido];
-      VCPLXMULCONJ(dr3, di3, wr2, wi2);
-
-      cr2 = VADD(dr2, dr3);
-      ci2 = VADD(di2, di3);
-      ch[i - 1 + 3*k*ido] = VADD(cc[i - 1 + k*ido], cr2);
-      ch[i + 3*k*ido] = VADD(cc[i + k*ido], ci2);
-      tr2 = SVMADD(taur, cr2, cc[i - 1 + k*ido]);
-      ti2 = SVMADD(taur, ci2, cc[i + k*ido]);
-      tr3 = SVMUL(taui, VSUB(di2, di3));
-      ti3 = SVMUL(taui, VSUB(dr3, dr2));
-      ch[i - 1 + (3*k + 2)*ido] = VADD(tr2, tr3);
-      ch[ic - 1 + (3*k + 1)*ido] = VSUB(tr2, tr3);
-      ch[i + (3*k + 2)*ido] = VADD(ti2, ti3);
-      ch[ic + (3*k + 1)*ido] = VSUB(ti3, ti2);
-    }
+  if (ido & 1) {
+    radf3_rows_ps(ido, l1, cc, ch, wa1, wa2, pf, 0);
+  } else {
+    radf3_rows_ps(ido, l1, cc, ch, wa1, wa2, pf, 1);
   }
 }
 
@@ -767,13 +910,63 @@ static NEVER_INLINE(void) radf3_pf_ps(int ido, int l1, const v4sf * RESTRICT cc,
 #endif
 
 
+/* the i-loop of radb3_loop_ps over all k; with even (ido even), each k
+   ends with its Nyquist terms, while its blocks are still in cache.
+   even is a constant, as pf is, so the odd-ido loop compiles as if
+   the tail were not there. */
+static ALWAYS_INLINE(void) radb3_rows_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                                       const float *wa1, const float *wa2,
+                                       const int pf, const int even)
+{
+  static const float taur = (float)-0.5;                     /* cos(2*pi/3)   */
+  static const float taui = (float)0.86602540378443864676;   /* sin(2*pi/3) = sqrt(3)/2 */
+  static const float minus_taui_2 = (float)-1.7320508075688772935;
+  int i, k, ic;
+  v4sf ci2, ci3, di2, di3, cr2, cr3, dr2, dr3, ti2, tr2;
+  for (k=0; k<l1; k++) {
+    for (i=2; i<ido; i+=2) {
+      ic = ido - i;
+      PF_PREFETCH(pf, ch + i - 1 + k*ido, 1);
+      PF_PREFETCH(pf, ch + i - 1 + (k + l1)*ido, 1);
+      PF_PREFETCH(pf, ch + i - 1 + (k + 2*l1)*ido, 1);
+      tr2 = VADD(cc[i - 1 + (3*k + 2)*ido], cc[ic - 1 + (3*k + 1)*ido]);
+      cr2 = SVMADD(taur, tr2, cc[i - 1 + 3*k*ido]);
+      ch[i - 1 + k*ido] = VADD(cc[i - 1 + 3*k*ido], tr2);
+      ti2 = VSUB(cc[i + (3*k + 2)*ido], cc[ic + (3*k + 1)*ido]);
+      ci2 = SVMADD(taur, ti2, cc[i + 3*k*ido]);
+      ch[i + k*ido] = VADD(cc[i + 3*k*ido], ti2);
+      cr3 = SVMUL(taui, VSUB(cc[i - 1 + (3*k + 2)*ido], cc[ic - 1 + (3*k + 1)*ido]));
+      ci3 = SVMUL(taui, VADD(cc[i + (3*k + 2)*ido], cc[ic + (3*k + 1)*ido]));
+      dr2 = VSUB(cr2, ci3);
+      dr3 = VADD(cr2, ci3);
+      di2 = VADD(ci2, cr3);
+      di3 = VSUB(ci2, cr3);
+      VCPLXMUL(dr2, di2, LD_PS1(wa1[i-2]), LD_PS1(wa1[i-1]));
+      ch[i - 1 + (k + l1)*ido] = dr2;
+      ch[i + (k + l1)*ido] = di2;
+      VCPLXMUL(dr3, di3, LD_PS1(wa2[i-2]), LD_PS1(wa2[i-1]));
+      ch[i - 1 + (k + 2*l1)*ido] = dr3;
+      ch[i + (k + 2*l1)*ido] = di3;
+    }
+    if (even) {
+      /* the Nyquist terms, from Re X0, Im X0 and X1 (see above radf3_loop_ps):
+         x0 = 2 Re X0 + X1, x1, x2 = +-(Re X0 - X1) - sqrt(3) Im X0 */
+      v4sf r = cc[ido-1 + 3*k*ido], im = cc[(3*k + 1)*ido], q = cc[ido-1 + (3*k + 2)*ido];
+      v4sf d = VSUB(r, q), w = SVMUL(minus_taui_2, im);
+      ch[ido-1 + k*ido] = VADD(VADD(r, r), q);
+      ch[ido-1 + (k + l1)*ido] = VADD(d, w);
+      ch[ido-1 + (k + 2*l1)*ido] = VSUB(w, d);
+    }
+  }
+}
+
 static ALWAYS_INLINE(void) radb3_loop_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
                      const float *wa1, const float *wa2, const int pf)
 {
   static const float taur = (float)-0.5;                     /* cos(2*pi/3)   */
   static const float taui = (float)0.86602540378443864676;   /* sin(2*pi/3) = sqrt(3)/2 */
   static const float taui_2 = (float)1.7320508075688772935;  /* 2*sin(2*pi/3) = sqrt(3) */
-  int i, k, ic;
+  int k;
   v4sf ci2, ci3, di2, di3, cr2, cr3, dr2, dr3, ti2, tr2;
   for (k=0; k<l1; k++) {
     tr2 = cc[ido-1 + (3*k + 1)*ido]; tr2 = VADD(tr2,tr2);
@@ -810,31 +1003,10 @@ static ALWAYS_INLINE(void) radb3_loop_ps(int ido, int l1, const v4sf *RESTRICT c
     }
     return;
   }
-  for (k=0; k<l1; k++) {
-    for (i=2; i<ido; i+=2) {
-      ic = ido - i;
-      PF_PREFETCH(pf, ch + i - 1 + k*ido, 1);
-      PF_PREFETCH(pf, ch + i - 1 + (k + l1)*ido, 1);
-      PF_PREFETCH(pf, ch + i - 1 + (k + 2*l1)*ido, 1);
-      tr2 = VADD(cc[i - 1 + (3*k + 2)*ido], cc[ic - 1 + (3*k + 1)*ido]);
-      cr2 = SVMADD(taur, tr2, cc[i - 1 + 3*k*ido]);
-      ch[i - 1 + k*ido] = VADD(cc[i - 1 + 3*k*ido], tr2);
-      ti2 = VSUB(cc[i + (3*k + 2)*ido], cc[ic + (3*k + 1)*ido]);
-      ci2 = SVMADD(taur, ti2, cc[i + 3*k*ido]);
-      ch[i + k*ido] = VADD(cc[i + 3*k*ido], ti2);
-      cr3 = SVMUL(taui, VSUB(cc[i - 1 + (3*k + 2)*ido], cc[ic - 1 + (3*k + 1)*ido]));
-      ci3 = SVMUL(taui, VADD(cc[i + (3*k + 2)*ido], cc[ic + (3*k + 1)*ido]));
-      dr2 = VSUB(cr2, ci3);
-      dr3 = VADD(cr2, ci3);
-      di2 = VADD(ci2, cr3);
-      di3 = VSUB(ci2, cr3);
-      VCPLXMUL(dr2, di2, LD_PS1(wa1[i-2]), LD_PS1(wa1[i-1]));
-      ch[i - 1 + (k + l1)*ido] = dr2;
-      ch[i + (k + l1)*ido] = di2;
-      VCPLXMUL(dr3, di3, LD_PS1(wa2[i-2]), LD_PS1(wa2[i-1]));
-      ch[i - 1 + (k + 2*l1)*ido] = dr3;
-      ch[i + (k + 2*l1)*ido] = di3;
-    }
+  if (ido & 1) {
+    radb3_rows_ps(ido, l1, cc, ch, wa1, wa2, pf, 0);
+  } else {
+    radb3_rows_ps(ido, l1, cc, ch, wa1, wa2, pf, 1);
   }
 }
 
@@ -1121,14 +1293,20 @@ static NEVER_INLINE(void) radb4_pf_ps(int ido, int l1, const v4sf * RESTRICT cc,
 }
 #endif
 
-static ALWAYS_INLINE(void) radf5_loop_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
-                     const float *wa1, const float *wa2, const float *wa3, const float *wa4,
-                     const int pf)
+/* the i-loop of radf5_loop_ps over all k; with even (ido even), each k
+   ends with its Nyquist terms, while its blocks are still in cache.
+   even is a constant, as pf is, so the odd-ido loop compiles as if
+   the tail were not there. */
+static ALWAYS_INLINE(void) radf5_rows_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                                       const float *wa1, const float *wa2,
+                                       const float *wa3, const float *wa4,
+                                       const int pf, const int even)
 {
   static const float tr11 = (float)0.30901699437494742410;   /* cos(2*pi/5) = (sqrt(5)-1)/4 */
   static const float ti11 = (float)0.95105651629515357212;   /* sin(2*pi/5) */
   static const float tr12 = (float)-0.80901699437494742410;  /* cos(4*pi/5) = -(sqrt(5)+1)/4 */
   static const float ti12 = (float)0.58778525229247312917;   /* sin(4*pi/5) */
+  static const float minus_ti11 = (float)-0.95105651629515357212;
 
   /* System generated locals */
   int cc_offset, ch_offset;
@@ -1149,22 +1327,6 @@ static ALWAYS_INLINE(void) radf5_loop_ps(int ido, int l1, const v4sf * RESTRICT 
   cc_offset = 1 + ido * (1 + l1);
   cc -= cc_offset;
 
-  /* Function Body */
-  for (k = 1; k <= l1; ++k) {
-    cr2 = VADD(cc_ref(1, k, 5), cc_ref(1, k, 2));
-    ci5 = VSUB(cc_ref(1, k, 5), cc_ref(1, k, 2));
-    cr3 = VADD(cc_ref(1, k, 4), cc_ref(1, k, 3));
-    ci4 = VSUB(cc_ref(1, k, 4), cc_ref(1, k, 3));
-    ch_ref(1, 1, k) = VADD(cc_ref(1, k, 1), VADD(cr2, cr3));
-    ch_ref(ido, 2, k) = VADD(cc_ref(1, k, 1), SVMADD(tr11, cr2, SVMUL(tr12, cr3)));
-    ch_ref(1, 3, k) = SVMADD(ti11, ci5, SVMUL(ti12, ci4));
-    ch_ref(ido, 4, k) = VADD(cc_ref(1, k, 1), SVMADD(tr12, cr2, SVMUL(tr11, cr3)));
-    ch_ref(1, 5, k) = SVMSUB(ti11, ci4, SVMUL(ti12, ci5));
-    /* printf("pffft: radf5, k=%d ch_ref=%f, ci4=%f\n", k, ch_ref(1, 5, k), ci4); */
-  }
-  if (ido == 1) {
-    return;
-  }
   idp2 = ido + 2;
   for (k = 1; k <= l1; ++k) {
     for (i = 3; i <= ido; i += 2) {
@@ -1209,6 +1371,76 @@ static ALWAYS_INLINE(void) radf5_loop_ps(int ido, int l1, const v4sf * RESTRICT 
       ch_ref(i, 5, k) = VADD(ti3, ti4);
       ch_ref(ic, 4, k) = VSUB(ti4, ti3);
     }
+    if (even) {
+      /* the Nyquist terms x_j (see above radf3_loop_ps): with
+         W = exp(-i*pi/5), X0 = sum_j x_j W^j and X1 = sum_j x_j W^(3j) are
+           Re X0 = x0 - cos(pi/5) (x4 - x1) + cos(2*pi/5) (x2 - x3),
+           Im X0 = -sin(pi/5) (x1 + x4) - sin(2*pi/5) (x2 + x3),
+           Re X1 = x0 + cos(2*pi/5) (x4 - x1) - cos(pi/5) (x2 - x3),
+           Im X1 = sin(pi/5) (x2 + x3) - sin(2*pi/5) (x1 + x4),
+         and X2 = x0 - x1 + x2 - x3 + x4. cos(pi/5) = -tr12, sin(pi/5) = ti12. */
+      v4sf x0 = cc_ref(ido, k, 1);
+      v4sf a = VSUB(cc_ref(ido, k, 5), cc_ref(ido, k, 2));   /* x4 - x1 */
+      v4sf b = VSUB(cc_ref(ido, k, 3), cc_ref(ido, k, 4));   /* x2 - x3 */
+      v4sf c = VADD(cc_ref(ido, k, 2), cc_ref(ido, k, 5));   /* x1 + x4 */
+      v4sf d = VADD(cc_ref(ido, k, 3), cc_ref(ido, k, 4));   /* x2 + x3 */
+      ch_ref(ido, 1, k) = VADD(x0, SVMADD(tr12, a, SVMUL(tr11, b)));
+      ch_ref(1, 2, k) = SVMSUB(ti12, c, SVMUL(minus_ti11, d));
+      ch_ref(ido, 3, k) = VADD(x0, SVMADD(tr11, a, SVMUL(tr12, b)));
+      ch_ref(1, 4, k) = SVMSUB(ti11, c, SVMUL(ti12, d));
+      ch_ref(ido, 5, k) = VADD(x0, VADD(a, b));
+    }
+  }
+#undef cc_ref
+#undef ch_ref
+}
+
+static ALWAYS_INLINE(void) radf5_loop_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                     const float *wa1, const float *wa2, const float *wa3, const float *wa4,
+                     const int pf)
+{
+  static const float tr11 = (float)0.30901699437494742410;   /* cos(2*pi/5) = (sqrt(5)-1)/4 */
+  static const float ti11 = (float)0.95105651629515357212;   /* sin(2*pi/5) */
+  static const float tr12 = (float)-0.80901699437494742410;  /* cos(4*pi/5) = -(sqrt(5)+1)/4 */
+  static const float ti12 = (float)0.58778525229247312917;   /* sin(4*pi/5) */
+
+  /* System generated locals */
+  int cc_offset, ch_offset;
+
+  /* Local variables */
+  int k;
+  v4sf ci4, ci5, cr2, cr3;
+
+
+#define cc_ref(a_1,a_2,a_3) cc[((a_3)*l1 + (a_2))*ido + a_1]
+#define ch_ref(a_1,a_2,a_3) ch[((a_3)*5 + (a_2))*ido + a_1]
+
+  /* Parameter adjustments */
+  ch_offset = 1 + ido * 6;
+  ch -= ch_offset;
+  cc_offset = 1 + ido * (1 + l1);
+  cc -= cc_offset;
+
+  /* Function Body */
+  for (k = 1; k <= l1; ++k) {
+    cr2 = VADD(cc_ref(1, k, 5), cc_ref(1, k, 2));
+    ci5 = VSUB(cc_ref(1, k, 5), cc_ref(1, k, 2));
+    cr3 = VADD(cc_ref(1, k, 4), cc_ref(1, k, 3));
+    ci4 = VSUB(cc_ref(1, k, 4), cc_ref(1, k, 3));
+    ch_ref(1, 1, k) = VADD(cc_ref(1, k, 1), VADD(cr2, cr3));
+    ch_ref(ido, 2, k) = VADD(cc_ref(1, k, 1), SVMADD(tr11, cr2, SVMUL(tr12, cr3)));
+    ch_ref(1, 3, k) = SVMADD(ti11, ci5, SVMUL(ti12, ci4));
+    ch_ref(ido, 4, k) = VADD(cc_ref(1, k, 1), SVMADD(tr12, cr2, SVMUL(tr11, cr3)));
+    ch_ref(1, 5, k) = SVMSUB(ti11, ci4, SVMUL(ti12, ci5));
+    /* printf("pffft: radf5, k=%d ch_ref=%f, ci4=%f\n", k, ch_ref(1, 5, k), ci4); */
+  }
+  if (ido == 1) {
+    return;
+  }
+  if (ido & 1) {
+    radf5_rows_ps(ido, l1, cc + cc_offset, ch + ch_offset, wa1, wa2, wa3, wa4, pf, 0);
+  } else {
+    radf5_rows_ps(ido, l1, cc + cc_offset, ch + ch_offset, wa1, wa2, wa3, wa4, pf, 1);
   }
 #undef cc_ref
 #undef ch_ref
@@ -1225,14 +1457,20 @@ static NEVER_INLINE(void) radf5_pf_ps(int ido, int l1, const v4sf * RESTRICT cc,
 }
 #endif
 
-static ALWAYS_INLINE(void) radb5_loop_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
-                  const float *wa1, const float *wa2, const float *wa3, const float *wa4,
-                  const int pf)
+/* the i-loop of radb5_loop_ps over all k; with even (ido even), each k
+   ends with its Nyquist terms, while its blocks are still in cache.
+   even is a constant, as pf is, so the odd-ido loop compiles as if
+   the tail were not there. */
+static ALWAYS_INLINE(void) radb5_rows_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                                       const float *wa1, const float *wa2,
+                                       const float *wa3, const float *wa4,
+                                       const int pf, const int even)
 {
   static const float tr11 = (float)0.30901699437494742410;   /* cos(2*pi/5) = (sqrt(5)-1)/4 */
   static const float ti11 = (float)0.95105651629515357212;   /* sin(2*pi/5) */
   static const float tr12 = (float)-0.80901699437494742410;  /* cos(4*pi/5) = -(sqrt(5)+1)/4 */
   static const float ti12 = (float)0.58778525229247312917;   /* sin(4*pi/5) */
+  static const float minus_ti11 = (float)-0.95105651629515357212;
 
   int cc_offset, ch_offset;
 
@@ -1251,25 +1489,6 @@ static ALWAYS_INLINE(void) radb5_loop_ps(int ido, int l1, const v4sf *RESTRICT c
   cc_offset = 1 + ido * 6;
   cc -= cc_offset;
 
-  /* Function Body */
-  for (k = 1; k <= l1; ++k) {
-    ti5 = VADD(cc_ref(1, 3, k), cc_ref(1, 3, k));
-    ti4 = VADD(cc_ref(1, 5, k), cc_ref(1, 5, k));
-    tr2 = VADD(cc_ref(ido, 2, k), cc_ref(ido, 2, k));
-    tr3 = VADD(cc_ref(ido, 4, k), cc_ref(ido, 4, k));
-    ch_ref(1, k, 1) = VADD(cc_ref(1, 1, k), VADD(tr2, tr3));
-    cr2 = VADD(cc_ref(1, 1, k), SVMADD(tr11, tr2, SVMUL(tr12, tr3)));
-    cr3 = VADD(cc_ref(1, 1, k), SVMADD(tr12, tr2, SVMUL(tr11, tr3)));
-    ci5 = SVMADD(ti11, ti5, SVMUL(ti12, ti4));
-    ci4 = SVMSUB(ti11, ti4, SVMUL(ti12, ti5));
-    ch_ref(1, k, 2) = VSUB(cr2, ci5);
-    ch_ref(1, k, 3) = VSUB(cr3, ci4);
-    ch_ref(1, k, 4) = VADD(cr3, ci4);
-    ch_ref(1, k, 5) = VADD(cr2, ci5);
-  }
-  if (ido == 1) {
-    return;
-  }
   idp2 = ido + 2;
   for (k = 1; k <= l1; ++k) {
     for (i = 3; i <= ido; i += 2) {
@@ -1315,6 +1534,80 @@ static ALWAYS_INLINE(void) radb5_loop_ps(int ido, int l1, const v4sf *RESTRICT c
       ch_ref(i-1, k, 4) = dr4; ch_ref(i, k, 4) = di4;
       ch_ref(i-1, k, 5) = dr5; ch_ref(i, k, 5) = di5;
     }
+    if (even) {
+      /* the Nyquist terms, from X0, X1 and X2 (see above radf3_loop_ps):
+           x0 = 2 Re X0 + 2 Re X1 + X2,
+           x1, x4 = -+(X2 - 2 cos(pi/5) Re X0 + 2 cos(2*pi/5) Re X1)
+                    - 2 sin(pi/5) Im X0 - 2 sin(2*pi/5) Im X1,
+           x2, x3 = +-(X2 + 2 cos(2*pi/5) Re X0 - 2 cos(pi/5) Re X1)
+                    - 2 sin(2*pi/5) Im X0 + 2 sin(pi/5) Im X1 */
+      v4sf q  = cc_ref(ido, 5, k);
+      v4sf r0 = VADD(cc_ref(ido, 1, k), cc_ref(ido, 1, k));
+      v4sf i0 = VADD(cc_ref(1, 2, k), cc_ref(1, 2, k));
+      v4sf r1 = VADD(cc_ref(ido, 3, k), cc_ref(ido, 3, k));
+      v4sf i1 = VADD(cc_ref(1, 4, k), cc_ref(1, 4, k));
+      v4sf p1 = VADD(q, SVMADD(tr12, r0, SVMUL(tr11, r1)));
+      v4sf p2 = VADD(q, SVMADD(tr11, r0, SVMUL(tr12, r1)));
+      v4sf s1 = SVMSUB(ti12, i0, SVMUL(minus_ti11, i1));
+      v4sf s2 = SVMSUB(ti11, i0, SVMUL(ti12, i1));
+      ch_ref(ido, k, 1) = VADD(q, VADD(r0, r1));
+      ch_ref(ido, k, 2) = VSUB(s1, p1);
+      ch_ref(ido, k, 3) = VADD(s2, p2);
+      ch_ref(ido, k, 4) = VSUB(s2, p2);
+      ch_ref(ido, k, 5) = VADD(s1, p1);
+    }
+  }
+#undef cc_ref
+#undef ch_ref
+}
+
+static ALWAYS_INLINE(void) radb5_loop_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
+                  const float *wa1, const float *wa2, const float *wa3, const float *wa4,
+                  const int pf)
+{
+  static const float tr11 = (float)0.30901699437494742410;   /* cos(2*pi/5) = (sqrt(5)-1)/4 */
+  static const float ti11 = (float)0.95105651629515357212;   /* sin(2*pi/5) */
+  static const float tr12 = (float)-0.80901699437494742410;  /* cos(4*pi/5) = -(sqrt(5)+1)/4 */
+  static const float ti12 = (float)0.58778525229247312917;   /* sin(4*pi/5) */
+
+  int cc_offset, ch_offset;
+
+  /* Local variables */
+  int k;
+  v4sf ci4, ci5, cr2, cr3, ti4, ti5, tr2, tr3;
+
+#define cc_ref(a_1,a_2,a_3) cc[((a_3)*5 + (a_2))*ido + a_1]
+#define ch_ref(a_1,a_2,a_3) ch[((a_3)*l1 + (a_2))*ido + a_1]
+
+  /* Parameter adjustments */
+  ch_offset = 1 + ido * (1 + l1);
+  ch -= ch_offset;
+  cc_offset = 1 + ido * 6;
+  cc -= cc_offset;
+
+  /* Function Body */
+  for (k = 1; k <= l1; ++k) {
+    ti5 = VADD(cc_ref(1, 3, k), cc_ref(1, 3, k));
+    ti4 = VADD(cc_ref(1, 5, k), cc_ref(1, 5, k));
+    tr2 = VADD(cc_ref(ido, 2, k), cc_ref(ido, 2, k));
+    tr3 = VADD(cc_ref(ido, 4, k), cc_ref(ido, 4, k));
+    ch_ref(1, k, 1) = VADD(cc_ref(1, 1, k), VADD(tr2, tr3));
+    cr2 = VADD(cc_ref(1, 1, k), SVMADD(tr11, tr2, SVMUL(tr12, tr3)));
+    cr3 = VADD(cc_ref(1, 1, k), SVMADD(tr12, tr2, SVMUL(tr11, tr3)));
+    ci5 = SVMADD(ti11, ti5, SVMUL(ti12, ti4));
+    ci4 = SVMSUB(ti11, ti4, SVMUL(ti12, ti5));
+    ch_ref(1, k, 2) = VSUB(cr2, ci5);
+    ch_ref(1, k, 3) = VSUB(cr3, ci4);
+    ch_ref(1, k, 4) = VADD(cr3, ci4);
+    ch_ref(1, k, 5) = VADD(cr2, ci5);
+  }
+  if (ido == 1) {
+    return;
+  }
+  if (ido & 1) {
+    radb5_rows_ps(ido, l1, cc + cc_offset, ch + ch_offset, wa1, wa2, wa3, wa4, pf, 0);
+  } else {
+    radb5_rows_ps(ido, l1, cc + cc_offset, ch + ch_offset, wa1, wa2, wa3, wa4, pf, 1);
   }
 #undef cc_ref
 #undef ch_ref
@@ -1328,6 +1621,169 @@ static NEVER_INLINE(void) radb5_ps(int ido, int l1, const v4sf *RESTRICT cc, v4s
 static NEVER_INLINE(void) radb5_pf_ps(int ido, int l1, const v4sf *RESTRICT cc, v4sf *RESTRICT ch,
                   const float *wa1, const float *wa2, const float *wa3, const float *wa4) {
   radb5_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, wa4, 1);
+}
+#endif
+
+/*
+  Real radix-8 passes, forward and backward, only for ido == 1.
+
+  rffti1_ps puts a factor 8 only last, in place of the lone 2 and a 4.
+  That factor's pass is the first of rfftf1_ps and the last of rfftb1_ps,
+  where ido == 1, so it takes no twiddles: one pass fewer over the data,
+  and the radix-2 pass that goes away is the one with the largest ido,
+  with twiddles. For each k, the 8 legs are the real vectors cc[k + j*l1]
+  (forward input, backward output), and the half-complex block
+  X0, Re X1, Im X1, Re X2, Im X2, Re X3, Im X3, X4 at 8*k (forward
+  output, backward input), as radf4_ps lays out X0, Re X1, Im X1, X2.
+*/
+static NEVER_INLINE(void) radf8_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+  static const float minus_hsqt2 = (float)-M_SQRT1_2;  /* -sin(pi/4) = -1/sqrt(2) */
+  const v4sf * RESTRICT cc_end = cc + l1;
+  while (cc < cc_end) {
+    v4sf x0 = cc[0],    x1 = cc[1*l1], x2 = cc[2*l1], x3 = cc[3*l1];
+    v4sf x4 = cc[4*l1], x5 = cc[5*l1], x6 = cc[6*l1], x7 = cc[7*l1];
+    /* the even outputs are the DFT-4 of the sums at stride 4 */
+    v4sf a0 = VADD(x0, x4), a1 = VADD(x1, x5), a2 = VADD(x2, x6), a3 = VADD(x3, x7);
+    /* the odd ones that of the differences times W8^j */
+    v4sf b0 = VSUB(x0, x4), b1 = VSUB(x1, x5), b2 = VSUB(x2, x6), b3 = VSUB(x3, x7);
+    v4sf s02 = VADD(a0, a2), s13 = VADD(a1, a3);
+    v4sf t1 = SVMUL(minus_hsqt2, VSUB(b3, b1));
+    v4sf t2 = SVMUL(minus_hsqt2, VADD(b1, b3));
+    ch[0] = VADD(s02, s13);   /* X0 */
+    ch[1] = VADD(b0, t1);     /* Re X1 */
+    ch[2] = VSUB(t2, b2);     /* Im X1 */
+    ch[3] = VSUB(a0, a2);     /* Re X2 */
+    ch[4] = VSUB(a3, a1);     /* Im X2 */
+    ch[5] = VSUB(b0, t1);     /* Re X3 */
+    ch[6] = VADD(b2, t2);     /* Im X3 */
+    ch[7] = VSUB(s02, s13);   /* X4 */
+    cc += 1; ch += 8;
+  }
+}
+
+/* The backward passes write 8 (radb6: 6) output streams, l1 vectors
+   apart, which they prefetch on x86 as passf8_ps does (see PF_PREFETCH);
+   the forward ones write a single stream, 8 (6) vectors per k, and read
+   the 8 (6), which the hardware prefetchers follow. */
+static ALWAYS_INLINE(void) radb8_loop_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const int pf) {
+  static const float two = 2.f;
+  static const float sqrt2 = (float)M_SQRT2;
+  v4sf * RESTRICT ch_end = ch + l1;
+  while (ch < ch_end) {
+    PF_PREFETCH(pf, ch + 0*l1, 1);
+    PF_PREFETCH(pf, ch + 1*l1, 1);
+    PF_PREFETCH(pf, ch + 2*l1, 1);
+    PF_PREFETCH(pf, ch + 3*l1, 1);
+    PF_PREFETCH(pf, ch + 4*l1, 1);
+    PF_PREFETCH(pf, ch + 5*l1, 1);
+    PF_PREFETCH(pf, ch + 6*l1, 1);
+    PF_PREFETCH(pf, ch + 7*l1, 1);
+    v4sf x0 = cc[0], r1 = cc[1], i1 = cc[2], r2 = cc[3];
+    v4sf i2 = cc[4], r3 = cc[5], i3 = cc[6], x4 = cc[7];
+    /* x_j = e_j + o_j, x_{j+4} = e_j - o_j: e_j from X0, X2, X4 and
+       o_j from X1, X3 */
+    v4sf s = VADD(x0, x4), d = VSUB(x0, x4);
+    v4sf r2x2 = SVMUL(two, r2), i2x2 = SVMUL(two, i2);
+    v4sf e0 = VADD(s, r2x2), e2 = VSUB(s, r2x2);
+    v4sf e1 = VSUB(d, i2x2), e3 = VADD(d, i2x2);
+    v4sf p = VSUB(r1, r3), q = VADD(i1, i3);
+    v4sf o0 = SVMUL(two, VADD(r1, r3));
+    v4sf o2 = SVMUL(two, VSUB(i3, i1));
+    v4sf o1 = SVMUL(sqrt2, VSUB(p, q));
+    v4sf o3 = SVMUL(sqrt2, VADD(p, q));   /* minus o_3 */
+    ch[0*l1] = VADD(e0, o0);
+    ch[4*l1] = VSUB(e0, o0);
+    ch[1*l1] = VADD(e1, o1);
+    ch[5*l1] = VSUB(e1, o1);
+    ch[2*l1] = VADD(e2, o2);
+    ch[6*l1] = VSUB(e2, o2);
+    ch[3*l1] = VSUB(e3, o3);
+    ch[7*l1] = VADD(e3, o3);
+    cc += 8; ch += 1;
+  }
+}
+static NEVER_INLINE(void) radb8_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+  radb8_loop_ps(l1, cc, ch, 0);
+}
+#if PF_ON
+static NEVER_INLINE(void) radb8_pf_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+  radb8_loop_ps(l1, cc, ch, 1);
+}
+#endif
+
+/*
+  Real radix-6 passes, forward and backward, only for ido == 1.
+
+  rffti1_ps puts a factor 6 only last, in place of the lone 2 and a 3,
+  where the transform is small (see there). The layout is that of the 8
+  above: legs cc[k + j*l1], half-complex block X0, Re X1, Im X1, Re X2,
+  Im X2, X3 at 6*k.
+
+  2 and 3 are coprime, so the 6-point DFT is a 2-point DFT on each of the
+  pairs (x0, x3), (x2, x5), (x4, x1) followed by a 3-point DFT on the
+  sums and one on the differences, with no twiddles in between (Good-Thomas:
+  input index 3*j1 + 2*j2, output index 3*k1 + 4*k2, mod 6). The sums give
+  X0, X4, X2 and the differences X3, X1, X5, of which only X0..X3 are
+  stored. That is 12 adds, 2 multiply-adds and 2 multiplies each way. The
+  direct real 6-point DFT with the symmetric sums x_j +- x_{6-j} costs the
+  same; the Cooley-Tukey 2x3 split would add twiddles by W6^j.
+*/
+static NEVER_INLINE(void) radf6_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+  static const float taur = (float)-0.5;                     /* cos(2*pi/3) */
+  static const float taui = (float)0.86602540378443864676;   /* sin(2*pi/3) = sqrt(3)/2 */
+  const v4sf * RESTRICT cc_end = cc + l1;
+  while (cc < cc_end) {
+    v4sf x0 = cc[0],    x1 = cc[1*l1], x2 = cc[2*l1];
+    v4sf x3 = cc[3*l1], x4 = cc[4*l1], x5 = cc[5*l1];
+    /* the 2-point DFTs, in Good-Thomas order */
+    v4sf u0 = VADD(x0, x3), u1 = VADD(x2, x5), u2 = VADD(x4, x1);
+    v4sf v0 = VSUB(x0, x3), v1 = VSUB(x2, x5), v2 = VSUB(x4, x1);
+    /* the 3-point DFTs: of u into X0, X4 = conj(X2); of v into X3, X1 */
+    v4sf su = VADD(u1, u2), sv = VADD(v1, v2);
+    ch[0] = VADD(u0, su);                      /* X0 */
+    ch[1] = SVMADD(taur, sv, v0);              /* Re X1 */
+    ch[2] = SVMUL(taui, VSUB(v2, v1));         /* Im X1 */
+    ch[3] = SVMADD(taur, su, u0);              /* Re X2 */
+    ch[4] = SVMUL(taui, VSUB(u1, u2));         /* Im X2 */
+    ch[5] = VADD(v0, sv);                      /* X3 */
+    cc += 1; ch += 6;
+  }
+}
+
+static ALWAYS_INLINE(void) radb6_loop_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const int pf) {
+  static const float two = 2.f;
+  static const float sqrt3 = (float)1.7320508075688772935;  /* 2*sin(2*pi/3) = sqrt(3) */
+  v4sf * RESTRICT ch_end = ch + l1;
+  while (ch < ch_end) {
+    PF_PREFETCH(pf, ch + 0*l1, 1);
+    PF_PREFETCH(pf, ch + 1*l1, 1);
+    PF_PREFETCH(pf, ch + 2*l1, 1);
+    PF_PREFETCH(pf, ch + 3*l1, 1);
+    PF_PREFETCH(pf, ch + 4*l1, 1);
+    PF_PREFETCH(pf, ch + 5*l1, 1);
+    v4sf x0 = cc[0], r1 = cc[1], i1 = cc[2];
+    v4sf r2 = cc[3], i2 = cc[4], x3 = cc[5];
+    /* the inverse 3-point DFTs, of X0, X4, X2 into u and of X3, X1, X5
+       into v, then the 2-point ones into the legs in Good-Thomas order */
+    v4sf u0 = SVMADD(two, r2, x0), a = VSUB(x0, r2), b = SVMUL(sqrt3, i2);
+    v4sf v0 = SVMADD(two, r1, x3), c = VSUB(x3, r1), d = SVMUL(sqrt3, i1);
+    v4sf u1 = VADD(a, b), u2 = VSUB(a, b);
+    v4sf v1 = VSUB(c, d), v2 = VADD(c, d);
+    ch[0*l1] = VADD(u0, v0);
+    ch[3*l1] = VSUB(u0, v0);
+    ch[2*l1] = VADD(u1, v1);
+    ch[5*l1] = VSUB(u1, v1);
+    ch[4*l1] = VADD(u2, v2);
+    ch[1*l1] = VSUB(u2, v2);
+    cc += 6; ch += 1;
+  }
+}
+static NEVER_INLINE(void) radb6_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+  radb6_loop_ps(l1, cc, ch, 0);
+}
+#if PF_ON
+static NEVER_INLINE(void) radb6_pf_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch) {
+  radb6_loop_ps(l1, cc, ch, 1);
 }
 #endif
 
@@ -1354,6 +1810,14 @@ static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *w
         int ix4 = ix3 + ido;
         PF_CALL(pf, radf5, (ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], &wa[ix4]));
       } break;
+      case 8:
+        assert(ido == 1);
+        radf8_ps(l1, in, out);
+        break;
+      case 6:
+        assert(ido == 1);
+        radf6_ps(l1, in, out);
+        break;
       case 4: {
         int ix2 = iw + ido;
         int ix3 = ix2 + ido;
@@ -1401,6 +1865,14 @@ static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *w
         int ix4 = ix3 + ido;
         PF_CALL(pf, radb5, (ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], &wa[ix4]));
       } break;
+      case 8:
+        assert(ido == 1);
+        PF_CALL(pf, radb8, (l1, in, out));
+        break;
+      case 6:
+        assert(ido == 1);
+        PF_CALL(pf, radb6, (l1, in, out));
+        break;
       case 4: {
         int ix2 = iw + ido;
         int ix3 = ix2 + ido;
@@ -1458,12 +1930,47 @@ static int decompose(int n, int *ifac, const int *ntryh) {
 
 
 
+/* the largest transform, in bytes per array of n vectors, that takes a
+   radix-6 instead of a radix-8 pass where it can (see rffti1_ps) */
+#define RADIX6_MAX_BYTES 32768
+
 static void rffti1_ps(int n, float *wa, int *ifac)
 {
   static const int ntryh[] = { 4,2,3,5,0 };
   int k1, j, ii;
 
   int nf = decompose(n,ifac,ntryh);
+
+  /* decompose() puts the lone factor 2, if there is one, first, then the
+     4s, then the 3s and 5s: [2, 4, ..., 3, ..., 5, ...]. Merge the 2 and a
+     4 into a radix-8 pass at the end, where ido == 1 and radf8_ps/radb8_ps
+     need no twiddles, as cffti1_ps does: [4, ..., 3, ..., 5, ..., 8]. The
+     3s and 5s, which {4,2,3,5} puts last so that their ido is odd, then
+     get an even ido, which their passes handle (see radf3_loop_ps). The
+     twiddle table is filled the same way for an even ido: (ido-1)/2 pairs
+     per leg, i.e. none for the element ido-1, which needs none.
+
+     Where there is a 3 and an array of the transform takes at most
+     RADIX6_MAX_BYTES, merge the 2 and a 3 into a radix-6 pass at the end
+     instead: [4, ..., 3 (one fewer), ..., 5, ..., 6]. In cache that was
+     faster than the radix-8 merge (transform length N = 384, i.e.
+     n = 96: f32 8-10% on two Xeons, 1% on an Apple M2; f64 3-9%), out of
+     cache slower (N = 24576, f32 and f64: 1-5%). */
+  if (nf >= 2 && ifac[2] == 2 && ifac[3] == 4) {
+    int i3 = 0;
+    if ((size_t)n * sizeof(v4sf) <= RADIX6_MAX_BYTES)
+      for (k1 = 4; k1 <= nf+1; ++k1) if (ifac[k1] == 3) { i3 = k1; break; }
+    if (i3) {
+      for (k1 = 2; k1 < i3-1; ++k1) ifac[k1] = ifac[k1+1];
+      for (k1 = i3-1; k1 < nf; ++k1) ifac[k1] = ifac[k1+2];
+      ifac[nf] = 6;
+    } else {
+      for (k1 = 2; k1 < nf; ++k1) ifac[k1] = ifac[k1+2];
+      ifac[nf] = 8;
+    }
+    ifac[1] = --nf;
+  }
+
   float argh = (2*(float)M_PI) / n;
   int is = 0;
   int nfm1 = nf - 1;
@@ -1506,11 +2013,31 @@ static void cffti1_ps(int n, float *wa, int *ifac)
      and temporaries. Factoring by {5,3,8,4,2} instead, which makes all
      but the last radix-8 pass one with twiddles (n = 16384: 8, 8, 8, 8),
      made n = 16384 15-27% slower (2ce8a89), likely because a radix-8
-     butterfly with 7 twiddle multiplies holds about 40 vectors live. */
-  if (nf >= 2 && ifac[2] == 2 && ifac[nf+1] == 4) {
-    for (k1 = 2; k1 <= nf; ++k1) ifac[k1] = ifac[k1+1];
-    ifac[nf] = 8;
-    ifac[1] = --nf;
+     butterfly with 7 twiddle multiplies holds about 40 vectors live.
+     Where there is also a 3, the 2 and a 3 become a radix-6 pass at the
+     end instead, as twiddle-free as the radix-8 one (passf6_ps):
+     [2, 5.., 3, 3.., 4..] -> [5.., 3.., 4.., 6]. The radix-2 and a
+     radix-3 pass with twiddles go away, and all the 4s stay. The other
+     factors keep their order, so the 3s and 5s still run at an ido of
+     at least 6 (idot > 2), as passf3_ps and passf5_ps assume. The loop
+     below writes the 6 (ido == 1) only trivial twiddles, which passf6_ps
+     does not read, as for the 8; the twiddles of all passes still take
+     2*n floats, as sum (ip-1)*ido = n-1 for any order of the factors. */
+  if (nf >= 2 && ifac[2] == 2) {
+    int k3 = 0;
+    for (k1 = 3; k1 <= nf+1; ++k1)
+      if (ifac[k1] == 3) k3 = k1;
+    if (k3) {
+      int m = 2;
+      for (k1 = 3; k1 <= nf+1; ++k1)
+        if (k1 != k3) ifac[m++] = ifac[k1];
+      ifac[m] = 6;  /* m == nf */
+      ifac[1] = --nf;
+    } else if (ifac[nf+1] == 4) {
+      for (k1 = 2; k1 <= nf; ++k1) ifac[k1] = ifac[k1+1];
+      ifac[nf] = 8;
+      ifac[1] = --nf;
+    }
   }
 
   float argh = (2*(float)M_PI) / n;
@@ -1564,6 +2091,9 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
       case 8: {
         PF_CALL(pf, passf8, (idot, l1, in, out, isign));
       } break;
+      case 6: {
+        PF_CALL(pf, passf6, (idot, l1, in, out, isign));
+      } break;
       case 5: {
         int ix2 = iw + idot;
         int ix3 = ix2 + idot;
@@ -1607,7 +2137,7 @@ struct SETUP_STRUCT {
   int     N;
   int     Ncvec;  /* nb of complex simd vectors (N/4 if PFFFT_COMPLEX, N/8 if PFFFT_REAL) */
   /* hold the decomposition into small integers of N */
-  int ifac[IFAC_MAX_SIZE]; /* N, number of factors, factors (admitted values: 2, 3, 4, 5 or 8) */
+  int ifac[IFAC_MAX_SIZE]; /* N, number of factors, factors (admitted values: 2, 3, 4, 5, 6 or 8) */
   pffft_transform_t transform;
   v4sf *data;     /* allocated room for twiddle coefs */
   float *e;       /* points into 'data', N/4*3 elements */
