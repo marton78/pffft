@@ -330,87 +330,90 @@ static NEVER_INLINE(void) passf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v
   Radix-8 DFT via two radix-4 DFTs:
     even outputs from DFT-4 of (x0+x4, x1+x5, x2+x6, x3+x7)
     odd  outputs from DFT-4 of (x0-x4, x1-x5, x2-x6, x3-x7)*W8^k
-*/
-/*
-  cffti1_ps only ever selects factor 8 when n == 8 (the Ncvec == 8,
-  N == 32 case); at the sole dispatch site below this forces ido == 2
-  and l1 == 1. This codelet is therefore specialized to that single
-  reachable shape instead of the general ido/l1 loop: the assert
-  enforces the invariant at the point of use.
+
+  cffti1_ps puts a factor 8 only last, where its ido is 1 and so the ido
+  passed here (idot of cfftf1_ps) is 2: each leg is one complex vector
+  and the twiddles are all 1, as in the ido == 2 branch of passf4_ps. So
+  this pass takes no twiddles, and the strides are constants.
 */
 static NEVER_INLINE(void) passf8_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, float fsign) {
   static const float K8 = (float)M_SQRT1_2;   /* cos(pi/4) = sin(pi/4) = 1/sqrt(2) */
   const float K8s = fsign * K8;
   const float nK8 = -K8;
   const float nfsign = -fsign;
+  const int l1ido = 2*l1;
+  int k;
 
-  assert(ido == 2 && l1 == 1);
+  assert(ido == 2);
+  (void)ido;
 
-  /* Load 8 inputs: cc[leg*ido + 0] = real, cc[leg*ido + 1] = imag */
-  v4sf x0r = cc[0*ido+0], x0i = cc[0*ido+1];
-  v4sf x1r = cc[1*ido+0], x1i = cc[1*ido+1];
-  v4sf x2r = cc[2*ido+0], x2i = cc[2*ido+1];
-  v4sf x3r = cc[3*ido+0], x3i = cc[3*ido+1];
-  v4sf x4r = cc[4*ido+0], x4i = cc[4*ido+1];
-  v4sf x5r = cc[5*ido+0], x5i = cc[5*ido+1];
-  v4sf x6r = cc[6*ido+0], x6i = cc[6*ido+1];
-  v4sf x7r = cc[7*ido+0], x7i = cc[7*ido+1];
+  for (k = 0; k < l1ido; k += 2, cc += 16, ch += 2) {
+    /* Load 8 inputs: cc[2*leg + 0] = real, cc[2*leg + 1] = imag */
+    v4sf x0r = cc[ 0], x0i = cc[ 1];
+    v4sf x1r = cc[ 2], x1i = cc[ 3];
+    v4sf x2r = cc[ 4], x2i = cc[ 5];
+    v4sf x3r = cc[ 6], x3i = cc[ 7];
+    v4sf x4r = cc[ 8], x4i = cc[ 9];
+    v4sf x5r = cc[10], x5i = cc[11];
+    v4sf x6r = cc[12], x6i = cc[13];
+    v4sf x7r = cc[14], x7i = cc[15];
 
-  /* Step 1: sums and diffs at stride 4 */
-  v4sf s0r = VADD(x0r, x4r), s0i = VADD(x0i, x4i);
-  v4sf s1r = VADD(x1r, x5r), s1i = VADD(x1i, x5i);
-  v4sf s2r = VADD(x2r, x6r), s2i = VADD(x2i, x6i);
-  v4sf s3r = VADD(x3r, x7r), s3i = VADD(x3i, x7i);
-  v4sf d0r = VSUB(x0r, x4r), d0i = VSUB(x0i, x4i);
-  v4sf d1r = VSUB(x1r, x5r), d1i = VSUB(x1i, x5i);
-  v4sf d2r = VSUB(x2r, x6r), d2i = VSUB(x2i, x6i);
-  v4sf d3r = VSUB(x3r, x7r), d3i = VSUB(x3i, x7i);
+    /* Step 1: sums and diffs at stride 4 */
+    v4sf s0r = VADD(x0r, x4r), s0i = VADD(x0i, x4i);
+    v4sf s1r = VADD(x1r, x5r), s1i = VADD(x1i, x5i);
+    v4sf s2r = VADD(x2r, x6r), s2i = VADD(x2i, x6i);
+    v4sf s3r = VADD(x3r, x7r), s3i = VADD(x3i, x7i);
+    v4sf d0r = VSUB(x0r, x4r), d0i = VSUB(x0i, x4i);
+    v4sf d1r = VSUB(x1r, x5r), d1i = VSUB(x1i, x5i);
+    v4sf d2r = VSUB(x2r, x6r), d2i = VSUB(x2i, x6i);
+    v4sf d3r = VSUB(x3r, x7r), d3i = VSUB(x3i, x7i);
 
-  /* Step 2: twiddle diffs by W8^k */
-  /* d0 *= W8^0 = 1 (no-op) */
-  /* d1 *= W8^1: VCPLXMUL with (K8, fsign*K8) */
-  VCPLXMUL(d1r, d1i, LD_PS1(K8), LD_PS1(K8s));
-  /* d2 *= W8^2 = -j rotation */
-  { v4sf tr = VMUL(LD_PS1(nfsign), d2i);
-    v4sf ti = VMUL(LD_PS1(fsign), d2r);
-    d2r = tr; d2i = ti; }
-  /* d3 *= W8^3: VCPLXMUL with (-K8, fsign*K8) */
-  VCPLXMUL(d3r, d3i, LD_PS1(nK8), LD_PS1(K8s));
+    /* Step 2: twiddle diffs by W8^k */
+    /* d0 *= W8^0 = 1 (no-op) */
+    /* d1 *= W8^1: VCPLXMUL with (K8, fsign*K8) */
+    VCPLXMUL(d1r, d1i, LD_PS1(K8), LD_PS1(K8s));
+    /* d2 *= W8^2 = -j rotation */
+    { v4sf tr = VMUL(LD_PS1(nfsign), d2i);
+      v4sf ti = VMUL(LD_PS1(fsign), d2r);
+      d2r = tr; d2i = ti; }
+    /* d3 *= W8^3: VCPLXMUL with (-K8, fsign*K8) */
+    VCPLXMUL(d3r, d3i, LD_PS1(nK8), LD_PS1(K8s));
 
-  /* Step 3: DFT-4 on sums -> even outputs (0,2,4,6) */
-  {
-    v4sf t1r = VSUB(s0r, s2r), t1i = VSUB(s0i, s2i);
-    v4sf t2r = VADD(s0r, s2r), t2i = VADD(s0i, s2i);
-    v4sf t4i = VMUL(VSUB(s1r, s3r), LD_PS1(fsign));
-    v4sf t4r = VMUL(VSUB(s3i, s1i), LD_PS1(fsign));
-    v4sf t3r = VADD(s1r, s3r), t3i = VADD(s1i, s3i);
+    /* Step 3: DFT-4 on sums -> even outputs (0,2,4,6) */
+    {
+      v4sf t1r = VSUB(s0r, s2r), t1i = VSUB(s0i, s2i);
+      v4sf t2r = VADD(s0r, s2r), t2i = VADD(s0i, s2i);
+      v4sf t4i = VMUL(VSUB(s1r, s3r), LD_PS1(fsign));
+      v4sf t4r = VMUL(VSUB(s3i, s1i), LD_PS1(fsign));
+      v4sf t3r = VADD(s1r, s3r), t3i = VADD(s1i, s3i);
 
-    ch[0*ido + 0] = VADD(t2r, t3r);
-    ch[0*ido + 1] = VADD(t2i, t3i);
-    ch[2*ido + 0] = VADD(t1r, t4r);
-    ch[2*ido + 1] = VADD(t1i, t4i);
-    ch[4*ido + 0] = VSUB(t2r, t3r);
-    ch[4*ido + 1] = VSUB(t2i, t3i);
-    ch[6*ido + 0] = VSUB(t1r, t4r);
-    ch[6*ido + 1] = VSUB(t1i, t4i);
-  }
+      ch[0*l1ido + 0] = VADD(t2r, t3r);
+      ch[0*l1ido + 1] = VADD(t2i, t3i);
+      ch[2*l1ido + 0] = VADD(t1r, t4r);
+      ch[2*l1ido + 1] = VADD(t1i, t4i);
+      ch[4*l1ido + 0] = VSUB(t2r, t3r);
+      ch[4*l1ido + 1] = VSUB(t2i, t3i);
+      ch[6*l1ido + 0] = VSUB(t1r, t4r);
+      ch[6*l1ido + 1] = VSUB(t1i, t4i);
+    }
 
-  /* Step 4: DFT-4 on diffs -> odd outputs (1,3,5,7) */
-  {
-    v4sf t1r = VSUB(d0r, d2r), t1i = VSUB(d0i, d2i);
-    v4sf t2r = VADD(d0r, d2r), t2i = VADD(d0i, d2i);
-    v4sf t4i = VMUL(VSUB(d1r, d3r), LD_PS1(fsign));
-    v4sf t4r = VMUL(VSUB(d3i, d1i), LD_PS1(fsign));
-    v4sf t3r = VADD(d1r, d3r), t3i = VADD(d1i, d3i);
+    /* Step 4: DFT-4 on diffs -> odd outputs (1,3,5,7) */
+    {
+      v4sf t1r = VSUB(d0r, d2r), t1i = VSUB(d0i, d2i);
+      v4sf t2r = VADD(d0r, d2r), t2i = VADD(d0i, d2i);
+      v4sf t4i = VMUL(VSUB(d1r, d3r), LD_PS1(fsign));
+      v4sf t4r = VMUL(VSUB(d3i, d1i), LD_PS1(fsign));
+      v4sf t3r = VADD(d1r, d3r), t3i = VADD(d1i, d3i);
 
-    ch[1*ido + 0] = VADD(t2r, t3r);
-    ch[1*ido + 1] = VADD(t2i, t3i);
-    ch[3*ido + 0] = VADD(t1r, t4r);
-    ch[3*ido + 1] = VADD(t1i, t4i);
-    ch[5*ido + 0] = VSUB(t2r, t3r);
-    ch[5*ido + 1] = VSUB(t2i, t3i);
-    ch[7*ido + 0] = VSUB(t1r, t4r);
-    ch[7*ido + 1] = VSUB(t1i, t4i);
+      ch[1*l1ido + 0] = VADD(t2r, t3r);
+      ch[1*l1ido + 1] = VADD(t2i, t3i);
+      ch[3*l1ido + 0] = VADD(t1r, t4r);
+      ch[3*l1ido + 1] = VADD(t1i, t4i);
+      ch[5*l1ido + 0] = VSUB(t2r, t3r);
+      ch[5*l1ido + 1] = VSUB(t2i, t3i);
+      ch[7*l1ido + 0] = VSUB(t1r, t4r);
+      ch[7*l1ido + 1] = VSUB(t1i, t4i);
+    }
   }
 } /* passf8 */
 
@@ -1185,23 +1188,25 @@ static void rffti1_ps(int n, float *wa, int *ifac)
 
 static void cffti1_ps(int n, float *wa, int *ifac)
 {
-  static const int ntryh_large[] = { 5,3,8,4,2,0 };
-  static const int ntryh_default[] = { 5,3,4,2,0 };
-  /* Use the radix-8 codelet only for the single-pass Ncvec==8 case (N=32
-     complex), where a single dedicated pass is guaranteed. Measured on
-     Mac/arm64, Android/arm64-v8a and iPhone/arm64 (20-rep sustained,
-     Mann-Whitney U + Hodges-Lehmann shift): Ncvec==8 is a clear win
-     (-2% to -21%) on every platform/precision; Ncvec==16 regressed
-     double precision by +4% to +6% on every platform even when
-     restricted-in, and was mixed-to-negative for float, so it was
-     excluded and the radix-16 codelet (passf16_ps) removed entirely --
-     it would otherwise be unreachable at every N. Larger multi-pass
-     sizes regress severely (+15% to +27% at N=16384) if this gate is
-     lifted; see git history for the controlled A/B data. */
-  const int *ntryh = (n == 8) ? ntryh_large : ntryh_default;
+  static const int ntryh[] = { 5,3,4,2,0 };
   int k1, j, ii;
 
   int nf = decompose(n,ifac,ntryh);
+
+  /* decompose() puts the lone factor 2, if there is one, first and the 4s
+     last: [2, ..., 4]. Merge the 2 into the last 4 as one radix-8 pass:
+     one pass fewer over the data, and the radix-2 pass that goes away is
+     one with twiddles. The last pass has ido == 1 (idot == 2 in
+     cfftf1_ps), hence no twiddles, so passf8_ps holds only its 8 inputs
+     and temporaries. Factoring by {5,3,8,4,2} instead, which makes all
+     but the last radix-8 pass one with twiddles (n = 16384: 8, 8, 8, 8),
+     made n = 16384 15-27% slower (2ce8a89), likely because a radix-8
+     butterfly with 7 twiddle multiplies holds about 40 vectors live. */
+  if (nf >= 2 && ifac[2] == 2 && ifac[nf+1] == 4) {
+    for (k1 = 2; k1 <= nf; ++k1) ifac[k1] = ifac[k1+1];
+    ifac[nf] = 8;
+    ifac[1] = --nf;
+  }
 
   float argh = (2*(float)M_PI) / n;
   int i = 1;
