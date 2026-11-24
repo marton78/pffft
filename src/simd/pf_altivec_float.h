@@ -39,7 +39,7 @@
 #if !defined(SIMD_SZ) && !defined(PFFFT_SIMD_DISABLE) && (defined(__ppc__) || defined(__ppc64__) || defined(__powerpc__) || defined(__powerpc64__)) \
     && (defined(__VEC__) || defined(__ALTIVEC__))
 #include <altivec.h>
-typedef vector float v4sf;
+typedef __vector float v4sf;
 
 #  define SIMD_SZ 4
 
@@ -50,7 +50,7 @@ typedef union v4sf_union {
 
 #  define VREQUIRES_ALIGN 1  /* not sure, if really required */
 #  define VARCH "ALTIVEC"
-#  define VZERO() ((vector float) vec_splat_u8(0))
+#  define VZERO() ((__vector float) vec_splat_u8(0))
 #  define VMUL(a,b) vec_madd(a,b, VZERO())
 #  define VADD(a,b) vec_add(a,b)
 #  define VMADD(a,b,c) vec_madd(a,b,c)
@@ -62,8 +62,8 @@ static inline v4sf ld_ps1(const float *p) { v4sf v=vec_lde(0,p); return vec_spla
 #  define VLOAD_ALIGNED(ptr)    vec_ld(0, ptr)
 #  define INTERLEAVE2(in1, in2, out1, out2) { v4sf tmp__ = vec_mergeh(in1, in2); out2 = vec_mergel(in1, in2); out1 = tmp__; }
 #  define UNINTERLEAVE2(in1, in2, out1, out2) {                           \
-    vector unsigned char vperm1 =  (vector unsigned char){0,1,2,3,8,9,10,11,16,17,18,19,24,25,26,27}; \
-    vector unsigned char vperm2 =  (vector unsigned char){4,5,6,7,12,13,14,15,20,21,22,23,28,29,30,31}; \
+    __vector unsigned char vperm1 =  (__vector unsigned char){0,1,2,3,8,9,10,11,16,17,18,19,24,25,26,27}; \
+    __vector unsigned char vperm2 =  (__vector unsigned char){4,5,6,7,12,13,14,15,20,21,22,23,28,29,30,31}; \
     v4sf tmp__ = vec_perm(in1, in2, vperm1); out2 = vec_perm(in1, in2, vperm2); out1 = tmp__; \
   }
 #  define VTRANSPOSE4(x0,x1,x2,x3) {              \
@@ -76,12 +76,12 @@ static inline v4sf ld_ps1(const float *p) { v4sf v=vec_lde(0,p); return vec_spla
     x2 = vec_mergeh(y1, y3);                    \
     x3 = vec_mergel(y1, y3);                    \
   }
-#  define VSWAPHL(a,b) vec_perm(a,b, (vector unsigned char){16,17,18,19,20,21,22,23,8,9,10,11,12,13,14,15})
+#  define VSWAPHL(a,b) vec_perm(a,b, (__vector unsigned char){16,17,18,19,20,21,22,23,8,9,10,11,12,13,14,15})
 
 /* reverse/flip all floats */
-#  define VREV_S(a)    vec_perm(a,a, (vector unsigned char){12,13,14,15,8,9,10,11,4,5,6,7,0,1,2,3})
+#  define VREV_S(a)    vec_perm(a,a, (__vector unsigned char){12,13,14,15,8,9,10,11,4,5,6,7,0,1,2,3})
 /* reverse/flip complex floats */
-#  define VREV_C(a)    vec_perm(a,a, (vector unsigned char){8,9,10,11,12,13,14,15,0,1,2,3,4,5,6,7})
+#  define VREV_C(a)    vec_perm(a,a, (__vector unsigned char){8,9,10,11,12,13,14,15,0,1,2,3,4,5,6,7})
 
 #  define VALIGNED(ptr) ((((uintptr_t)(ptr)) & 0xF) == 0)
 
