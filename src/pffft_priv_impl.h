@@ -1737,13 +1737,16 @@ static void rffti1_ps(int n, float *wa, int *ifac)
 
   int nf = decompose(n,ifac,ntryh);
 
-  /* decompose() puts the lone factor 2, if there is one, first: [2, 4, ...].
-     Merge it and a 4 into a radix-8 pass at the end, where ido == 1 and
-     radf8_ps/radb8_ps need no twiddles, as cffti1_ps does. For now only
-     where the last factor is a 4 (powers of two): elsewhere the 8 would take
-     the twiddle-free place of the last 3 or 5. */
-  if (nf >= 2 && ifac[2] == 2 && ifac[nf+1] == 4) {
-    for (k1 = 2; k1 <= nf; ++k1) ifac[k1] = ifac[k1+1];
+  /* decompose() puts the lone factor 2, if there is one, first, then the
+     4s, then the 3s and 5s: [2, 4, ..., 3, ..., 5, ...]. Merge the 2 and a
+     4 into a radix-8 pass at the end, where ido == 1 and radf8_ps/radb8_ps
+     need no twiddles, as cffti1_ps does: [4, ..., 3, ..., 5, ..., 8]. The
+     3s and 5s, which {4,2,3,5} puts last so that their ido is odd, then
+     get an even ido, which their passes handle (see radf3_loop_ps). The
+     twiddle table is filled the same way for an even ido: (ido-1)/2 pairs
+     per leg, i.e. none for the element ido-1, which needs none. */
+  if (nf >= 2 && ifac[2] == 2 && ifac[3] == 4) {
+    for (k1 = 2; k1 < nf; ++k1) ifac[k1] = ifac[k1+2];
     ifac[nf] = 8;
     ifac[1] = --nf;
   }
