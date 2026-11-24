@@ -161,8 +161,8 @@ static NEVER_INLINE(void) passf2_ps(int ido, int l1, const v4sf * RESTRICT cc, v
   without an 'f' suffix, for when this file is compiled with '#define float double'.
   In the float build, the values round to the same floats as the old suffixed literals.
 */
-static NEVER_INLINE(void) passf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
-                                    const float *wa1, const float *wa2, float fsign) {
+static ALWAYS_INLINE(void) passf3_loop_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                                          const float *wa1, const float *wa2, const float fsign) {
   static const float taur = (float)-0.5;                     /* cos(2*pi/3)   */
   float taui = (float)0.86602540378443864676*fsign;          /* sin(2*pi/3) = sqrt(3)/2 */
   int i, k;
@@ -192,6 +192,19 @@ static NEVER_INLINE(void) passf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v
       ch[i+2*l1ido] = dr3;
       ch[i+2*l1ido+1] = di3;
     }
+  }
+}
+
+/*
+  fsign goes to passf3_loop_ps as a constant, as in passf4_ps and
+  passf8_ps: fsign*wa[i+1] of the twiddles is then a negation or nothing.
+*/
+static NEVER_INLINE(void) passf3_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                                    const float *wa1, const float *wa2, float fsign) {
+  if (fsign < 0) {
+    passf3_loop_ps(ido, l1, cc, ch, wa1, wa2, -1);
+  } else {
+    passf3_loop_ps(ido, l1, cc, ch, wa1, wa2, +1);
   }
 } /* passf3 */
 
@@ -280,9 +293,9 @@ static NEVER_INLINE(void) passf4_ps(int ido, int l1, const v4sf * RESTRICT cc, v
 /*
   passf5 and passb5 has been merged here, fsign = -1 for passf5, +1 for passb5
 */
-static NEVER_INLINE(void) passf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
-                                    const float *wa1, const float *wa2,
-                                    const float *wa3, const float *wa4, float fsign) {
+static ALWAYS_INLINE(void) passf5_loop_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                                          const float *wa1, const float *wa2,
+                                          const float *wa3, const float *wa4, const float fsign) {
   static const float tr11 = (float)0.30901699437494742410;   /* cos(2*pi/5) = (sqrt(5)-1)/4 */
   const float ti11 = (float)0.95105651629515357212*fsign;    /* sin(2*pi/5) */
   static const float tr12 = (float)-0.80901699437494742410;  /* cos(4*pi/5) = -(sqrt(5)+1)/4 */
@@ -345,6 +358,17 @@ static NEVER_INLINE(void) passf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v
   }
 #undef ch_ref
 #undef cc_ref
+}
+
+/* fsign as a constant, as in passf3_ps */
+static NEVER_INLINE(void) passf5_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
+                                    const float *wa1, const float *wa2,
+                                    const float *wa3, const float *wa4, float fsign) {
+  if (fsign < 0) {
+    passf5_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, wa4, -1);
+  } else {
+    passf5_loop_ps(ido, l1, cc, ch, wa1, wa2, wa3, wa4, +1);
+  }
 }
 
 /*
