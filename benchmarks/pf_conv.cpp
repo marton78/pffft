@@ -5,6 +5,7 @@
 #include <assert.h>
 
 #include <algorithm>
+#include <type_traits>
 
 #if 0
 #include <stdio.h>
@@ -248,7 +249,6 @@ const conv_f_ptrs* ARCHFUNCNAME(conv_ptrs)()
     return &conv_ptrs;
 }
 
-#if defined(__cplusplus) && (__cplusplus >= 201703L)
-[[maybe_unused]]
-#endif
-static f_conv_ptrs test_f_ptrs = ARCHFUNCNAME(conv_ptrs);
+// conv_ptrs_<arch>() has the type that pf_conv.h declares
+static_assert(std::is_same<decltype(&ARCHFUNCNAME(conv_ptrs)), f_conv_ptrs>::value,
+              "conv_ptrs does not match f_conv_ptrs");
