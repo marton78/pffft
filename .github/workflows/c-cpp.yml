@@ -14,7 +14,7 @@ env:
   # cmake options shared by the jobs below, expanded unquoted: no value may
   # contain a space. Where the benchmarks are built, leave out the
   # third-party FFTs they compare to, submodules CI does not check out:
-  NO_BENCH_FFTS: -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF
+  NO_BENCH_FFTS: -DPFFFT_USE_BENCH_GREEN=OFF -DPFFFT_USE_BENCH_KISS=OFF -DPFFFT_USE_BENCH_POCKET=OFF -DPFFFT_USE_BENCH_OOURA=OFF
   # build the tests, but not the benchmarks or the examples:
   TESTS_ONLY: -DPFFFT_BUILD_TESTS=ON -DPFFFT_BUILD_BENCHMARKS=OFF -DPFFFT_BUILD_EXAMPLES=OFF
 

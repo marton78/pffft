@@ -13,7 +13,7 @@ A panel per (precision, transform kind), with n on the x axis:
   the measured time. --time takes the measured time throughout,
   --per-cycle plots flops per CPU cycle. A solid line joins the powers of
   two, a dashed one the other lengths; engines that do only powers of two
-  (vdsp, green) get there, dotted, the flops of n at the cost of the next
+  (vdsp, green, ooura) get there, dotted, the flops of n at the cost of the next
   power of two, as if their user padded;
 - for CSVs that compare.py wrote (-o): B's speed-up over A in percent,
   higher is better, the median and the range over all launches and trials;
@@ -35,16 +35,17 @@ from pathlib import Path
 
 import results
 
-POW2_ONLY = {"vdsp", "green"}  # engines that support powers of two only
-# An engine keeps its color in every figure. The seven libraries take seven
+POW2_ONLY = {"vdsp", "green", "ooura"}  # engines that support powers of two only
+# An engine keeps its color in every figure. The eight libraries take eight
 # colors picked to be as different as possible, in OKLab, for every pair:
 # worst pair 17.4 apart (x100) to normal vision, 8.8 under simulated protan or
-# deutan vision. fftw-meas is fftw-est at 45% HSV saturation, to read as one
+# deutan vision. ooura's navy, added last, is at least 22.4 and 14.2 from all
+# the others and from the ink. fftw-meas is fftw-est at 45% HSV saturation, to read as one
 # library.
 # pffft@LABEL engines take the colors of the libraries that are absent.
 SERIES = {"pffft": "#2a78d6", "fftw-est": "#f06a2e", "fftw-meas": "#f0a584", "vdsp": "#43a26d",
           "pocketfft": "#9a5505", "kissfft": "#e678c0", "fftpack": "#bb1664", "green": "#7a2eb4",
-          "mkl": "#898781"}
+          "ooura": "#000080", "mkl": "#898781"}
 SPARE = ["#bb1664", "#43a26d", "#7a2eb4", "#9a5505", "#e678c0", "#f06a2e"]
 INK, INK2, MUTED = "#0b0b0b", "#52514e", "#898781"
 SURFACE, GRID, AXIS = "#fcfcfb", "#e1e0d9", "#c3c2b7"
@@ -233,7 +234,8 @@ def engine_colors(engines):
 def label_for(e: str) -> str:
     return {"fftw-meas": "FFTW (measure)", "fftw-est": "FFTW (estimate)",
             "vdsp": "vDSP (Accelerate)", "pocketfft": "PocketFFT", "kissfft": "KISS FFT",
-            "fftpack": "FFTPACK", "green": "Green FFT", "mkl": "Intel MKL"}.get(e, e)
+            "fftpack": "FFTPACK", "green": "Green FFT", "ooura": "Ooura FFT",
+            "mkl": "Intel MKL"}.get(e, e)
 
 
 def plot_engines(args, files, plt) -> None:
