@@ -141,7 +141,9 @@ Some of the options:
   respective library (default: ON, OFF, OFF)
 * `TARGET_C_ARCH` / `TARGET_CXX_ARCH` to set the target architecture: a
   `-march` value for gcc/clang (e.g. `haswell`, `armv7-a`, `rv64gcv`, or
-  `native`) or an `/arch` value for MSVC (e.g. `AVX2`)
+  `native`) or an `/arch` value for MSVC (e.g. `AVX2`). On 64-bit RISC-V,
+  `auto` enables the vector extension if the build machine has it (see
+  below). Default: `none`, the compiler's default
 * `TARGET_C_EXTRA` / `TARGET_CXX_EXTRA` to add a preset of gcc/clang options,
   e.g. `neon_vfpv4` or `neon_rpi4_a72` (32-bit ARM NEON), or `apple_m1`
 
@@ -151,10 +153,9 @@ on other 32-bit ARM targets e.g. with `-mfpu=neon`, or one of the
 `TARGET_C_EXTRA=neon_*` presets), WASM SIMD with `-msimd128`, and RVV with a
 `-march` that includes `v`. pffft builds with the toolchain's target flags.
 On WebAssembly it adds `-msimd128` (and `-mrelaxed-simd` with
-`PFFFT_USE_WASM_RELAXED_SIMD`), on RISC-V the `-march` described below unless
-`TARGET_C_ARCH` is set; otherwise a SIMD instruction set is enabled with the
-compiler's own flags, e.g. through `TARGET_C_ARCH` / `TARGET_C_EXTRA`. `cmake`
-prints the backend it detected.
+`PFFFT_USE_WASM_RELAXED_SIMD`); otherwise a SIMD instruction set is enabled
+with the compiler's own flags, e.g. through `TARGET_C_ARCH` /
+`TARGET_C_EXTRA`. `cmake` prints the backend it detected.
 
 Options can be passed to `cmake` at command line, e.g.
 ```
@@ -339,23 +340,36 @@ the WASM SIMD backend.
 
 ### RISC-V: RVV vector backend
 
-When the target is detected as `riscv64`, the build defaults to
-`-march=rv64gcv` (the `v` is the vector extension, V), enabling the
-RVV 1.0 vector backend in `src/simd/pf_rvv_{float,double}.h`. On
-hardware with `VLEN >= 256` (e.g. Spacemit X100) the configure step
-also probes the host VLEN and appends a `zvlNNNb` suffix so the
-compiler can emit single 4-wide double-precision vector ops. If the
-target turns out to lack V, the build falls back to `rv64gc` and the
-scalar code. To opt out explicitly, pass `-DPFFFT_USE_SIMD=OFF` or set
-both `-DTARGET_C_ARCH=rv64gc` and `-DTARGET_CXX_ARCH=rv64gc`.
+The RVV 1.0 vector backend in `src/simd/pf_rvv_{float,double}.h` is used
+when the compiler enables the vector extension, V. Toolchains for the RVA23
+profile (e.g. Ubuntu 26.04's) do so by default; for others, pass a `-march`
+with `v`, e.g. `-DTARGET_C_ARCH=rv64gcv -DTARGET_CXX_ARCH=rv64gcv`. Such a
+build runs only on CPUs with V. The backend is written with GCC vector
+types, which gcc 14 and later turn into RVV instructions; gcc 13 compiles
+them to scalar code, which `cmake` reports as `RVV (scalar code)`, with a
+warning.
+
+`-DTARGET_C_ARCH=auto -DTARGET_CXX_ARCH=auto` enables V if the build machine
+has it, like `-march=native` does elsewhere. It adds nothing if the compiler
+already enables V with the build's flags, `CMAKE_C_FLAGS` and those of the
+build type. Otherwise it runs a probe built with `-march=rv64gcv`;
+if the probe runs, the build gets `-march=rv64gcv`, and in a native build on
+hardware with `VLEN >= 256` (e.g. Spacemit X100) also the matching
+`zvlNNNb`, so the compiler can emit single 4-wide double-precision vector
+ops. If the probe fails, the compiler's default is kept. As `auto` chooses
+the `-march` itself, combining it with an `-march` or `-mcpu` in the
+compiler flags is an error; use `none` to keep the one in the flags. An
+`-march` that `auto` can't recognise, e.g. inside a complex generator
+expression in a parent project's compile options, still takes precedence.
 
 When cross-compiling, the probe runs under `CMAKE_CROSSCOMPILING_EMULATOR`;
-with QEMU, enable V and pick the VLEN explicitly, e.g.
+without one, `auto` keeps the compiler's default. With QEMU, enable V
+explicitly, e.g.
 `-DCMAKE_CROSSCOMPILING_EMULATOR="qemu-riscv64-static;-L;/usr/riscv64-linux-gnu;-cpu;rv64,v=true,vlen=256,vext_spec=v1.0"`.
 Distributions that build their riscv64 libraries for the RVA23 profile (e.g.
-Ubuntu 26.04) need an RVA23 CPU model to run the probe, e.g.
+Ubuntu 26.04) need an RVA23 CPU model to run anything, e.g.
 `-cpu;rva23u64,vlen=256`. Use `qemu-riscv64` from the `qemu-user` package
-there, which no longer ships a `-static` binary. Without an emulator the build assumes V is present.
+there, which no longer ships a `-static` binary.
 
 ### PowerPC: AltiVec backend
 
