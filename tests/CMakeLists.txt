@@ -170,6 +170,27 @@ if (PFFFT_USE_TYPE_FLOAT)
 
 endif()
 
+if (PFFFT_BUILD_BENCHMARKS AND PFFFT_USE_TYPE_FLOAT)
+  # the "slow" convolution kernels of bench_pf_conv_float, every architecture
+  # variant of benchmarks/pf_conv.cpp against a plain convolution
+  add_executable(test_pf_conv test_pf_conv.cpp)
+  set_property(TARGET test_pf_conv PROPERTY CXX_STANDARD 11)
+  set_property(TARGET test_pf_conv PROPERTY CXX_STANDARD_REQUIRED ON)
+  target_compile_definitions(test_pf_conv PRIVATE PFFFT_ENABLE_FLOAT)
+  target_include_directories(test_pf_conv PRIVATE ${PFFFT_SOURCE_DIR}/benchmarks)
+  target_activate_cxx_compiler_warnings(test_pf_conv)
+  if (PFFFT_USE_DEBUG_ASAN)
+    target_compile_options(test_pf_conv PRIVATE "-fsanitize=address")
+  endif()
+  # pf_conv_dispatcher is a target of benchmarks/
+  target_link_libraries(test_pf_conv pf_conv_dispatcher PFFFT ${STDCXXLIB} ${ASANLIB} ${MATHLIB})
+
+  add_test(NAME test_pf_conv
+    COMMAND test_pf_conv
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )
+endif()
+
 if (PFFFT_BUILD_BENCHMARKS)
   # Smoke tests of the FFT benchmark: every engine that is built in checks its
   # result and is timed briefly, at powers of two and at another size. One

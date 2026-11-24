@@ -39,6 +39,7 @@ ctest -R test_fft_factors
 ctest -R test_pffft_float
 ctest -R test_pffft_double
 ctest -R test_pfconv_lens_symetric
+ctest -R test_pf_conv                  # the kernels of bench_pf_conv_float
 
 # Run specific test executable directly (after build)
 ./test_fft_factors
