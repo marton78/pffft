@@ -36,17 +36,20 @@ from pathlib import Path
 import results
 
 POW2_ONLY = {"vdsp", "green", "ooura"}  # engines that support powers of two only
-# An engine keeps its color in every figure. The eight libraries take eight
-# colors picked to be as different as possible, in OKLab, for every pair:
-# worst pair 17.4 apart (x100) to normal vision, 8.8 under simulated protan or
-# deutan vision. ooura's navy, added last, is at least 22.4 and 14.2 from all
-# the others and from the ink. fftw-meas is fftw-est at 45% HSV saturation, to read as one
-# library.
+# An engine keeps its color in every figure, and where it can, its color says
+# what it is: Green FFT green, vDSP (Apple only) gray, FFTW orange with
+# fftw-meas as a pale fftw-est (45% of the way to the surface), pffft the
+# strongest blue. The others were then picked, within a hue each (PocketFFT
+# brown, KISS FFT pink, FFTPACK crimson, Ooura navy, MKL teal), to be as
+# different as possible in OKLab, for every pair, since any two lines can
+# cross: without MKL the worst pair is 15.2 apart (x100) to normal vision and
+# 7.8 under simulated protan or deutan vision (Machado et al. 2009); MKL,
+# x86 only and never next to vDSP, is at least 14.0 and 9.5 from the others.
 # pffft@LABEL engines take the colors of the libraries that are absent.
-SERIES = {"pffft": "#2a78d6", "fftw-est": "#f06a2e", "fftw-meas": "#f0a584", "vdsp": "#43a26d",
-          "pocketfft": "#9a5505", "kissfft": "#e678c0", "fftpack": "#bb1664", "green": "#7a2eb4",
-          "ooura": "#000080", "mkl": "#898781"}
-SPARE = ["#bb1664", "#43a26d", "#7a2eb4", "#9a5505", "#e678c0", "#f06a2e"]
+SERIES = {"pffft": "#2a78d6", "fftw-est": "#e16037", "fftw-meas": "#eda68f", "vdsp": "#848380",
+          "pocketfft": "#633416", "kissfft": "#cf76bb", "fftpack": "#c1154f", "green": "#42660a",
+          "ooura": "#102459", "mkl": "#196d7e"}
+SPARE = ["#c1154f", "#42660a", "#e16037", "#633416", "#cf76bb", "#102459"]
 INK, INK2, MUTED = "#0b0b0b", "#52514e", "#898781"
 SURFACE, GRID, AXIS = "#fcfcfb", "#e1e0d9", "#c3c2b7"
 FASTER, SLOWER = "#2a78d6", "#e34948"
@@ -345,12 +348,12 @@ def plot_engines(args, files, plt) -> None:
             ax.set_ylabel("flops per cycle" if mode == "cycles" else "GFLOPS", fontsize=8.5, color=INK2)
 
     handles = [Line2D([], [], color=color[e], lw=width[e], label=label_for(e)) for e in engines]
-    keys = [Line2D([], [], color=MUTED, lw=1.8, label="n a power of two")]
+    keys = [Line2D([], [], color=INK2, lw=1.8, label="n a power of two")]
     if other_n:
-        keys.append(Line2D([], [], color=MUTED, lw=1.2, ls=DASHED, label="n not a power of two"))
+        keys.append(Line2D([], [], color=INK2, lw=1.2, ls=DASHED, label="n not a power of two"))
     if padded:
         only = " and ".join(label_for(e) for e in engines if e in POW2_ONLY)
-        keys.append(Line2D([], [], color=MUTED, lw=1.2, ls=DOTTED,
+        keys.append(Line2D([], [], color=INK2, lw=1.2, ls=DOTTED,
                            label=f"n not a power of two, padded to the next one ({only})"))
     if trials > 1:
         keys.append(Patch(color=MUTED, alpha=0.25, lw=0, label=f"range over {trials} trials"))
@@ -450,9 +453,9 @@ def plot_compare(args, files, plt) -> None:
 
     handles = [Line2D([], [], color=colors[k % len(colors)], lw=2, marker=marks[k % len(marks)], ms=4.5, mew=0,
                       label=machine(meta)) for k, (_, meta, _) in enumerate(files)]
-    keys = [Line2D([], [], color=MUTED, lw=1.8, label="n a power of two")]
+    keys = [Line2D([], [], color=INK2, lw=1.8, label="n a power of two")]
     if other_n:
-        keys.append(Line2D([], [], color=MUTED, lw=1.2, ls=(0, (3.5, 2)), label="n not a power of two"))
+        keys.append(Line2D([], [], color=INK2, lw=1.2, ls=(0, (3.5, 2)), label="n not a power of two"))
     launches = files[0][1].get("launches", "?")
     per = int(files[0][1].get("trials", 0)) // max(1, int(files[0][1].get("launches", 1) or 1))
     keys.append(Patch(color=MUTED, alpha=0.25, lw=0, label=f"range over {launches} launches × {per} trials"))
