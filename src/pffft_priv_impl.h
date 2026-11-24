@@ -596,6 +596,102 @@ static NEVER_INLINE(void) passf8_pf_ps(int ido, int l1, const v4sf * RESTRICT cc
 }
 #endif
 
+/*
+  passf6 and passb6 merged here, fsign = -1 for passf6, +1 for passb6
+
+  cffti1_ps puts a factor 6 only last, in place of the lone 2 and a 3, so
+  as for passf8_ps the ido passed here is 2: each leg is one complex
+  vector, and no twiddles. As 2 and 3 are coprime, the 6-point DFT needs
+  no twiddles inside either (Good-Thomas): with the input index
+  n = 3*n1 + 2*n2 mod 6 and the output index m = m1 mod 2, m = m2 mod 3,
+  w6^(n*m) = (-1)^(n1*m1) * w3^(n2*m2). So a DFT-2 of each pair (x0, x3),
+  (x2, x5), (x4, x1) (n1 = 0, 1 for n2 = 0, 1, 2), then a DFT-3 of the
+  sums (m1 = 0) gives y0, y4, y2 and one of the differences (m1 = 1)
+  y3, y1, y5 (m2 = 0, 1, 2). That is 32 vector adds, 4 multiply-adds and
+  4 multiplies per k, for 6 legs; passf8_ps takes 52 adds and 4
+  multiplies for its 8.
+*/
+static ALWAYS_INLINE(void) passf6_loop_ps(int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, const float fsign,
+                                          const int pf) {
+  static const float taur = (float)-0.5;                    /* cos(2*pi/3) */
+  static const float taui = (float)0.86602540378443864676;  /* sin(2*pi/3) = sqrt(3)/2 */
+  const int l1ido = 2*l1;
+  int k;
+
+  for (k = 0; k < l1ido; k += 2, cc += 12, ch += 2) {
+    PF_PREFETCH(pf, ch, 1);
+    PF_PREFETCH(pf, ch + 1*l1ido, 1);
+    PF_PREFETCH(pf, ch + 2*l1ido, 1);
+    PF_PREFETCH(pf, ch + 3*l1ido, 1);
+    PF_PREFETCH(pf, ch + 4*l1ido, 1);
+    PF_PREFETCH(pf, ch + 5*l1ido, 1);
+    /* Load 6 inputs: cc[2*leg + 0] = real, cc[2*leg + 1] = imag */
+    v4sf x0r = cc[ 0], x0i = cc[ 1];
+    v4sf x1r = cc[ 2], x1i = cc[ 3];
+    v4sf x2r = cc[ 4], x2i = cc[ 5];
+    v4sf x3r = cc[ 6], x3i = cc[ 7];
+    v4sf x4r = cc[ 8], x4i = cc[ 9];
+    v4sf x5r = cc[10], x5i = cc[11];
+
+    /* DFT-2 of (x0, x3), (x2, x5), (x4, x1) */
+    v4sf s0r = VADD(x0r, x3r), s0i = VADD(x0i, x3i);
+    v4sf s1r = VADD(x2r, x5r), s1i = VADD(x2i, x5i);
+    v4sf s2r = VADD(x4r, x1r), s2i = VADD(x4i, x1i);
+    v4sf d0r = VSUB(x0r, x3r), d0i = VSUB(x0i, x3i);
+    v4sf d1r = VSUB(x2r, x5r), d1i = VSUB(x2i, x5i);
+    v4sf d2r = VSUB(x4r, x1r), d2i = VSUB(x4i, x1i);
+
+    /* DFT-3 of the sums -> y0, y4, y2. With c = s0 + taur*(s1 + s2) and
+       u = taui*(s1 - s2): Y1 = c + fsign*j*u, Y2 = c - fsign*j*u */
+    {
+      v4sf tr = VADD(s1r, s2r), ti = VADD(s1i, s2i);
+      v4sf cr = SVMADD(taur, tr, s0r), ci = SVMADD(taur, ti, s0i);
+      v4sf ur = SVMUL(taui, VSUB(s1r, s2r)), ui = SVMUL(taui, VSUB(s1i, s2i));
+      ch[0*l1ido + 0] = VADD(s0r, tr);
+      ch[0*l1ido + 1] = VADD(s0i, ti);
+      ch[4*l1ido + 0] = VSUB_FSIGN(cr, ui);
+      ch[4*l1ido + 1] = VADD_FSIGN(ci, ur);
+      ch[2*l1ido + 0] = VADD_FSIGN(cr, ui);
+      ch[2*l1ido + 1] = VSUB_FSIGN(ci, ur);
+    }
+
+    /* DFT-3 of the differences -> y3, y1, y5 */
+    {
+      v4sf tr = VADD(d1r, d2r), ti = VADD(d1i, d2i);
+      v4sf cr = SVMADD(taur, tr, d0r), ci = SVMADD(taur, ti, d0i);
+      v4sf ur = SVMUL(taui, VSUB(d1r, d2r)), ui = SVMUL(taui, VSUB(d1i, d2i));
+      ch[3*l1ido + 0] = VADD(d0r, tr);
+      ch[3*l1ido + 1] = VADD(d0i, ti);
+      ch[1*l1ido + 0] = VSUB_FSIGN(cr, ui);
+      ch[1*l1ido + 1] = VADD_FSIGN(ci, ur);
+      ch[5*l1ido + 0] = VADD_FSIGN(cr, ui);
+      ch[5*l1ido + 1] = VSUB_FSIGN(ci, ur);
+    }
+  }
+}
+
+/* fsign as a constant, as in passf8_ps */
+static NEVER_INLINE(void) passf6_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, float fsign) {
+  assert(ido == 2);
+  (void)ido;
+  if (fsign < 0) {
+    passf6_loop_ps(l1, cc, ch, -1, 0);
+  } else {
+    passf6_loop_ps(l1, cc, ch, +1, 0);
+  }
+} /* passf6 */
+#if PF_ON
+static NEVER_INLINE(void) passf6_pf_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch, float fsign) {
+  assert(ido == 2);
+  (void)ido;
+  if (fsign < 0) {
+    passf6_loop_ps(l1, cc, ch, -1, 1);
+  } else {
+    passf6_loop_ps(l1, cc, ch, +1, 1);
+  }
+}
+#endif
+
 #undef VADD_FSIGN
 #undef VSUB_FSIGN
 
@@ -1883,11 +1979,31 @@ static void cffti1_ps(int n, float *wa, int *ifac)
      and temporaries. Factoring by {5,3,8,4,2} instead, which makes all
      but the last radix-8 pass one with twiddles (n = 16384: 8, 8, 8, 8),
      made n = 16384 15-27% slower (2ce8a89), likely because a radix-8
-     butterfly with 7 twiddle multiplies holds about 40 vectors live. */
-  if (nf >= 2 && ifac[2] == 2 && ifac[nf+1] == 4) {
-    for (k1 = 2; k1 <= nf; ++k1) ifac[k1] = ifac[k1+1];
-    ifac[nf] = 8;
-    ifac[1] = --nf;
+     butterfly with 7 twiddle multiplies holds about 40 vectors live.
+     Where there is also a 3, the 2 and a 3 become a radix-6 pass at the
+     end instead, as twiddle-free as the radix-8 one (passf6_ps):
+     [2, 5.., 3, 3.., 4..] -> [5.., 3.., 4.., 6]. The radix-2 and a
+     radix-3 pass with twiddles go away, and all the 4s stay. The other
+     factors keep their order, so the 3s and 5s still run at an ido of
+     at least 6 (idot > 2), as passf3_ps and passf5_ps assume. The loop
+     below writes the 6 (ido == 1) only trivial twiddles, which passf6_ps
+     does not read, as for the 8; the twiddles of all passes still take
+     2*n floats, as sum (ip-1)*ido = n-1 for any order of the factors. */
+  if (nf >= 2 && ifac[2] == 2) {
+    int k3 = 0;
+    for (k1 = 3; k1 <= nf+1; ++k1)
+      if (ifac[k1] == 3) k3 = k1;
+    if (k3) {
+      int m = 2;
+      for (k1 = 3; k1 <= nf+1; ++k1)
+        if (k1 != k3) ifac[m++] = ifac[k1];
+      ifac[m] = 6;  /* m == nf */
+      ifac[1] = --nf;
+    } else if (ifac[nf+1] == 4) {
+      for (k1 = 2; k1 <= nf; ++k1) ifac[k1] = ifac[k1+1];
+      ifac[nf] = 8;
+      ifac[1] = --nf;
+    }
   }
 
   float argh = (2*(float)M_PI) / n;
@@ -1940,6 +2056,9 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
     switch (ip) {
       case 8: {
         PF_CALL(pf, passf8, (idot, l1, in, out, isign));
+      } break;
+      case 6: {
+        PF_CALL(pf, passf6, (idot, l1, in, out, isign));
       } break;
       case 5: {
         int ix2 = iw + idot;
