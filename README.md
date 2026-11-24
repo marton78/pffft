@@ -294,6 +294,57 @@ AMD Piledriver CPU, so enabling it unconditionally would break older hardware.
 Note that FMA changes results by up to one ULP, since it rounds once where the
 separate multiply and add round twice.
 
+### x86: output prefetching, and AMD
+
+Out of L1, the passes of the FFT are bound by their stores. On x86, pffft
+therefore prefetches the output of each pass of at least 24 KiB, 128 bytes
+ahead (all passes but the radix-5 one of complex transforms). On Intel CPUs
+(Xeon 6975P-C, Xeon Platinum 8573C, Core i7-8700B), real transforms out of L1
+ran up to 43% faster and complex ones up to 23%;
+[docs/benchmarks.md](docs/benchmarks.md) has the details. AMD Zen CPUs did
+not gain from it: with gcc they were up to 6% slower, with MSVC up to 14% at
+single lengths (5% on average from n = 4096 on).
+
+So pffft does not prefetch when the compiler targets Zen:
+`-DTARGET_C_ARCH=znver3` and the like (with gcc, clang or clang-cl), or
+`native` on a Zen CPU with a compiler that knows it (for Zen 5, e.g. gcc 14
+or clang 19). Set `PFFFT_PREFETCH_DIST` to 0 yourself if the library will run
+on AMD CPUs and is built
+
+- for generic x86-64: no `TARGET_C_ARCH`, or `x86-64-v2`, `-v3` or `-v4`, as
+  in distribution packages, also with `-mtune=znverN`, which pffft can't
+  see;
+- for an Intel or an older x86 architecture, `haswell` from the FMA note
+  above included;
+- with `native` on a Zen CPU the compiler doesn't know, or for a Zen after
+  Zen 6;
+- with MSVC (cl.exe): none of its options defines a macro that names the
+  CPU, not even `/favor:AMD64`.
+
+```
+cmake -DPFFFT_PREFETCH_DIST=0 ..
+```
+
+On an AMD EPYC 7763 with MSVC this made pffft as fast as without the
+prefetching code.
+
+With MSVC the gain on Intel is smaller than with gcc or clang: MSVC computes
+each prefetch address with a few more instructions. On a Xeon Platinum
+8573C, real transforms still ran up to 43% faster in double precision and up
+to 16% in single precision, while complex ones changed by -4% to +13%. On an
+Ice Lake Xeon 8370C (measured with an earlier version that prefetched in all
+complex passes), double-precision real transforms gained up to 24%, but
+single-precision real transforms were up to 6% slower at n = 8192 and at
+lengths with a factor 5 (15360, 48000, 100000), and complex transforms up to
+7%.
+
+`PFFFT_PREFETCH_DIST` is the distance in bytes, 0 for off, and
+`PFFFT_PREFETCH_MIN` (default 24576) the smallest pass, in bytes, that
+prefetches. With CMake, set them as above (`-DPFFFT_PREFETCH_MIN=...`); an
+empty value keeps the default. Without CMake, define them as compile
+definitions (`-DPFFFT_PREFETCH_DIST=0`, or `/DPFFFT_PREFETCH_DIST=0` with
+MSVC).
+
 ### ARMv7 (32-bit ARM): prefer clang over gcc
 
 On 32-bit ARM, **gcc emits very inefficient assembly**, with a lot more
