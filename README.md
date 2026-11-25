@@ -348,34 +348,30 @@ MSVC).
 
 ### Long transforms: splitting, and AMD
 
-The passes of the FFT sweep the whole array one after the other. Once the
-arrays no longer fit in the cache, every pass goes through memory. So
-transforms of arrays larger than `PFFFT_SPLIT_MAX` bytes run their first
-(or, forward real, last) pass over the whole array, which splits the
-transform into 3 to 5 independent ones on contiguous blocks, and transform
-the blocks one after the other while each is in cache, splitting them
-again where they are still larger. The result is bit for bit the same.
+pffft runs the passes of an FFT one after the other, each over the whole
+array. That is fast while the data fits in the cache, but for long
+transforms every pass has to go through main memory. So for arrays larger
+than `PFFFT_SPLIT_MAX` bytes, the transform is split into 3, 4 or 5
+independent shorter transforms, recursively until they fit in the cache,
+which are then processed one after the other. This divide and conquer
+approach makes transforms of 2^20 points and more up to 15% faster on ARM
+(the most on Apple's chips, hardly at all on Arm's Neoverse servers),
+and 27-34% faster on Intel CPUs.
 
-The best `PFFFT_SPLIT_MAX` depends on the caches, so the default depends on
-the target: 1 MiB on x86, 8 MiB when the compiler targets AMD Zen (as for
-the prefetching above) and on Apple's arm64 chips, 16 MiB on other Arm
-CPUs. Against not splitting, transforms of 2^20 to 2^22 points ran 27 to
-34% faster on average on Intel CPUs (up to 56%), 15% on Apple's (the
-iPhone measured up to 2^21) and an AMD EPYC 7763 (up to 45%), and about
-as fast on the Neoverse N2 and the Cobalt 100 (-4.5 to +6.8%). Below 2^20
-points, splitting made a Xeon 6975P-C up to 63% faster (double-precision
-real 2^18). On an AMD EPYC 7763, 1 MiB made arrays of 2 to 12 MiB up to
-10.5% slower than not splitting, while 8 MiB leaves them whole (up to
-11.6% faster than 1 MiB there); set it yourself for builds the compiler
-can't target at Zen (the list above):
+The best size depends on the CPU's caches, so the default depends on the
+target: 1 MiB on x86, 8 MiB on Apple's arm64 chips and when the compiler
+targets AMD Zen (as for the prefetching above), 16 MiB on other Arm CPUs.
+AMD CPUs do best with 8 MiB; with 1 MiB some lengths are slower than
+without splitting. Set it yourself for builds the compiler can't
+target at Zen (the list above):
 
 ```
 cmake -DPFFFT_SPLIT_MAX=8388608 ..
 ```
 
 A larger value splits less; a value larger than any array turns splitting
-off. Splitting needs SIMD (`SIMD_SZ` 4). As for the prefetching, an empty
-value keeps the default, and without CMake it is a compile definition.
+off. Splitting needs SIMD. As for the prefetching, an empty value keeps
+the default, and without CMake it is a compile definition.
 
 ### ARMv7 (32-bit ARM): prefer clang over gcc
 
