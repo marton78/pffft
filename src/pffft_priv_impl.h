@@ -2173,7 +2173,8 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
   pass depend only on ip*ido), recursively until a block takes at most
   PFFFT_SPLIT_MAX. So the result is bit for bit that of the
   breadth-first drivers. The interleave of the complex transforms is fused
-  with the step after it (split_cplx_last).
+  with the step after it (split_cplx_last), the sweep before the first
+  pass with that pass (split_top_ps).
 
   Arrays of at most PFFFT_SPLIT_MAX bytes are not split. The best size was
   measured with 0.25 to 16 MiB on eight machines (N = 65536 to 4194304):
@@ -2288,18 +2289,25 @@ static v4sf *cfft_split_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *
   split_interleave(p, M, 2, a, b); return b;
 }
 
-static v4sf *cfft_split_blocks_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *ifac,
-                                  int isign) {
+/* the DFTs of the p blocks of b, the output of the first pass of
+   cfft_split_blocks_ps: returns a or b, as that */
+static v4sf *cfft_split_sub_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *ifac,
+                               int isign) {
   int p = ifac[2], M = n / p, j;
   int sub[IFAC_MAX_SIZE];
   v4sf *res = 0;
-  cfft_pass_ps(p, M, 1, a, b, wa, isign, PF_USE_PREFETCH(2*n));
   split_sub_ifac(ifac, sub);
   for (j = 0; j < p; ++j) {
     res = cfft_split_ps(M, b + 2*(size_t)j*M, a + 2*(size_t)j*M, wa + (p - 1)*2*M, sub, isign);
   }
   /* every block ends in the same array: res is block p-1 of a or b */
   return (res == b + 2*(size_t)(p - 1)*M) ? b : a;
+}
+
+static v4sf *cfft_split_blocks_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *ifac,
+                                  int isign) {
+  cfft_pass_ps(ifac[2], n / ifac[2], 1, a, b, wa, isign, PF_USE_PREFETCH(2*n));
+  return cfft_split_sub_ps(n, a, b, wa, ifac, isign);
 }
 
 /* The real forward FFT of length n of in, into a or b (the returned one): a if
@@ -2348,6 +2356,306 @@ static int split_leaf_odd(int n, const int *ifac, size_t vec_per_elem) {
   if (!split_here(n, ifac, vec_per_elem)) return ifac[1] & 1;
   split_sub_ifac(ifac, sub);
   return split_leaf_odd(sub[0], sub, vec_per_elem);
+}
+
+/*
+  The first pass of a split complex transform (cfft_split_blocks_ps) fused
+  with the sweep before it: the UNINTERLEAVE2 of the forward transform
+  (SPLIT_TOP_IL), or the FUNC_CPLX_PREPROCESS (SPLIT_TOP_PRE) or
+  cplx_reorder_preprocess (SPLIT_TOP_RPRE) of the backward one. That saves
+  a sweep over the array, which out of cache made 4 to 7% of a transform.
+  The butterflies are copies of those of passf3/4/5_loop_ps with l1 == 1,
+  for the same results bit for bit, rather than a load option of those
+  loops: that cost double-precision complex transforms in cache up to 3.4%
+  on an M2.
+
+  The p inputs of element m of the pass are elements m + j*M (block j) of
+  what the sweep writes. The preprocess makes 4 elements, 4G to 4G+3, from
+  the 8 vectors of its group G, so the backward pass needs M % 4 == 0
+  (split_top_fused). It preprocesses SPLIT_TOP_CHUNK_BYTES of each block
+  into tmp, the scratch array of the blocks' DFTs, then runs the pass over
+  them. Read group by group, the 4p streams of the reorder (4 per block)
+  made the ordered backward transform up to 12% slower than the two sweeps
+  on an M2, and chunks of 2 KiB were still slower. Chunks of 64 to 512 KiB
+  were about equally fast on the M2, of 16 to 256 KiB on a MediaTek MT6878.
+*/
+#define SPLIT_TOP_IL   0
+#define SPLIT_TOP_PRE  1
+#define SPLIT_TOP_RPRE 2
+#ifndef SPLIT_TOP_CHUNK_BYTES
+#  define SPLIT_TOP_CHUNK_BYTES 131072 /* of each block */
+#endif
+#define SPLIT_TOP_STACK_BYTES 16384 /* the chunks of all blocks, in place */
+#define SPLIT_ADD_FSIGN(a, b) (fsign < 0 ? VSUB(a, b) : VADD(a, b)) /* VADD_FSIGN */
+#define SPLIT_SUB_FSIGN(a, b) (fsign < 0 ? VADD(a, b) : VSUB(a, b))
+
+/* x[0..7]: elements 4G to 4G+3 (real and imaginary vectors) of the output of
+   FUNC_CPLX_PREPROCESS (mode SPLIT_TOP_PRE) or of cplx_reorder_preprocess
+   (SPLIT_TOP_RPRE) of in; dk = Ncvec/4 */
+static ALWAYS_INLINE(void) split_top_pre_group(int mode, const v4sf *in, size_t G, size_t dk,
+                                                const v4sf *e, v4sf *x) {
+  v4sf r0, i0, r1, i1, r2, i2, r3, i3;
+  v4sf sr0, dr0, sr1, dr1, si0, di0, si1, di1;
+  if (mode == SPLIT_TOP_PRE) {
+    const v4sf *g = in + 8*G;
+    r0 = g[0]; i0 = g[1]; r1 = g[2]; i1 = g[3];
+    r2 = g[4]; i2 = g[5]; r3 = g[6]; i3 = g[7];
+  } else {
+    const v4sf *g = in + 2*G;
+    UNINTERLEAVE2(g[0], g[1], r0, i0);
+    UNINTERLEAVE2(g[2*dk], g[2*dk+1], r1, i1);
+    UNINTERLEAVE2(g[4*dk], g[4*dk+1], r2, i2);
+    UNINTERLEAVE2(g[6*dk], g[6*dk+1], r3, i3);
+  }
+  e += 6*G;
+
+  sr0 = VADD(r0,r2); dr0 = VSUB(r0, r2);
+  sr1 = VADD(r1,r3); dr1 = VSUB(r1, r3);
+  si0 = VADD(i0,i2); di0 = VSUB(i0, i2);
+  si1 = VADD(i1,i3); di1 = VSUB(i1, i3);
+
+  r0 = VADD(sr0, sr1); i0 = VADD(si0, si1);
+  r1 = VSUB(dr0, di1); i1 = VADD(di0, dr1);
+  r2 = VSUB(sr0, sr1); i2 = VSUB(si0, si1);
+  r3 = VADD(dr0, di1); i3 = VSUB(di0, dr1);
+
+  VCPLXMULCONJ(r1,i1,e[0],e[1]);
+  VCPLXMULCONJ(r2,i2,e[2],e[3]);
+  VCPLXMULCONJ(r3,i3,e[4],e[5]);
+
+  VTRANSPOSE4(r0,r1,r2,r3);
+  VTRANSPOSE4(i0,i1,i2,i3);
+
+  x[0] = r0; x[1] = i0; x[2] = r1; x[3] = i1;
+  x[4] = r2; x[5] = i2; x[6] = r3; x[7] = i3;
+}
+
+/* the butterflies of passf3_loop_ps, passf4_loop_ps and passf5_loop_ps for
+   element i/2: input j is x[2j], x[2j+1], output j goes to ch[i + j*ido] */
+static ALWAYS_INLINE(void) split_top_bfly3(const v4sf *x, v4sf *ch, int i, int ido,
+                                            const float *wa1, const float *wa2,
+                                            const float fsign, const int pf) {
+  static const float taur = (float)-0.5;
+  float taui = (float)0.86602540378443864676*fsign;
+  v4sf tr2, ti2, cr2, ci2, cr3, ci3, dr2, di2, dr3, di3;
+  float wr1, wi1, wr2, wi2;
+  PF_PREFETCH(pf, ch + i, 1);
+  PF_PREFETCH(pf, ch + i + ido, 1);
+  PF_PREFETCH(pf, ch + i + 2*ido, 1);
+  tr2 = VADD(x[2], x[4]);
+  cr2 = SVMADD(taur, tr2, x[0]);
+  ch[i]    = VADD(x[0], tr2);
+  ti2 = VADD(x[3], x[5]);
+  ci2 = SVMADD(taur, ti2, x[1]);
+  ch[i+1]  = VADD(x[1], ti2);
+  cr3 = SVMUL(taui, VSUB(x[2], x[4]));
+  ci3 = SVMUL(taui, VSUB(x[3], x[5]));
+  dr2 = VSUB(cr2, ci3);
+  dr3 = VADD(cr2, ci3);
+  di2 = VADD(ci2, cr3);
+  di3 = VSUB(ci2, cr3);
+  wr1=wa1[i]; wi1=fsign*wa1[i+1]; wr2=wa2[i]; wi2=fsign*wa2[i+1];
+  VCPLXMUL(dr2, di2, LD_PS1(wr1), LD_PS1(wi1));
+  ch[i+ido] = dr2;
+  ch[i+ido + 1] = di2;
+  VCPLXMUL(dr3, di3, LD_PS1(wr2), LD_PS1(wi2));
+  ch[i+2*ido] = dr3;
+  ch[i+2*ido+1] = di3;
+}
+
+static ALWAYS_INLINE(void) split_top_bfly4(const v4sf *x, v4sf *ch, int i, int ido,
+                                            const float *wa1, const float *wa2, const float *wa3,
+                                            const float fsign, const int pf) {
+  v4sf ci2, ci3, ci4, cr2, cr3, cr4, ti1, ti2, ti3, ti4, tr1, tr2, tr3, tr4;
+  float wr1, wi1, wr2, wi2, wr3, wi3;
+  PF_PREFETCH(pf, ch + i, 1);
+  PF_PREFETCH(pf, ch + i + 1*ido, 1);
+  PF_PREFETCH(pf, ch + i + 2*ido, 1);
+  PF_PREFETCH(pf, ch + i + 3*ido, 1);
+  tr1 = VSUB(x[0], x[4]);
+  tr2 = VADD(x[0], x[4]);
+  ti1 = VSUB(x[1], x[5]);
+  ti2 = VADD(x[1], x[5]);
+  tr4 = VSUB(x[7], x[3]);  /* times fsign below */
+  ti4 = VSUB(x[2], x[6]);
+  tr3 = VADD(x[2], x[6]);
+  ti3 = VADD(x[3], x[7]);
+
+  ch[i] = VADD(tr2, tr3);
+  cr3    = VSUB(tr2, tr3);
+  ch[i + 1] = VADD(ti2, ti3);
+  ci3 = VSUB(ti2, ti3);
+
+  cr2 = SPLIT_ADD_FSIGN(tr1, tr4);
+  cr4 = SPLIT_SUB_FSIGN(tr1, tr4);
+  ci2 = SPLIT_ADD_FSIGN(ti1, ti4);
+  ci4 = SPLIT_SUB_FSIGN(ti1, ti4);
+  wr1=wa1[i]; wi1=fsign*wa1[i+1];
+  VCPLXMUL(cr2, ci2, LD_PS1(wr1), LD_PS1(wi1));
+  wr2=wa2[i]; wi2=fsign*wa2[i+1];
+  ch[i + ido] = cr2;
+  ch[i + ido + 1] = ci2;
+
+  VCPLXMUL(cr3, ci3, LD_PS1(wr2), LD_PS1(wi2));
+  wr3=wa3[i]; wi3=fsign*wa3[i+1];
+  ch[i + 2*ido] = cr3;
+  ch[i + 2*ido + 1] = ci3;
+
+  VCPLXMUL(cr4, ci4, LD_PS1(wr3), LD_PS1(wi3));
+  ch[i + 3*ido] = cr4;
+  ch[i + 3*ido + 1] = ci4;
+}
+
+static ALWAYS_INLINE(void) split_top_bfly5(const v4sf *x, v4sf *ch, int i, int ido,
+                                            const float *wa1, const float *wa2,
+                                            const float *wa3, const float *wa4, const float fsign) {
+  static const float tr11 = (float)0.30901699437494742410;
+  const float ti11 = (float)0.95105651629515357212*fsign;
+  static const float tr12 = (float)-0.80901699437494742410;
+  const float ti12 = (float)0.58778525229247312917*fsign;
+  v4sf ci2, ci3, ci4, ci5, di3, di4, di5, di2, cr2, cr3, cr5, cr4, ti2, ti3,
+    ti4, ti5, dr3, dr4, dr5, dr2, tr2, tr3, tr4, tr5;
+  float wr1, wi1, wr2, wi2, wr3, wi3, wr4, wi4;
+  /* passf5_loop_ps's cc_ref(i-1, j) and cc_ref(i, j) */
+#define xr(j) x[2*((j)-1)]
+#define xi(j) x[2*((j)-1)+1]
+  ti5 = VSUB(xi(2), xi(5));
+  ti2 = VADD(xi(2), xi(5));
+  ti4 = VSUB(xi(3), xi(4));
+  ti3 = VADD(xi(3), xi(4));
+  tr5 = VSUB(xr(2), xr(5));
+  tr2 = VADD(xr(2), xr(5));
+  tr4 = VSUB(xr(3), xr(4));
+  tr3 = VADD(xr(3), xr(4));
+  ch[i]     = VADD(xr(1), VADD(tr2, tr3));
+  ch[i + 1] = VADD(xi(1), VADD(ti2, ti3));
+  cr2 = VADD(xr(1), SVMADD(tr11, tr2, SVMUL(tr12, tr3)));
+  ci2 = VADD(xi(1), SVMADD(tr11, ti2, SVMUL(tr12, ti3)));
+  cr3 = VADD(xr(1), SVMADD(tr12, tr2, SVMUL(tr11, tr3)));
+  ci3 = VADD(xi(1), SVMADD(tr12, ti2, SVMUL(tr11, ti3)));
+#undef xr
+#undef xi
+  cr5 = SVMADD(ti11, tr5, SVMUL(ti12, tr4));
+  ci5 = SVMADD(ti11, ti5, SVMUL(ti12, ti4));
+  cr4 = SVMSUB(ti11, tr4, SVMUL(ti12, tr5));
+  ci4 = SVMSUB(ti11, ti4, SVMUL(ti12, ti5));
+  dr3 = VSUB(cr3, ci4);
+  dr4 = VADD(cr3, ci4);
+  di3 = VADD(ci3, cr4);
+  di4 = VSUB(ci3, cr4);
+  dr5 = VADD(cr2, ci5);
+  dr2 = VSUB(cr2, ci5);
+  di5 = VSUB(ci2, cr5);
+  di2 = VADD(ci2, cr5);
+  wr1=wa1[i]; wi1=fsign*wa1[i+1]; wr2=wa2[i]; wi2=fsign*wa2[i+1];
+  wr3=wa3[i]; wi3=fsign*wa3[i+1]; wr4=wa4[i]; wi4=fsign*wa4[i+1];
+  VCPLXMUL(dr2, di2, LD_PS1(wr1), LD_PS1(wi1));
+  ch[i + ido]     = dr2;
+  ch[i + ido + 1] = di2;
+  VCPLXMUL(dr3, di3, LD_PS1(wr2), LD_PS1(wi2));
+  ch[i + 2*ido]     = dr3;
+  ch[i + 2*ido + 1] = di3;
+  VCPLXMUL(dr4, di4, LD_PS1(wr3), LD_PS1(wi3));
+  ch[i + 3*ido]     = dr4;
+  ch[i + 3*ido + 1] = di4;
+  VCPLXMUL(dr5, di5, LD_PS1(wr4), LD_PS1(wi4));
+  ch[i + 4*ido]     = dr5;
+  ch[i + 4*ido + 1] = di5;
+}
+
+static ALWAYS_INLINE(void) split_top_bfly(const int p, const v4sf *x, v4sf *ch, int i, int ido,
+                                           const float *wa, const float fsign, const int pf) {
+  if (p == 3) split_top_bfly3(x, ch, i, ido, wa, wa + ido, fsign, pf);
+  else if (p == 4) split_top_bfly4(x, ch, i, ido, wa, wa + ido, wa + 2*ido, fsign, pf);
+  else split_top_bfly5(x, ch, i, ido, wa, wa + ido, wa + 2*ido, wa + 3*ido, fsign);
+}
+
+/* the radix-p pass with l1 == 1 over the p blocks of M elements of what the
+   sweep of mode would write from in, into ch; wa, fsign as for passfp_ps */
+static ALWAYS_INLINE(void) split_top_loop(const int p, const int mode, int M, const v4sf *in,
+                                           v4sf *ch, const float *wa, const v4sf *e, v4sf *tmp,
+                                           size_t chunk, const float fsign, const int pf) {
+  const int ido = 2*M;
+  v4sf x[2*5];
+  int i, j;
+  if (mode == SPLIT_TOP_IL) {
+    for (i = 0; i < ido; i += 2) {
+      for (j = 0; j < p; ++j) {
+        UNINTERLEAVE2(in[i + j*ido], in[i + j*ido + 1], x[2*j], x[2*j+1]);
+      }
+      split_top_bfly(p, x, ch, i, ido, wa, fsign, pf);
+    }
+  } else {
+    /* the preprocess of SPLIT_TOP_CHUNK_BYTES of each block into tmp, then
+       the pass over them: reading the 4p streams of the reorder group by
+       group, or in chunks of 2 KiB, took more time than the sweep it saves */
+    size_t dk = (size_t)p*M/4, Mg = M/4, g0, g, gn;
+    size_t C = chunk / (8*sizeof(v4sf)); /* groups; tmp holds p*8*C vectors */
+    if (C > Mg) C = Mg;
+    if (C < 1) C = 1;
+    for (g0 = 0; g0 < Mg; g0 += gn) {
+      gn = Mg - g0 < C ? Mg - g0 : C;
+      for (j = 0; j < p; ++j) {
+        for (g = 0; g < gn; ++g) {
+          split_top_pre_group(mode, in, j*Mg + g0 + g, dk, e, tmp + 8*(j*C + g));
+        }
+      }
+      for (i = 0; i < (int)(8*gn); i += 2) {
+        for (j = 0; j < p; ++j) {
+          x[2*j] = tmp[8*j*C + i]; x[2*j+1] = tmp[8*j*C + i + 1];
+        }
+        split_top_bfly(p, x, ch, (int)(8*g0) + i, ido, wa, fsign, pf);
+      }
+    }
+  }
+}
+
+/* whether split_top_ps does the first pass of a split complex transform with
+   p = ifac[2] of n = p*M (else the sweep and cfft_pass_ps do) */
+static int split_top_fused(int p, int M) {
+  return (p == 3 || p == 4 || p == 5) && M % 4 == 0;
+}
+
+/* mode SPLIT_TOP_IL is the forward transform (tmp unused), the others are
+   backward: they preprocess chunk bytes of each block at a time into tmp
+   (p*chunk bytes, or 2*p*M vectors), which is neither in nor ch */
+static NEVER_INLINE(void) split_top_ps(int p, int mode, int M, const v4sf *in, v4sf *ch,
+                                        const float *wa, const v4sf *e, v4sf *tmp, size_t chunk) {
+  const int pf = PF_USE_PREFETCH(2*(size_t)p*M);
+  assert(split_top_fused(p, M) && in != ch);
+  (void)pf;
+#define SPLIT_TOP_P(P) do { \
+    if (mode == SPLIT_TOP_IL) { \
+      if (PF_ON && pf) split_top_loop(P, SPLIT_TOP_IL, M, in, ch, wa, e, tmp, chunk, -1, 1); \
+      else split_top_loop(P, SPLIT_TOP_IL, M, in, ch, wa, e, tmp, chunk, -1, 0); \
+    } else if (mode == SPLIT_TOP_PRE) { \
+      if (PF_ON && pf) split_top_loop(P, SPLIT_TOP_PRE, M, in, ch, wa, e, tmp, chunk, +1, 1); \
+      else split_top_loop(P, SPLIT_TOP_PRE, M, in, ch, wa, e, tmp, chunk, +1, 0); \
+    } else { \
+      if (PF_ON && pf) split_top_loop(P, SPLIT_TOP_RPRE, M, in, ch, wa, e, tmp, chunk, +1, 1); \
+      else split_top_loop(P, SPLIT_TOP_RPRE, M, in, ch, wa, e, tmp, chunk, +1, 0); \
+    } } while (0)
+  if (p == 3) SPLIT_TOP_P(3);
+  else if (p == 4) SPLIT_TOP_P(4);
+  else SPLIT_TOP_P(5);
+#undef SPLIT_TOP_P
+}
+#undef SPLIT_ADD_FSIGN
+#undef SPLIT_SUB_FSIGN
+
+/* split_top_ps in place, for the backward transform: there is no third array
+   for the chunks, so the pass reads a copy of x, made in y, with the chunks on
+   the stack, and writes x. It so computes as out of place (a compiler may
+   contract a*b + c into an FMA in one code path and not in another, and then
+   the results would differ in place). Out of line, so that the stack array is
+   not in the frame of every transform (a probe per call, which cost the
+   shortest transforms on x86 up to 19%). */
+static NEVER_INLINE(void) split_top_inplace_ps(int p, int mode, int M, v4sf *x, v4sf *y,
+                                                const float *wa, const v4sf *e) {
+  v4sf stk[SPLIT_TOP_STACK_BYTES / sizeof(v4sf)];
+  size_t k;
+  for (k = 0; k < 2*(size_t)p*M; ++k) y[k] = x[k];
+  split_top_ps(p, mode, M, y, x, wa, e, stk, SPLIT_TOP_STACK_BYTES / 5);
 }
 
 #endif /* SIMD_SZ == 4 */
@@ -3072,10 +3380,17 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
     } else if (setup->split) {
       /* the result is where the uninterleave writes if nf_odd is 0 */
       v4sf *a = buff[nf_odd], *b = buff[!nf_odd], *res;
-      for (k=0; k < Ncvec; ++k) {
-        UNINTERLEAVE2(vinput[k*2], vinput[k*2+1], a[k*2], a[k*2+1]);
+      int p = setup->ifac[2];
+      if (split_top_fused(p, Ncvec/p)) {
+        if (vinput == b) { b = a; a = buff[!nf_odd]; } /* in place: the copy at the end is needed */
+        split_top_ps(p, SPLIT_TOP_IL, Ncvec/p, vinput, b, setup->twiddle, 0, 0, 0);
+        res = cfft_split_sub_ps(Ncvec, a, b, setup->twiddle, setup->ifac, -1);
+      } else {
+        for (k=0; k < Ncvec; ++k) {
+          UNINTERLEAVE2(vinput[k*2], vinput[k*2+1], a[k*2], a[k*2+1]);
+        }
+        res = cfft_split_blocks_ps(Ncvec, a, b, setup->twiddle, setup->ifac, -1);
       }
-      res = cfft_split_blocks_ps(Ncvec, a, b, setup->twiddle, setup->ifac, -1);
       split_cplx_last(setup->ifac[2], Ncvec/setup->ifac[2], res, res == a ? b : a,
                       (v4sf*)setup->e, 0, ordered);
       ib = (res == buff[0]); /* the other one */
@@ -3111,10 +3426,23 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
     } else if (setup->split) {
       /* the result is where the preprocess writes if nf_odd is 0 */
       v4sf *a = buff[nf_odd], *b = buff[!nf_odd], *res;
-      if (vinput == a) { a = b; b = buff[nf_odd]; } /* in place: the copy at the end is needed */
-      if (ordered) cplx_reorder_preprocess(Ncvec, vinput, a, (v4sf*)setup->e);
-      else FUNC_CPLX_PREPROCESS(Ncvec, vinput, a, (v4sf*)setup->e);
-      res = cfft_split_blocks_ps(Ncvec, a, b, setup->twiddle, setup->ifac, +1);
+      int p = setup->ifac[2];
+      if (split_top_fused(p, Ncvec/p)) {
+        int mode = ordered ? SPLIT_TOP_RPRE : SPLIT_TOP_PRE;
+        if (vinput != a && vinput != b) {
+          split_top_ps(p, mode, Ncvec/p, vinput, b, setup->twiddle, (v4sf*)setup->e, a,
+                       SPLIT_TOP_CHUNK_BYTES);
+        } else {
+          if (vinput == a) { a = b; b = buff[nf_odd]; } /* b is vinput */
+          split_top_inplace_ps(p, mode, Ncvec/p, b, a, setup->twiddle, (v4sf*)setup->e);
+        }
+        res = cfft_split_sub_ps(Ncvec, a, b, setup->twiddle, setup->ifac, +1);
+      } else {
+        if (vinput == a) { a = b; b = buff[nf_odd]; } /* in place: the copy at the end is needed */
+        if (ordered) cplx_reorder_preprocess(Ncvec, vinput, a, (v4sf*)setup->e);
+        else FUNC_CPLX_PREPROCESS(Ncvec, vinput, a, (v4sf*)setup->e);
+        res = cfft_split_blocks_ps(Ncvec, a, b, setup->twiddle, setup->ifac, +1);
+      }
       split_cplx_last(setup->ifac[2], Ncvec/setup->ifac[2], res, res == a ? b : a,
                       (v4sf*)setup->e, 1, 0);
       ib = (res == buff[0]); /* the other one */
