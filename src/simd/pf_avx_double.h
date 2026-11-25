@@ -124,6 +124,18 @@ A blend, which is not a shuffle: on Intel it runs on more ports than port 5.
 /* a with lane 0 replaced by the scalar f */
 #  define VSET_LANE0(a,f) _mm256_blend_pd(a, _mm256_castpd128_pd256(_mm_set_sd(f)), 0x1)
 
+/* The 128-bit halves of a v4sf as pairs of doubles, for the reorder kernels
+   (pffft_priv_impl.h): with them INTERLEAVE2 into memory and UNINTERLEAVE2
+   from memory need no shuffle across the halves, the work of port 5 on Intel.
+   VPAIRS(a, b, lo, hi)  lo = [a0 b0 a2 b2], hi = [a1 b1 a3 b3]
+   VSTORE_PAIR_LO(p, v)  [v0 v1] to p, a double pointer aligned to 16 bytes
+   VSTORE_PAIR_HI(p, v)  [v2 v3] to p
+   VLOAD_PAIRS(p, q)     [p[0] p[1] q[0] q[1]] */
+#  define VPAIRS(a, b, lo, hi) { lo = _mm256_unpacklo_pd(a, b); hi = _mm256_unpackhi_pd(a, b); }
+#  define VSTORE_PAIR_LO(p, v) _mm_store_pd(p, _mm256_castpd256_pd128(v))
+#  define VSTORE_PAIR_HI(p, v) _mm_store_pd(p, _mm256_extractf128_pd(v, 1))
+#  define VLOAD_PAIRS(p, q) _mm256_insertf128_pd(_mm256_castpd128_pd256(_mm_load_pd(p)), _mm_load_pd(q), 1)
+
 /* reverse/flip all floats */
 #  define VREV_S(a)    _mm256_insertf128_pd(_mm256_castpd128_pd256(_mm_permute_pd(_mm256_extractf128_pd(a, 1),1)), _mm_permute_pd(_mm256_castpd256_pd128(a), 1), 1)
 
