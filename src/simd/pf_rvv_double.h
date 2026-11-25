@@ -111,6 +111,13 @@ typedef union v4sf_union {
 /* VSWAPHL(a,b) -> {b0, b1, a2, a3} */
 #  define VSWAPHL(a, b)  PF_RVV_SHUF4((b), (a), 0, 1, 6, 7)
 
+/* a with lane 0 replaced by the scalar f */
+static ALWAYS_INLINE(v4sf) pf_rvv_set_lane0(v4sf a, double f) {
+  a[0] = f;
+  return a;
+}
+#  define VSET_LANE0(a,f) pf_rvv_set_lane0(a, f)
+
 /* reverse/flip all doubles */
 #  define VREV_S(a)      PF_RVV_SHUF4((a), (a), 3, 2, 1, 0)
 /* reverse/flip complex doubles */

@@ -106,6 +106,9 @@ typedef union v4sf_union {
 #endif
 #  define VSWAPHL(a,b) vcombine_f32(vget_low_f32(b), vget_high_f32(a))
 
+/* a with lane 0 replaced by the scalar f */
+#  define VSET_LANE0(a,f) vsetq_lane_f32(f, a, 0)
+
 /* reverse/flip all floats */
 #  define VREV_S(a)    vcombine_f32(vrev64_f32(vget_high_f32(a)), vrev64_f32(vget_low_f32(a)))
 /* reverse/flip complex floats */

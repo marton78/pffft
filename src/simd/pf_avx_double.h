@@ -121,6 +121,9 @@ A blend, which is not a shuffle: on Intel it runs on more ports than port 5.
 */
 #  define VSWAPHL(a,b) _mm256_blend_pd(a, b, 0x3)
 
+/* a with lane 0 replaced by the scalar f */
+#  define VSET_LANE0(a,f) _mm256_blend_pd(a, _mm256_castpd128_pd256(_mm_set_sd(f)), 0x1)
+
 /* reverse/flip all floats */
 #  define VREV_S(a)    _mm256_insertf128_pd(_mm256_castpd128_pd256(_mm_permute_pd(_mm256_extractf128_pd(a, 1),1)), _mm_permute_pd(_mm256_castpd256_pd128(a), 1), 1)
 

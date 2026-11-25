@@ -92,6 +92,9 @@ typedef union v4sf_union {
 
 #  define VSWAPHL(a,b) __builtin_shufflevector((b), (a), 0, 1, 6, 7)
 
+/* a with lane 0 replaced by the scalar f */
+#  define VSET_LANE0(a,f) wasm_f32x4_replace_lane(a, 0, f)
+
 /* reverse/flip all floats: [0,1,2,3] -> [3,2,1,0] */
 #  define VREV_S(a) wasm_i32x4_shuffle(a, a, 3, 2, 1, 0)
 /* reverse/flip complex floats: [0,1,2,3] -> [2,3,0,1] */

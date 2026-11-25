@@ -126,6 +126,9 @@ typedef union v4sf_union {
 */
 #  define VSWAPHL(a,b) ((v4sf){ (b).lo, (a).hi })
 
+/* a with lane 0 replaced by the scalar f */
+#  define VSET_LANE0(a,f) ((v4sf){ vsetq_lane_f64(f, (a).lo, 0), (a).hi })
+
 /* reverse/flip all doubles: [0,1,2,3] -> [3,2,1,0] */
 #  define VREV_S(a) ((v4sf){ vextq_f64((a).hi, (a).hi, 1), vextq_f64((a).lo, (a).lo, 1) })
 

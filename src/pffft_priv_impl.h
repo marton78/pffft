@@ -3231,7 +3231,7 @@ static NEVER_INLINE(void) cplx_reorder_preprocess(int Ncvec, const v4sf *in, v4s
    and out + N, as reversed_copy does. */
 static NEVER_INLINE(void) real_finalize_reorder(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
   int k, dk = Ncvec/SIMD_SZ; /* number of 4x4 matrix blocks */
-  v4sf_union o[8];
+  v4sf o[8];
   v4sf cr_v = in[0], ci_v = in[Ncvec*2-1], zero = VZERO();
   v4sf *fa = out, *fb = out + 4*dk;            /* forward streams */
   v4sf *ra = out + 4*dk, *rb = out + 8*dk;     /* backward streams, written with *--p */
@@ -3242,32 +3242,35 @@ static NEVER_INLINE(void) real_finalize_reorder(int Ncvec, const v4sf *in, v4sf 
   assert(in != out);
   cr.v = cr_v; ci.v = ci_v;
 
-  /* block 0, as FUNC_REAL_FINALIZE */
-  FUNC_REAL_FINALIZE_4X4(&zero, &zero, in+1, e, &o[0].v);
-  xr0=(cr.f[0]+cr.f[2]) + (cr.f[1]+cr.f[3]); o[0].f[0] = xr0;
-  xi0=(cr.f[0]+cr.f[2]) - (cr.f[1]+cr.f[3]); o[1].f[0] = xi0;
-  xr2=(cr.f[0]-cr.f[2]);                     o[4].f[0] = xr2;
-  xi2=(cr.f[3]-cr.f[1]);                     o[5].f[0] = xi2;
-  xr1= ci.f[0] + s*(ci.f[1]-ci.f[3]);        o[2].f[0] = xr1;
-  xi1=-ci.f[2] - s*(ci.f[1]+ci.f[3]);        o[3].f[0] = xi1;
-  xr3= ci.f[0] - s*(ci.f[1]-ci.f[3]);        o[6].f[0] = xr3;
-  xi3= ci.f[2] - s*(ci.f[1]+ci.f[3]);        o[7].f[0] = xi3;
+  /* block 0, as FUNC_REAL_FINALIZE, with its lanes 0 set in registers
+     (VSET_LANE0): set through memory, GCC and MSVC kept o[] there and loaded
+     each vector right after the store of its lane, which store forwarding
+     cannot serve, a stall of 10 to 15 cycles per vector */
+  FUNC_REAL_FINALIZE_4X4(&zero, &zero, in+1, e, o);
+  xr0=(cr.f[0]+cr.f[2]) + (cr.f[1]+cr.f[3]); o[0] = VSET_LANE0(o[0], xr0);
+  xi0=(cr.f[0]+cr.f[2]) - (cr.f[1]+cr.f[3]); o[1] = VSET_LANE0(o[1], xi0);
+  xr2=(cr.f[0]-cr.f[2]);                     o[4] = VSET_LANE0(o[4], xr2);
+  xi2=(cr.f[3]-cr.f[1]);                     o[5] = VSET_LANE0(o[5], xi2);
+  xr1= ci.f[0] + s*(ci.f[1]-ci.f[3]);        o[2] = VSET_LANE0(o[2], xr1);
+  xi1=-ci.f[2] - s*(ci.f[1]+ci.f[3]);        o[3] = VSET_LANE0(o[3], xi1);
+  xr3= ci.f[0] - s*(ci.f[1]-ci.f[3]);        o[6] = VSET_LANE0(o[6], xr3);
+  xi3= ci.f[2] - s*(ci.f[1]+ci.f[3]);        o[7] = VSET_LANE0(o[7], xi3);
 
-  INTERLEAVE2(o[0].v, o[1].v, fa[0], fa[1]); fa += 2;
-  INTERLEAVE2(o[4].v, o[5].v, fb[0], fb[1]); fb += 2;
-  INTERLEAVE2(o[2].v, o[3].v, ga0, ga1); *--ra = VSWAPHL(ga0, ga1);
-  INTERLEAVE2(o[6].v, o[7].v, gb0, gb1); *--rb = VSWAPHL(gb0, gb1);
+  INTERLEAVE2(o[0], o[1], fa[0], fa[1]); fa += 2;
+  INTERLEAVE2(o[4], o[5], fb[0], fb[1]); fb += 2;
+  INTERLEAVE2(o[2], o[3], ga0, ga1); *--ra = VSWAPHL(ga0, ga1);
+  INTERLEAVE2(o[6], o[7], gb0, gb1); *--rb = VSWAPHL(gb0, gb1);
   {
     v4sf fa0 = ga0, fb0 = gb0; /* the first of each backward stream, for its last vector */
     for (k=1; k < dk; ++k) {
-      FUNC_REAL_FINALIZE_4X4(&in[8*k-1], &in[8*k+0], in + 8*k+1, e + k*6, &o[0].v);
-      INTERLEAVE2(o[0].v, o[1].v, fa[0], fa[1]); fa += 2;
-      INTERLEAVE2(o[4].v, o[5].v, fb[0], fb[1]); fb += 2;
-      INTERLEAVE2(o[2].v, o[3].v, h0, h1);
+      FUNC_REAL_FINALIZE_4X4(&in[8*k-1], &in[8*k+0], in + 8*k+1, e + k*6, o);
+      INTERLEAVE2(o[0], o[1], fa[0], fa[1]); fa += 2;
+      INTERLEAVE2(o[4], o[5], fb[0], fb[1]); fb += 2;
+      INTERLEAVE2(o[2], o[3], h0, h1);
       *--ra = VSWAPHL(ga1, h0);
       *--ra = VSWAPHL(h0, h1);
       ga1 = h1;
-      INTERLEAVE2(o[6].v, o[7].v, h0, h1);
+      INTERLEAVE2(o[6], o[7], h0, h1);
       *--rb = VSWAPHL(gb1, h0);
       *--rb = VSWAPHL(h0, h1);
       gb1 = h1;
