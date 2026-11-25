@@ -2777,6 +2777,23 @@ static NEVER_INLINE(void) FUNC_REAL_PREPROCESS(int Ncvec, const v4sf *in, v4sf *
 
 
 /*
+  On x86 the fused real functions below made double-precision real
+  transforms slower in cache: by 2 to 12% at n = 128 to 2400 on a Core
+  i7-8700B and an EPYC 7763 (by 22% at 128 there), by 8% at 2048 and 2400 on
+  a Xeon 6975P-C, by up to 40% at n = 32 with MSVC (Xeon Platinum 8573C,
+  EPYC 7763). From n = 4096 on they gained, out of cache by 15 to 35 points
+  more than with the reordering apart, as in single precision (which gained
+  2 to 13% in cache on the Xeon and the EPYC, and lost 1.5 to 4% on the Core
+  i7 at n = 1024 to 2400). So on x86, double-precision real transforms of at
+  most REAL_REORDER_APART_MAX bytes keep FUNC_ZREORDER as a step of its own.
+*/
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#  define REAL_REORDER_APART_MAX (sizeof(float) == 8 ? 24576 : 0) /* float is double in pffft_double.c */
+#else
+#  define REAL_REORDER_APART_MAX 0
+#endif
+
+/*
   The ordered transforms: FUNC_ZREORDER fused with the step before it
   (forward) or after it (backward), which saves a sweep over the data. Each
   4x4 block of the finalize or preprocess step is reordered right away.
@@ -3015,8 +3032,11 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
   v4sf *voutput      = (v4sf*)foutput;
   v4sf *buff[2]      = { voutput, scratch ? scratch : scratch_on_stack };
   /* the reordering of the ordered transforms is fused with the step next to
-     it, so it takes no step of its own */
-  int ib = (nf_odd ? 1 : 0);
+     it, so it takes no step of its own, but in short real transforms where
+     REAL_REORDER_APART_MAX says so */
+  int sep = (ordered && setup->transform == PFFFT_REAL &&
+             2*(size_t)Ncvec*sizeof(v4sf) <= (size_t)REAL_REORDER_APART_MAX);
+  int ib = (nf_odd ^ sep ? 1 : 0);
 
   assert(VALIGNED(finput) && VALIGNED(foutput));
 
@@ -3033,8 +3053,12 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
         ib = (rfftf1_ps(Ncvec*2, vinput, buff[ib], buff[!ib],
                         setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
       }
-      if (ordered) real_finalize_reorder(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
+      if (ordered && !sep) real_finalize_reorder(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
       else FUNC_REAL_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
+      if (sep) {
+        FUNC_ZREORDER(setup, (float*)buff[!ib], (float*)buff[ib], PFFFT_FORWARD);
+        ib = !ib; /* undone below */
+      }
     } else if (setup->split) {
       /* the result is where the uninterleave writes if nf_odd is 0 */
       v4sf *a = buff[nf_odd], *b = buff[!nf_odd], *res;
@@ -3062,7 +3086,11 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
       ib = !ib; /* may happen when finput == foutput */
     }
     if (setup->transform == PFFFT_REAL) {
-      if (ordered) real_reorder_preprocess(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
+      if (sep) {
+        FUNC_ZREORDER(setup, (float*)vinput, (float*)buff[ib], PFFFT_BACKWARD);
+        vinput = buff[ib]; ib = !ib;
+      }
+      if (ordered && !sep) real_reorder_preprocess(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       else FUNC_REAL_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       if (setup->split) {
         ib = (rfftb_split_ps(Ncvec*2, buff[ib], buff[!ib], setup->twiddle, setup->ifac) == buff[0] ? 0 : 1);
