@@ -255,7 +255,7 @@ static void load_engines(const options *o) {
     if (!o->engines) {
       /* with --lib the comparison of the libraries is the point */
       for (int i = o->nlibs ? r->nbuiltin : 0; i < (o->nlibs ? r->nall : r->nbuiltin); i++)
-        select_engine(r, &r->all[i]);
+        if (!r->all[i].on_request) select_engine(r, &r->all[i]);
     }
   }
   for (int i = 0; i < o->nlibs; i++) {
@@ -680,8 +680,8 @@ static void usage(FILE *f) {
           "  --min N --max N     limits for the keyword lists (defaults 32 and 1048576)\n"
           "  --prec LIST         f32,f64 (default: every precision built in)\n"
           "  --xform LIST        real,cplx (default: both)\n"
-          "  --engines LIST      engine names (default: all built-in engines; if --lib is\n"
-          "                      given, only the --lib engines)\n"
+          "  --engines LIST      engine names (default: all built-in engines but pffft-ip\n"
+          "                      and pffft-un; if --lib is given, only the --lib engines)\n"
           "  --lib LABEL=PATH    add the engine pffft@LABEL from a pffft shared library\n"
           "                      (repeatable)\n"
           "  --trials T          default 1\n"

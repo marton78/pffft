@@ -96,7 +96,6 @@ static int create_pffft(const bench_engine *e, int n, int cplx, const bench_bufs
 {
   const pffft_transform_t kind = cplx ? PFFFT_COMPLEX : PFFFT_REAL;
   state_pffft *s;
-  (void)e;
   if (!PF(is_valid_size)(n, kind)) return 1;
   s = malloc(sizeof *s);
   if (!s) return 1;
@@ -106,7 +105,8 @@ static int create_pffft(const bench_engine *e, int n, int cplx, const bench_bufs
     return 1;
   }
   s->bufs = *bufs;
-  return instance_ready(inst, s, bufs, OUT_OF_PLACE, n, cplx, (double)n);
+  return instance_ready(inst, s, bufs, e->variant == 1 ? IN_PLACE : OUT_OF_PLACE, n, cplx,
+                        (double)n);
 }
 
 static void run_pffft(const bench_instance *inst, int pairs)
@@ -117,6 +117,31 @@ static void run_pffft(const bench_instance *inst, int pairs)
   for (i = 0; i < pairs; i++) {
     PF(transform_ordered)(s->setup, x, y, work, PFFFT_FORWARD);
     PF(transform_ordered)(s->setup, y, z, work, PFFFT_BACKWARD);
+  }
+}
+
+/* pffft in place, ordered: one array of n and the work array, as Ooura's
+ * FFT and FFTPACK run (the variant field picks it). */
+static void run_pffft_ip(const bench_instance *inst, int pairs)
+{
+  const state_pffft *s = inst->state;
+  scalar *x = s->bufs.buf[0], *work = s->bufs.buf[3];
+  int i;
+  for (i = 0; i < pairs; i++) {
+    PF(transform_ordered)(s->setup, x, x, work, PFFFT_FORWARD);
+    PF(transform_ordered)(s->setup, x, x, work, PFFFT_BACKWARD);
+  }
+}
+
+/* pffft_transform: the spectrum in pffft's internal order, no reordering */
+static void run_pffft_un(const bench_instance *inst, int pairs)
+{
+  const state_pffft *s = inst->state;
+  scalar *x = s->bufs.buf[0], *y = s->bufs.buf[1], *z = s->bufs.buf[2], *work = s->bufs.buf[3];
+  int i;
+  for (i = 0; i < pairs; i++) {
+    PF(transform)(s->setup, x, y, work, PFFFT_FORWARD);
+    PF(transform)(s->setup, y, z, work, PFFFT_BACKWARD);
   }
 }
 
@@ -725,6 +750,8 @@ int BENCH_ENGINES(bench_engine *list, int max)
 {
   static const bench_engine all[] = {
     {"pffft", create_pffft, run_pffft, destroy_pffft, NULL, 0},
+    {"pffft-ip", create_pffft, run_pffft_ip, destroy_pffft, NULL, 1, 1},
+    {"pffft-un", create_pffft, run_pffft_un, destroy_pffft, NULL, 2, 1},
 #ifdef HAVE_FFTPACK
     {"fftpack", create_fftpack, run_fftpack, destroy_fftpack, NULL, 0},
 #endif
@@ -778,5 +805,6 @@ int BENCH_LIB_ENGINES(const char *label, const char *path, bench_engine *list, i
   list->destroy = destroy_lib;
   list->lib = lib;
   list->variant = 0;
+  list->on_request = 0;
   return 1;
 }
