@@ -2568,6 +2568,178 @@ static NEVER_INLINE(void) FUNC_REAL_PREPROCESS(int Ncvec, const v4sf *in, v4sf *
 }
 
 
+/*
+  The ordered transforms: FUNC_ZREORDER fused with the step before it
+  (forward) or after it (backward), which saves a sweep over the data. Each
+  4x4 block of the finalize or preprocess step is reordered right away.
+*/
+
+/* FUNC_CPLX_FINALIZE, then FUNC_ZREORDER forward */
+static NEVER_INLINE(void) cplx_finalize_reorder(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
+  int k, dk = Ncvec/SIMD_SZ; /* number of 4x4 matrix blocks */
+  v4sf r0, i0, r1, i1, r2, i2, r3, i3;
+  v4sf sr0, dr0, sr1, dr1, si0, di0, si1, di1;
+  v4sf *out0 = out, *out1 = out + 2*dk, *out2 = out + 4*dk, *out3 = out + 6*dk;
+  assert(in != out);
+  for (k=0; k < dk; ++k) {
+    r0 = in[8*k+0]; i0 = in[8*k+1];
+    r1 = in[8*k+2]; i1 = in[8*k+3];
+    r2 = in[8*k+4]; i2 = in[8*k+5];
+    r3 = in[8*k+6]; i3 = in[8*k+7];
+    VTRANSPOSE4(r0,r1,r2,r3);
+    VTRANSPOSE4(i0,i1,i2,i3);
+    VCPLXMUL(r1,i1,e[k*6+0],e[k*6+1]);
+    VCPLXMUL(r2,i2,e[k*6+2],e[k*6+3]);
+    VCPLXMUL(r3,i3,e[k*6+4],e[k*6+5]);
+
+    sr0 = VADD(r0,r2); dr0 = VSUB(r0, r2);
+    sr1 = VADD(r1,r3); dr1 = VSUB(r1, r3);
+    si0 = VADD(i0,i2); di0 = VSUB(i0, i2);
+    si1 = VADD(i1,i3); di1 = VSUB(i1, i3);
+
+    r0 = VADD(sr0, sr1); i0 = VADD(si0, si1);
+    r1 = VADD(dr0, di1); i1 = VSUB(di0, dr1);
+    r2 = VSUB(sr0, sr1); i2 = VSUB(si0, si1);
+    r3 = VSUB(dr0, di1); i3 = VADD(di0, dr1);
+
+    /* element 4k+q goes to k + q*dk */
+    INTERLEAVE2(r0, i0, out0[2*k], out0[2*k+1]);
+    INTERLEAVE2(r1, i1, out1[2*k], out1[2*k+1]);
+    INTERLEAVE2(r2, i2, out2[2*k], out2[2*k+1]);
+    INTERLEAVE2(r3, i3, out3[2*k], out3[2*k+1]);
+  }
+}
+
+/* FUNC_ZREORDER backward, then FUNC_CPLX_PREPROCESS */
+static NEVER_INLINE(void) cplx_reorder_preprocess(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
+  int k, dk = Ncvec/SIMD_SZ; /* number of 4x4 matrix blocks */
+  v4sf r0, i0, r1, i1, r2, i2, r3, i3;
+  v4sf sr0, dr0, sr1, dr1, si0, di0, si1, di1;
+  const v4sf *in0 = in, *in1 = in + 2*dk, *in2 = in + 4*dk, *in3 = in + 6*dk;
+  assert(in != out);
+  for (k=0; k < dk; ++k) {
+    UNINTERLEAVE2(in0[2*k], in0[2*k+1], r0, i0);
+    UNINTERLEAVE2(in1[2*k], in1[2*k+1], r1, i1);
+    UNINTERLEAVE2(in2[2*k], in2[2*k+1], r2, i2);
+    UNINTERLEAVE2(in3[2*k], in3[2*k+1], r3, i3);
+
+    sr0 = VADD(r0,r2); dr0 = VSUB(r0, r2);
+    sr1 = VADD(r1,r3); dr1 = VSUB(r1, r3);
+    si0 = VADD(i0,i2); di0 = VSUB(i0, i2);
+    si1 = VADD(i1,i3); di1 = VSUB(i1, i3);
+
+    r0 = VADD(sr0, sr1); i0 = VADD(si0, si1);
+    r1 = VSUB(dr0, di1); i1 = VADD(di0, dr1);
+    r2 = VSUB(sr0, sr1); i2 = VSUB(si0, si1);
+    r3 = VADD(dr0, di1); i3 = VSUB(di0, dr1);
+
+    VCPLXMULCONJ(r1,i1,e[k*6+0],e[k*6+1]);
+    VCPLXMULCONJ(r2,i2,e[k*6+2],e[k*6+3]);
+    VCPLXMULCONJ(r3,i3,e[k*6+4],e[k*6+5]);
+
+    VTRANSPOSE4(r0,r1,r2,r3);
+    VTRANSPOSE4(i0,i1,i2,i3);
+
+    out[8*k+0] = r0; out[8*k+1] = i0; out[8*k+2] = r1; out[8*k+3] = i1;
+    out[8*k+4] = r2; out[8*k+5] = i2; out[8*k+6] = r3; out[8*k+7] = i3;
+  }
+}
+
+/* FUNC_REAL_FINALIZE, then FUNC_ZREORDER forward. The finalize writes a
+   block of 8 vectors o[0..7] per k; the reorder sends o[0..1] and o[4..5]
+   forward from out and out + N/2, o[2..3] and o[6..7] backward from out + N/2
+   and out + N, as reversed_copy does. */
+static NEVER_INLINE(void) real_finalize_reorder(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
+  int k, dk = Ncvec/SIMD_SZ; /* number of 4x4 matrix blocks */
+  v4sf_union o[8];
+  v4sf cr_v = in[0], ci_v = in[Ncvec*2-1], zero = VZERO();
+  v4sf *fa = out, *fb = out + 4*dk;            /* forward streams */
+  v4sf *ra = out + 4*dk, *rb = out + 8*dk;     /* backward streams, written with *--p */
+  v4sf ga0, ga1, gb0, gb1, h0, h1;
+  float xr0, xi0, xr1, xi1, xr2, xi2, xr3, xi3;
+  v4sf_union cr, ci;
+  static const float s = (float)(M_SQRT1_2);
+  assert(in != out);
+  cr.v = cr_v; ci.v = ci_v;
+
+  /* block 0, as FUNC_REAL_FINALIZE */
+  FUNC_REAL_FINALIZE_4X4(&zero, &zero, in+1, e, &o[0].v);
+  xr0=(cr.f[0]+cr.f[2]) + (cr.f[1]+cr.f[3]); o[0].f[0] = xr0;
+  xi0=(cr.f[0]+cr.f[2]) - (cr.f[1]+cr.f[3]); o[1].f[0] = xi0;
+  xr2=(cr.f[0]-cr.f[2]);                     o[4].f[0] = xr2;
+  xi2=(cr.f[3]-cr.f[1]);                     o[5].f[0] = xi2;
+  xr1= ci.f[0] + s*(ci.f[1]-ci.f[3]);        o[2].f[0] = xr1;
+  xi1=-ci.f[2] - s*(ci.f[1]+ci.f[3]);        o[3].f[0] = xi1;
+  xr3= ci.f[0] - s*(ci.f[1]-ci.f[3]);        o[6].f[0] = xr3;
+  xi3= ci.f[2] - s*(ci.f[1]+ci.f[3]);        o[7].f[0] = xi3;
+
+  INTERLEAVE2(o[0].v, o[1].v, fa[0], fa[1]); fa += 2;
+  INTERLEAVE2(o[4].v, o[5].v, fb[0], fb[1]); fb += 2;
+  INTERLEAVE2(o[2].v, o[3].v, ga0, ga1); *--ra = VSWAPHL(ga0, ga1);
+  INTERLEAVE2(o[6].v, o[7].v, gb0, gb1); *--rb = VSWAPHL(gb0, gb1);
+  {
+    v4sf fa0 = ga0, fb0 = gb0; /* the first of each backward stream, for its last vector */
+    for (k=1; k < dk; ++k) {
+      FUNC_REAL_FINALIZE_4X4(&in[8*k-1], &in[8*k+0], in + 8*k+1, e + k*6, &o[0].v);
+      INTERLEAVE2(o[0].v, o[1].v, fa[0], fa[1]); fa += 2;
+      INTERLEAVE2(o[4].v, o[5].v, fb[0], fb[1]); fb += 2;
+      INTERLEAVE2(o[2].v, o[3].v, h0, h1);
+      *--ra = VSWAPHL(ga1, h0);
+      *--ra = VSWAPHL(h0, h1);
+      ga1 = h1;
+      INTERLEAVE2(o[6].v, o[7].v, h0, h1);
+      *--rb = VSWAPHL(gb1, h0);
+      *--rb = VSWAPHL(h0, h1);
+      gb1 = h1;
+    }
+    *--ra = VSWAPHL(ga1, fa0);
+    *--rb = VSWAPHL(gb1, fb0);
+  }
+}
+
+/* one vector pair of unreversed_copy(dk, in, ...): the pair it writes j-th */
+static ALWAYS_INLINE(void) unreversed_pair(int j, int dk, const v4sf *in, v4sf *o0, v4sf *o1) {
+  v4sf a = in[2*j], b = in[2*j+1], c = in[j == dk-1 ? 0 : 2*j+2];
+  v4sf h0 = VSWAPHL(b, c), g1 = VSWAPHL(a, b);
+  UNINTERLEAVE2(h0, g1, *o0, *o1);
+}
+
+/* FUNC_ZREORDER backward, then FUNC_REAL_PREPROCESS */
+static NEVER_INLINE(void) real_reorder_preprocess(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
+  int k, dk = Ncvec/SIMD_SZ; /* number of 4x4 matrix blocks */
+  v4sf_union Xr, Xi, *uout = (v4sf_union*)out;
+  v4sf blk[8];
+  float cr0, ci0, cr1, ci1, cr2, ci2, cr3, ci3;
+  static const float s = (float)M_SQRT2;
+  const v4sf *ina = in + 2*dk, *inb = in + 6*dk; /* the inputs of the two unreversed copies */
+  assert(in != out);
+  for (k=0; k < dk; ++k) {
+    /* block k of what FUNC_ZREORDER backward writes */
+    UNINTERLEAVE2(in[2*k], in[2*k+1], blk[0], blk[1]);
+    UNINTERLEAVE2(in[2*(2*dk+k)], in[2*(2*dk+k)+1], blk[4], blk[5]);
+    unreversed_pair(dk-1-k, dk, ina, &blk[2], &blk[3]);
+    unreversed_pair(dk-1-k, dk, inb, &blk[6], &blk[7]);
+    if (k == 0) {
+      int q;
+      for (q=0; q < 4; ++q) {
+        Xr.f[q] = ((float*)blk)[8*q];
+        Xi.f[q] = ((float*)blk)[8*q+4];
+      }
+      FUNC_REAL_PREPROCESS_4X4(blk, e, out+1, 1); /* will write only 6 values */
+    } else {
+      FUNC_REAL_PREPROCESS_4X4(blk, e + k*6, out-1+k*8, 0);
+    }
+  }
+  cr0=(Xr.f[0]+Xi.f[0]) + 2*Xr.f[2]; uout[0].f[0] = cr0;
+  cr1=(Xr.f[0]-Xi.f[0]) - 2*Xi.f[2]; uout[0].f[1] = cr1;
+  cr2=(Xr.f[0]+Xi.f[0]) - 2*Xr.f[2]; uout[0].f[2] = cr2;
+  cr3=(Xr.f[0]-Xi.f[0]) + 2*Xi.f[2]; uout[0].f[3] = cr3;
+  ci0= 2*(Xr.f[1]+Xr.f[3]);                       uout[2*Ncvec-1].f[0] = ci0;
+  ci1= s*(Xr.f[1]-Xr.f[3]) - s*(Xi.f[1]+Xi.f[3]); uout[2*Ncvec-1].f[1] = ci1;
+  ci2= 2*(Xi.f[3]-Xi.f[1]);                       uout[2*Ncvec-1].f[2] = ci2;
+  ci3=-s*(Xr.f[1]-Xr.f[3]) - s*(Xi.f[1]+Xi.f[3]); uout[2*Ncvec-1].f[3] = ci3;
+}
+
 void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, float *foutput, v4sf *scratch,
                              pffft_direction_t direction, int ordered) {
   int k, Ncvec   = setup->Ncvec;
@@ -2580,7 +2752,9 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
   const v4sf *vinput = (const v4sf*)finput;
   v4sf *voutput      = (v4sf*)foutput;
   v4sf *buff[2]      = { voutput, scratch ? scratch : scratch_on_stack };
-  int ib = (nf_odd ^ ordered ? 1 : 0);
+  /* the reordering of the ordered transforms is fused with the step next to
+     it, so it takes no step of its own */
+  int ib = (nf_odd ? 1 : 0);
 
   assert(VALIGNED(finput) && VALIGNED(foutput));
 
@@ -2590,7 +2764,8 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
     if (setup->transform == PFFFT_REAL) {
       ib = (rfftf1_ps(Ncvec*2, vinput, buff[ib], buff[!ib],
                       setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
-      FUNC_REAL_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
+      if (ordered) real_finalize_reorder(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
+      else FUNC_REAL_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
     } else {
       v4sf *tmp = buff[ib];
       for (k=0; k < Ncvec; ++k) {
@@ -2598,25 +2773,22 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
       }
       ib = (cfftf1_ps(Ncvec, buff[ib], buff[!ib], buff[ib],
                       setup->twiddle, &setup->ifac[0], -1) == buff[0] ? 0 : 1);
-      FUNC_CPLX_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
+      if (ordered) cplx_finalize_reorder(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
+      else FUNC_CPLX_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
     }
-    if (ordered) {
-      FUNC_ZREORDER(setup, (float*)buff[!ib], (float*)buff[ib], PFFFT_FORWARD);
-    } else ib = !ib;
+    ib = !ib;
   } else {
     if (vinput == buff[ib]) {
       ib = !ib; /* may happen when finput == foutput */
     }
-    if (ordered) {
-      FUNC_ZREORDER(setup, (float*)vinput, (float*)buff[ib], PFFFT_BACKWARD);
-      vinput = buff[ib]; ib = !ib;
-    }
     if (setup->transform == PFFFT_REAL) {
-      FUNC_REAL_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
+      if (ordered) real_reorder_preprocess(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
+      else FUNC_REAL_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       ib = (rfftb1_ps(Ncvec*2, buff[ib], buff[0], buff[1],
                       setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
     } else {
-      FUNC_CPLX_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
+      if (ordered) cplx_reorder_preprocess(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
+      else FUNC_CPLX_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       ib = (cfftf1_ps(Ncvec, buff[ib], buff[0], buff[1],
                       setup->twiddle, &setup->ifac[0], +1) == buff[0] ? 0 : 1);
       for (k=0; k < Ncvec; ++k) {
