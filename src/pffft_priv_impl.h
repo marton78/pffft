@@ -3403,46 +3403,46 @@ static ALWAYS_INLINE(void) unreversed_pair(int j, int dk, const v4sf *in, v4sf *
 }
 #endif
 
-/* FUNC_ZREORDER backward, then FUNC_REAL_PREPROCESS */
-static NEVER_INLINE(void) real_reorder_preprocess(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
-  int k, dk = Ncvec/SIMD_SZ; /* number of 4x4 matrix blocks */
-  v4sf_union Xr, Xi, *uout = (v4sf_union*)out;
-  v4sf blk[8];
-  float cr0, ci0, cr1, ci1, cr2, ci2, cr3, ci3;
-  static const float s = (float)M_SQRT2;
+/* block k of what FUNC_ZREORDER backward writes from in, which holds dk
+   4x4 blocks */
+static ALWAYS_INLINE(void) zreorder_backward_block(int k, int dk, const v4sf *in, v4sf *blk) {
 #ifdef VPAIRS
   /* the streams of blk[0..1], blk[2..3], blk[4..5], blk[6..7]; m floats each */
   const float *A = (const float*)in, *C = (const float*)(in + 2*dk);
   const float *B = (const float*)(in + 4*dk), *D = (const float*)(in + 6*dk);
   const int m = 8*dk;
+  const float *c = C + m - 8*k, *d = D + m - 8*k;
+  UNINTERLEAVE2_FROM(A + 8*k, blk[0], blk[1]);
+  UNINTERLEAVE2_FROM(B + 8*k, blk[4], blk[5]);
+  load_pairs(k ? c : C, c - 2, c - 4, c - 6, &blk[2], &blk[3]);
+  load_pairs(k ? d : D, d - 2, d - 4, d - 6, &blk[6], &blk[7]);
 #else
-  const v4sf *ina = in + 2*dk, *inb = in + 6*dk; /* the inputs of the two unreversed copies */
+  UNINTERLEAVE2(in[2*k], in[2*k+1], blk[0], blk[1]);
+  UNINTERLEAVE2(in[2*(2*dk+k)], in[2*(2*dk+k)+1], blk[4], blk[5]);
+  unreversed_pair(dk-1-k, dk, in + 2*dk, &blk[2], &blk[3]);
+  unreversed_pair(dk-1-k, dk, in + 6*dk, &blk[6], &blk[7]);
 #endif
+}
+
+/* FUNC_ZREORDER backward, then FUNC_REAL_PREPROCESS. Block 0, which also
+   gives the scalars of the edges, comes before the loop, which then holds
+   nothing but the other blocks. */
+static NEVER_INLINE(void) real_reorder_preprocess(int Ncvec, const v4sf *in, v4sf *out, const v4sf *e) {
+  int k, q, dk = Ncvec/SIMD_SZ; /* number of 4x4 matrix blocks */
+  v4sf_union Xr, Xi, *uout = (v4sf_union*)out;
+  v4sf blk[8];
+  float cr0, ci0, cr1, ci1, cr2, ci2, cr3, ci3;
+  static const float s = (float)M_SQRT2;
   assert(in != out);
-  for (k=0; k < dk; ++k) {
-    /* block k of what FUNC_ZREORDER backward writes */
-#ifdef VPAIRS
-    const float *c = C + m - 8*k, *d = D + m - 8*k;
-    UNINTERLEAVE2_FROM(A + 8*k, blk[0], blk[1]);
-    UNINTERLEAVE2_FROM(B + 8*k, blk[4], blk[5]);
-    load_pairs(k ? c : C, c - 2, c - 4, c - 6, &blk[2], &blk[3]);
-    load_pairs(k ? d : D, d - 2, d - 4, d - 6, &blk[6], &blk[7]);
-#else
-    UNINTERLEAVE2(in[2*k], in[2*k+1], blk[0], blk[1]);
-    UNINTERLEAVE2(in[2*(2*dk+k)], in[2*(2*dk+k)+1], blk[4], blk[5]);
-    unreversed_pair(dk-1-k, dk, ina, &blk[2], &blk[3]);
-    unreversed_pair(dk-1-k, dk, inb, &blk[6], &blk[7]);
-#endif
-    if (k == 0) {
-      int q;
-      for (q=0; q < 4; ++q) {
-        Xr.f[q] = ((float*)blk)[8*q];
-        Xi.f[q] = ((float*)blk)[8*q+4];
-      }
-      FUNC_REAL_PREPROCESS_4X4(blk, e, out+1, 1); /* will write only 6 values */
-    } else {
-      FUNC_REAL_PREPROCESS_4X4(blk, e + k*6, out-1+k*8, 0);
-    }
+  zreorder_backward_block(0, dk, in, blk);
+  for (q=0; q < 4; ++q) {
+    Xr.f[q] = ((float*)blk)[8*q];
+    Xi.f[q] = ((float*)blk)[8*q+4];
+  }
+  FUNC_REAL_PREPROCESS_4X4(blk, e, out+1, 1); /* will write only 6 values */
+  for (k=1; k < dk; ++k) {
+    zreorder_backward_block(k, dk, in, blk);
+    FUNC_REAL_PREPROCESS_4X4(blk, e + k*6, out-1+k*8, 0);
   }
   cr0=(Xr.f[0]+Xi.f[0]) + 2*Xr.f[2]; uout[0].f[0] = cr0;
   cr1=(Xr.f[0]-Xi.f[0]) - 2*Xi.f[2]; uout[0].f[1] = cr1;
