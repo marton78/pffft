@@ -105,6 +105,7 @@ struct bench_engine {
 
   void *lib;   /* engines from --lib: the loaded library; NULL for built-ins */
   int variant; /* private to the engine */
+  int on_request; /* runs only when --engines names it, not by default */
 };
 
 #define BENCH_MAX_ENGINES 32

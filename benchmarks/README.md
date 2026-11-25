@@ -181,6 +181,8 @@ What it cannot do:
 | Engine | Library | Precisions | Lengths | Notes |
 |---|---|---|---|---|
 | `pffft` | this tree, `pffft_transform_ordered` | f32, f64 | 2^a·3^b·5^c; real: multiple of 32, complex: of 16 | |
+| `pffft-ip` | this tree, `pffft_transform_ordered` in place | f32, f64 | as pffft | one array and the work array, as Ooura's FFT and FFTPACK run; only with `--engines` |
+| `pffft-un` | this tree, `pffft_transform` | f32, f64 | as pffft | the spectrum in pffft's internal order: no reordering; only with `--engines` |
 | `pffft@L` | a pffft shared library, `--lib L=PATH`, `pffft_transform_ordered` | those it has | as pffft | what compare.py measures |
 | `fftpack` | `src/fftpack.c` | f32, f64 | any | |
 | `fftw-est`, `fftw-meas` | FFTW 3.3.10 from `FFTW3_ROOT` | f32, f64 | any; `fftw-meas` up to `--fftw-measure-max` (65536) | FFTW_ESTIMATE plans from a cost model, at once, as pffft sets up; FFTW_MEASURE plans by timing candidate algorithms first (about 5 s at n = 262144 on an M2, outside the timing), an advantage no other engine takes |

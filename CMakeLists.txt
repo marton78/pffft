@@ -24,6 +24,7 @@ option(PFFFT_USE_HELIUM "use the experimental, unbenchmarked Arm Helium (MVE) ba
 option(PFFFT_USE_WASM_RELAXED_SIMD "use WebAssembly Relaxed SIMD for higher performance? requires a browser/runtime with Relaxed SIMD support" OFF)
 set(PFFFT_PREFETCH_DIST "" CACHE STRING "x86: prefetch distance in bytes for the FFT passes; 0 turns prefetching off (set it for AMD CPUs, see README); empty: the default")
 set(PFFFT_PREFETCH_MIN "" CACHE STRING "x86: smallest pass in bytes that prefetches; empty: the default (24576)")
+set(PFFFT_SPLIT_MAX "" CACHE STRING "largest array in bytes that the transforms do not split into blocks that fit the cache; empty: the default, by target (1 MiB on x86 but Zen and on Android, 8 MiB on Zen and Apple arm64, 16 MiB on other Arm)")
 
 # what to install?
 option(INSTALL_PFFFT      "install pffft to CMAKE_INSTALL_PREFIX?" ON)
@@ -187,7 +188,7 @@ target_set_c_arch_flags(PFFFT)
 if (NOT PFFFT_USE_SIMD)
   target_compile_definitions(PFFFT PRIVATE PFFFT_SIMD_DISABLE=1)
 endif()
-foreach(knob PFFFT_PREFETCH_DIST PFFFT_PREFETCH_MIN)
+foreach(knob PFFFT_PREFETCH_DIST PFFFT_PREFETCH_MIN PFFFT_SPLIT_MAX)
   if (NOT ${knob} STREQUAL "")
     # decimal only: a leading 0 would make the preprocessor read octal
     if (NOT ${knob} MATCHES "^(0|[1-9][0-9]*)$")

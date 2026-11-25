@@ -1,13 +1,13 @@
 # pffft benchmark results
 
 Measured with [bench_fft](../benchmarks/README.md) in November 2026: pffft
-(commit 2e9db19) against the FFT libraries it is usually compared with, on
+(commit 2c03a16) against the FFT libraries it is usually compared with, on
 nine machines, and against pffft 1.1.0, which is as fast as Julien
 Pommier's original, on six. Every chart has a panel per precision (f32,
 f64) and transform kind (real, complex). The charts per machine cover 44
 lengths from 32 to 2^20: the powers of two and 28 other lengths with
-factors 3 and 5. The comparisons with 1.1.0 cover 26 of them: the powers
-of two and 10 others.
+factors 3 and 5. The comparisons with 1.1.0 cover 45 lengths from 32 to
+2^22: the powers of two and 27 others, 11 of them from 192000 up.
 
 ## Summary
 
@@ -18,15 +18,15 @@ is not available there.
 
 | Machine | FFTW (measure) | FFTW (estimate) | vDSP | PocketFFT | KISS FFT | FFTPACK | Green FFT | Ooura's FFT |
 |---|---|---|---|---|---|---|---|---|
-| Apple M2, macOS | 0.91 | 1.24 | 0.85 | 1.91 | 4.61 | 2.40 | 2.51 | 1.99 |
-| iPhone 11 Pro (A13), iOS | 0.98 | 1.32 | 0.98 | 2.04 | 4.71 | 2.28 | 2.72 | 2.16 |
-| MediaTek MT6878, Android | 1.15 | 1.45 | - | 2.07 | 4.50 | 2.29 | 2.14 | 1.79 |
-| Arm Neoverse N2, Linux | 1.24 | 1.68 | - | 1.90 | 4.80 | 2.76 | 4.47 | 2.23 |
-| Microsoft Cobalt 100 (Neoverse N2), Windows | - | - | - | 2.39 | 4.22 | 2.55 | - | 2.09 |
-| Intel Xeon 6975P-C, Linux | 0.61 | 0.92 | - | 1.66 | 6.04 | 2.33 | 3.71 | 2.17 |
-| Intel Xeon Platinum 8573C, Windows | 0.65 | 1.33 | - | 2.79 | 4.35 | 2.91 | - | 1.86 |
-| AMD EPYC 9V45, Linux | 0.70 | 1.37 | - | 1.61 | 6.86 | 2.89 | 4.97 | 2.80 |
-| Intel Core i7-8700B, macOS (VM) | 0.84 | 1.43 | 0.72 | 2.21 | 4.71 | 2.42 | 2.84 | 1.55 |
+| Apple M2, macOS | 1.00 | 1.36 | 0.93 | 2.09 | 4.98 | 2.63 | 2.71 | 2.18 |
+| iPhone 11 Pro (A13), iOS | 1.05 | 1.43 | 1.08 | 2.22 | 5.05 | 2.47 | 2.94 | 2.36 |
+| MediaTek MT6878, Android | 1.21 | 1.58 | - | 2.25 | 4.87 | 2.49 | 2.41 | 2.00 |
+| Arm Neoverse N2, Linux | 1.29 | 1.75 | - | 1.98 | 5.05 | 2.87 | 4.68 | 2.33 |
+| Microsoft Cobalt 100 (Neoverse N2), Windows | - | - | - | 2.48 | 4.43 | 2.65 | - | 2.18 |
+| Intel Xeon 6975P-C, Linux | 0.65 | 1.05 | - | 1.84 | 6.71 | 2.59 | 4.27 | 2.51 |
+| Intel Xeon Platinum 8573C, Windows | 0.71 | 1.45 | - | 2.99 | 4.76 | 3.11 | - | 2.05 |
+| AMD EPYC 9V45, Linux | 0.73 | 1.44 | - | 1.67 | 7.32 | 3.05 | 5.25 | 2.95 |
+| Intel Core i7-8700B, macOS (VM) | 0.89 | 1.52 | 0.79 | 2.35 | 5.08 | 2.56 | 3.07 | 1.64 |
 
 KISS FFT and Green FFT are measured in single precision only. vDSP, Green
 FFT and Ooura's FFT do only powers of two, and `FFTW_MEASURE` runs only up
@@ -34,20 +34,22 @@ to n = 65536, so their means are over those cases (on the Cobalt 100,
 Ooura's FFT has no single-precision real n = 32).
 
 - **Portable libraries.** pffft was faster than PocketFFT, KISS FFT,
-  FFTPACK, Green FFT and Ooura's FFT in 4705 of the 4759 cases.
-  - *Ooura's FFT*, 29 of the 54 exceptions: double precision out of cache,
-    from n = 131072 (from 262144 on the Core i7, only 2^20 on the M2, the
-    iPhone and the EPYC 9V45; also single precision complex 2^20 on the
-    Core i7), where pffft was up to 77% slower (real 2^20 on the Core i7),
-    and double and single precision real n = 32 on the Core i7 (5.3% and
-    2.5%). Ooura's FFT works in
-    place, so out of cache it moves less data than pffft's ordered
-    transform out of place.
-  - *PocketFFT*: 20 cases on the AMD EPYC 9V45, all complex: 17 single
-    precision lengths that are not powers of two, from 960 to 100000, where
-    pffft was up to 12.6% slower, and 3 double precision ones, up to 1.9%.
-    4 more on the Xeon 6975P-C, complex transforms out of cache (n of 72000
-    and more, up to 8.8%), where at 2^20 FFTPACK was also faster.
+  FFTPACK, Green FFT and Ooura's FFT in 4739 of the 4759 cases.
+  - *Ooura's FFT*, 11 of the 20 exceptions, all but two in double
+    precision from n = 2^18 up: on the Core i7 complex 2^18 to 2^20 (3.9 to
+    10%) and real 2^18 to 2^20 (3.5 to 27%), on the Xeon 6975P-C complex
+    2^20 (1.6%), on the MediaTek phone real 2^18 and 2^19 (23% and 2.7%);
+    and real n = 32 on the Core i7 (11% in double and 2.9% in single
+    precision). Ooura's FFT works in place, so out of cache it moves less data
+    than pffft's ordered transform out of place. On the M2, the iPhone, the
+    Neoverse N2 and the Cobalt 100, where pffft had fallen behind at 2^20 or
+    come close, it was 1.3 to 1.9 times as fast in double precision from
+    2^18 to 2^20 (complex 2^20 on the M2: 1.41), and on the MediaTek phone,
+    where it had lost by up to 57%, 1.08 to 1.39 times at complex 2^18 to
+    2^20 and real 2^20.
+  - *PocketFFT*: 9 cases on the AMD EPYC 9V45, all single precision
+    complex lengths that are not powers of two, from 1440 to 1000000,
+    where pffft was up to 7.2% slower.
 - **FFTW** plans a transform in one of several modes; two are measured here.
   `FFTW_ESTIMATE` plans at once, as pffft and the other libraries do.
   `FFTW_MEASURE` times candidate algorithms on the machine and keeps the
@@ -55,32 +57,33 @@ Ooura's FFT has no single-precision real n = 32).
   that planning time out, so the comparison favours `FFTW_MEASURE`: in an
   application its cost pays off only over many transforms of one length.
   - *Real transforms.* pffft was faster than `FFTW_ESTIMATE` on every
-    machine (geometric means from 1.14 on the Xeon 6975P-C to 1.81 on the
-    Neoverse N2), and faster than `FFTW_MEASURE` on every arm64 machine
-    (1.06 on the M2, 1.15 on the iPhone, 1.33 on the MediaTek phone and
-    1.44 on the Neoverse N2).
+    machine (geometric means from 1.26 on the Xeon 6975P-C to 1.87 on the
+    Neoverse N2), faster than `FFTW_MEASURE` on every arm64 machine (1.14
+    on the M2, 1.22 on the iPhone, 1.39 on the MediaTek phone and 1.48 on
+    the Neoverse N2) and slightly faster on the Core i7 (1.03).
   - *Complex transforms.* pffft was faster than `FFTW_ESTIMATE` everywhere
-    but on the Xeon 6975P-C (1.07 to 1.56; 0.75 there). `FFTW_MEASURE` was
-    faster on Apple's chips (pffft 0.78 and 0.83), level with pffft on the
-    MediaTek phone (1.00) and slower on the Neoverse N2 (1.06).
-  - *x86.* `FFTW_MEASURE` was faster on the x86 machines (pffft 0.61 to
-    0.84 over all its cases): FFTW has AVX2 and AVX-512 code, while pffft's
+    but on the Xeon 6975P-C (1.16 to 1.65; 0.87 there). `FFTW_MEASURE` was
+    faster on Apple's chips (pffft 0.87 and 0.91) and slower on the MediaTek
+    phone (1.06) and the Neoverse N2 (1.13).
+  - *x86.* `FFTW_MEASURE` was faster on the x86 machines (pffft 0.65 to
+    0.89 over all its cases): FFTW has AVX2 and AVX-512 code, while pffft's
     single precision uses 4-wide SSE there (its double precision uses AVX).
 - **vDSP**, Apple's FFT, was faster in single precision. On Apple's chips it
   hands single-precision FFTs to the AMX matrix unit, a coprocessor that
   the cores of a cluster share: one thread at a time benefits, while
   pffft's NEON code runs on every core. While AMX works, the chip can lower
-  its clock: on the M2 by 7.7% for every single-precision FFT from n = 256
-  (complex) or 512 (real) up, on the iPhone 11 Pro by up to 25%, for real
-  FFTs of n = 512 to 4096. bench_fft charges vDSP for that (see
+  its clock: on the M2 by 7.2 to 8.0% for every single-precision FFT from
+  n = 256 (complex) or 512 (real) to 131072 and by 4.7 to 7.3% above, on
+  the iPhone 11 Pro by 23 to 25%, for real FFTs of n = 512 to 8192.
+  bench_fft charges vDSP for that (see
   [How it was measured](#how-it-was-measured)). In double precision, where
-  vDSP lowered the clock no more than the other libraries, pffft was faster
-  on Apple's chips (geometric means 1.03 to 1.38 per kind) and slower on
-  the Intel Mac (0.90 real, 0.69 complex).
+  vDSP lowered the clock hardly more than the other libraries, pffft was faster
+  on Apple's chips (geometric means 1.15 to 1.52 per kind) and slower on
+  the Intel Mac (0.94 real, 0.78 complex).
 
 ## Performance improvements since Pommier's pffft
 
-![pffft 2e9db19 vs 1.1.0 on Apple M2, iPhone 11 Pro and MediaTek MT6878](benchmarks/pffft-vs-1.1.0.svg)
+![pffft vs 1.1.0 on Apple M2, iPhone 11 Pro and MediaTek MT6878](benchmarks/pffft-vs-1.1.0.svg)
 
 pffft 1.1.0 (here commit c14802c) predates the performance work of this
 fork. Its single-precision FFT is Julien Pommier's original code, so its
@@ -91,44 +94,55 @@ NEON transposes, fast paths in the radix-3 and radix-4 real butterflies,
 code layout that keeps the radix-3 and radix-5 real kernels out of line,
 one pass fewer for the real and complex lengths whose n/4 has an odd power
 of two (a radix-8 or radix-6 last pass in place of the radix-2 one), complex
-butterflies that get the direction of the transform as a constant, and, on
-x86, prefetching of the output of the passes out of L1.
+butterflies that get the direction of the transform as a constant, the
+reordering of the ordered transforms in the same sweep as their last or
+first step, long transforms split into blocks that are transformed while
+they are in cache (`PFFFT_SPLIT_MAX` in the README) with the sweeps
+before and after them fused into their first and last steps, and, on x86,
+prefetching of the output of the passes out of L1.
 
 Both versions run in one process and take turns, batch by batch
-(benchmarks/compare.py). Averaged over the lengths, the current pffft was 21
-to 22% faster below n = 4096 (22.3% on the M2, 21.9% on the iPhone, 21.2%
-on the MediaTek phone) and 10.5 to 13% faster from 4096 up (11.0%, 12.8%
-and 10.5%), up to 69% at single lengths (single-precision real n = 32 on
-the M2). In cache (n up to 16384) it was faster at every length, by 2% at
-least; out of cache the gain shrinks, and on the MediaTek phone three
-double-precision real lengths from 2^16 up are within the noise (1.2%
-slower at most).
+(benchmarks/compare.py). Averaged over the 45 lengths, the current pffft
+was 27 to 34% faster below n = 4096 (34.0% on the M2, 33.0% on the
+iPhone, 27.5% on the MediaTek phone) and 28 to 32% faster from 4096 up
+(28.0%, 31.4% and 31.7%), 36 to 58% above 2^20, and up to 85% at single
+lengths (double-precision real n = 3145728 on the iPhone; 78% at
+single-precision real n = 32 on the M2). It was faster at every length, by
+7.9% at least on Apple's chips and 4.9% on the phone. Over the 26 lengths
+this page compared before (the powers of two to 2^20 and 10 others), the
+gain from 4096 up went from 11.0% to 21.6% on the M2, from 12.8% to 22.4%
+on the iPhone and from 10.5% to 27.4% on the phone, below 4096 from 22.3%
+to 34.0%, from 21.9% to 33.0% and from 21.2% to 27.5%.
 
-![pffft 2e9db19 vs 1.1.0 on Intel Xeon 6975P-C, Intel Core i7-8700B and AMD EPYC 7763](benchmarks/pffft-vs-1.1.0-x86.svg)
+![pffft 2c03a16 vs 1.1.0 on Intel Xeon 6975P-C, Intel Core i7-8700B and AMD EPYC 7763](benchmarks/pffft-vs-1.1.0-x86.svg)
 
 On x86 the work above for NEON doesn't apply; what does is FMA (where the
 build targets AVX2 or newer), the radix-3 and radix-4 fast paths, the code
-layout, the pass fewer, the constant direction and the output prefetching.
-On the Intel machines pffft was faster than 1.1.0 at every length but three
-complex ones of 2^20 (0.2 to 0.5% slower, within the noise): below
-n = 4096 by 19.8% on the Xeon 6975P-C (Linux, gcc) and 22.9% on the Core
-i7-8700B (macOS, Clang), from 4096 up by 18.8% and 16.9%. The largest gains
-are at real n = 32 (in single precision 41% on the Xeon and 75% on the
-Core i7) and out of L1 in double precision (real n = 32768 53% and
-n = 8192 50% on the Xeon, n = 8192 52% on the Core i7).
+layout, the pass fewer, the constant direction, the reordering, the
+splitting and the output prefetching. On the Intel machines pffft was
+faster than 1.1.0 at every length, by 1.4% at least (double-precision real
+n = 64 on the Core i7): below n = 4096 by 24.7% on the Xeon 6975P-C
+(Linux, gcc) and 26.3% on the Core i7-8700B (macOS, Clang), from 4096 up
+by 51.7% and 41.8%. The largest gains are out of cache, where the
+splitting works: up to 114% on the Xeon (single-precision real
+n = 524288; double-precision real lengths of 2^18 to 2^19 by 92 to 111%)
+and 89% on the Core i7 (single-precision real 2^21).
 
 The AMD EPYC 7763 (Windows, MSVC) is the case the README warns about: MSVC
-cannot tell AMD from Intel, so the default build prefetches there too, and
-Zen does not gain from it. pffft was 20.7% faster than 1.1.0 below n = 4096
-and 2.8% from 4096 up. It was slower at 23 lengths, by up to 5.8%, all of
-them lengths whose passes this fork has not changed beyond the
-prefetching: 22 from n = 4096 up, where it prefetches (double-precision
-real n = 15360 and 16384 and single-precision real 2^20 the most), and
-double-precision complex n = 64 (5.0%), too small for the prefetching,
-where it is code layout. With `PFFFT_PREFETCH_DIST=0`, as the README
-recommends for AMD CPUs, an earlier version of this code (the one of pull
-request #129) was 8.6% and 4.8% faster than 1.1.0 there, against 6.4% and
-0.1% slower for its default build in the same run.
+cannot tell AMD from Intel, so the default build prefetches there and
+splits arrays from 1 MiB on, as for Intel, which costs Zen at arrays
+of 2 to 12 MiB, which 8 MiB would leave whole or split into larger blocks.
+pffft was 24.2% faster than 1.1.0 below n = 4096 and 11.5% from 4096 up.
+It was slower in 17 cases, by up to 6.9%: at n = 64 (single-precision real
+5.2%, double-precision complex 4.0%), at real lengths of 4096 to 16384,
+where it prefetches, and at real arrays of 2 to 12 MiB (lengths from
+262144 to 3145728), where it splits. The README recommends
+`PFFFT_PREFETCH_DIST=0` and `PFFFT_SPLIT_MAX=8388608` for AMD CPUs. In
+earlier measurements on this machine, the first made an earlier version
+of this code 8.6% and 4.8% faster than 1.1.0 instead of 6.4% and 0.1%
+slower (pull request #129); the second made transforms of 65536 to 2^22
+points up to 13.5% faster than splitting from 1 MiB on, and none slower
+by more than 3.1%.
 
 ## Machines
 
@@ -213,18 +227,16 @@ This runner exposes no cycle counter, so the chart is in measured time.
   where the CPU has it), except on Windows, where its CMake build has AVX2
   at most and no NEON (hence no FFTW on the Cobalt 100). vDSP is the
   system's Accelerate.
-- **Versions.** pffft is commit 2e9db19. It was measured as commit 9381f86,
-  the same code on master before pull request #132, which changed none of
-  the files these builds compile, and on GitHub's runners as commit
-  c53a991, which adds a scratch input to the benchmark workflow (the
-  headers of the comparison CSVs name it). 1.1.0 is commit c14802c. The
-  phones and the M2 ran the benchmark locally; the other machines are
-  GitHub-hosted runners (shared virtual machines), measured by
-  .github/workflows/bench.yml, the comparisons on x86 with its `compare`
-  input set to c14802c and the measured commit. GitHub's ubuntu-26.04 and
-  windows-2025 labels land on several Intel and AMD CPUs, some without a
-  cycle counter; their runs were repeated until they ran on the CPUs
-  above, the Xeon 6975P-C with a cycle counter.
+- **Versions.** pffft is commit 2c03a16 on every machine. On GitHub's
+  runners the code was measured on a scratch branch that adds inputs to
+  the benchmark workflow, with 2c03a16 as the revision of
+  benchmarks/compare.py (the headers of the comparison CSVs name it).
+  1.1.0 is commit c14802c. The phones and the M2 ran the benchmark
+  locally; the other machines are GitHub-hosted runners (shared virtual
+  machines), measured by .github/workflows/bench.yml. GitHub's
+  ubuntu-26.04 and windows-2025 labels land on several Intel and AMD CPUs,
+  some without a cycle counter; their runs were repeated until they ran on
+  the CPUs above, the Xeon 6975P-C with a cycle counter.
 
 To repeat a measurement:
 

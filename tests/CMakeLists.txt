@@ -28,6 +28,41 @@ endif()
 
 ######################################################
 
+# The split transforms (pffft_priv_impl.h) take over only for arrays of more
+# than PFFFT_SPLIT_MAX bytes, megabytes by default. This library splits every
+# array of more than 1 KiB, into blocks of at most that, so that the tests
+# above run them at every size, as deep as they go.
+set( SPLIT_TEST_SOURCES ${PFFFT_SOURCE_DIR}/src/pffft_common.c )
+if (PFFFT_USE_TYPE_FLOAT)
+  list( APPEND SPLIT_TEST_SOURCES ${PFFFT_SOURCE_DIR}/src/pffft.c )
+endif()
+if (PFFFT_USE_TYPE_DOUBLE)
+  list( APPEND SPLIT_TEST_SOURCES ${PFFFT_SOURCE_DIR}/src/pffft_double.c )
+endif()
+add_library( PFFFT_SPLIT_TEST STATIC ${SPLIT_TEST_SOURCES} )
+# PFFFT's definitions but a PFFFT_SPLIT_MAX of the build, which would win over 1024
+get_target_property( SPLIT_TEST_DEFS PFFFT COMPILE_DEFINITIONS )
+list( FILTER SPLIT_TEST_DEFS EXCLUDE REGEX "^PFFFT_SPLIT_MAX=" )
+target_compile_definitions( PFFFT_SPLIT_TEST PRIVATE ${SPLIT_TEST_DEFS} PFFFT_SPLIT_MAX=1024 )
+# PFFFT's options replace the library's own, which start with those of this
+# directory: appended, CMake would drop the later copy of a -march that PFFFT
+# has after auto's, and auto's would win here
+set_property( TARGET PFFFT_SPLIT_TEST PROPERTY COMPILE_OPTIONS "$<TARGET_PROPERTY:PFFFT,COMPILE_OPTIONS>" )
+target_include_directories( PFFFT_SPLIT_TEST PRIVATE $<TARGET_PROPERTY:PFFFT,INCLUDE_DIRECTORIES> )
+target_include_directories( PFFFT_SPLIT_TEST PUBLIC $<TARGET_PROPERTY:PFFFT,INTERFACE_INCLUDE_DIRECTORIES> )
+target_compile_definitions( PFFFT_SPLIT_TEST PUBLIC PFFFT_STATIC_DEFINE )
+target_link_libraries( PFFFT_SPLIT_TEST $<TARGET_PROPERTY:PFFFT,LINK_LIBRARIES> )
+foreach( prec float double )
+  string( TOUPPER ${prec} PREC )
+  if (PFFFT_USE_TYPE_${PREC})
+    add_executable( test_pffft_${prec}_split  test_pffft.c )
+    target_compile_definitions( test_pffft_${prec}_split PRIVATE _USE_MATH_DEFINES PFFFT_ENABLE_${PREC} )
+    target_link_libraries( test_pffft_${prec}_split  PFFFT_SPLIT_TEST ${ASANLIB} )
+  endif()
+endforeach()
+
+######################################################
+
 add_executable( test_fft_factors  test_fft_factors.c )
 if (PFFFT_USE_TYPE_FLOAT)
   target_compile_definitions(test_fft_factors PRIVATE PFFFT_ENABLE_FLOAT)
@@ -117,6 +152,15 @@ if (PFFFT_USE_TYPE_DOUBLE)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   )
 endif()
+
+foreach( prec float double )
+  if (TARGET test_pffft_${prec}_split)
+    add_test(NAME test_pffft_${prec}_split
+      COMMAND test_pffft_${prec}_split
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+  endif()
+endforeach()
 
 add_test(NAME test_pffft_cpp
   COMMAND test_pffft_cpp

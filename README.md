@@ -346,6 +346,34 @@ empty value keeps the default. Without CMake, define them as compile
 definitions (`-DPFFFT_PREFETCH_DIST=0`, or `/DPFFFT_PREFETCH_DIST=0` with
 MSVC).
 
+### Long transforms: splitting, and AMD
+
+pffft runs the passes of an FFT one after the other, each over the whole
+array. That is fast while the data fits in the cache, but for long
+transforms every pass has to go through main memory. So for arrays larger
+than `PFFFT_SPLIT_MAX` bytes, the transform is split into 3, 4 or 5
+independent shorter transforms, recursively until they fit in the cache,
+which are then processed one after the other. This divide and conquer
+approach makes transforms of 2^20 points and more up to 27% faster on ARM
+(the most on an Android phone and on Apple's chips, hardly at all on Arm's
+Neoverse servers), and 20-39% faster on Intel CPUs.
+
+The best size depends on the CPU's caches, so the default depends on the
+target: 1 MiB on x86 and Android, 8 MiB on Apple's arm64 chips and when
+the compiler targets AMD Zen (as for the prefetching above), 16 MiB on
+other Arm CPUs.
+AMD CPUs do best with 8 MiB; with 1 MiB some lengths are slower than
+without splitting. Set it yourself for builds the compiler can't
+target at Zen (the list above):
+
+```
+cmake -DPFFFT_SPLIT_MAX=8388608 ..
+```
+
+A larger value splits less; a value larger than any array turns splitting
+off. Splitting needs SIMD. As for the prefetching, an empty value keeps
+the default, and without CMake it is a compile definition.
+
 ### ARMv7 (32-bit ARM): prefer clang over gcc
 
 On 32-bit ARM, **gcc emits very inefficient assembly**, with a lot more
@@ -465,11 +493,12 @@ The `bench_*` tests are excluded because they allocate about 1 GiB.
 pffft is faster than most FFT libraries: on nine machines, from phones to
 servers, arm64 and x86, it beat PocketFFT, KISS FFT, FFTPACK, Green FFT and
 Ooura's FFT at nearly every length. Only FFTW and Apple's vDSP are often
-faster; Ooura's FFT is in double precision at large powers of two, and
-PocketFFT at some complex lengths on an AMD EPYC.
-Thanks to performance fixes, pffft is now on average 21 to 22% faster than
-Julien Pommier's original below n = 4096 on arm64, and 10.5 to 13% faster at
-larger n; on x86 with Intel CPUs, 20 to 23% and 17 to 19%.
+faster; Ooura's FFT is in double precision from 2^18 to 2^20 on Intel
+CPUs, and PocketFFT at some complex lengths on an AMD EPYC.
+Thanks to performance fixes, pffft is now on average 33 to 34% faster than
+Julien Pommier's original below n = 4096 on Apple's arm64 chips, and 28 to
+31% faster at larger n (up to 2^22); on x86 with Intel CPUs, 25 to 26% and
+42 to 52%.
 [docs/benchmarks.md](docs/benchmarks.md) has the details.
 
 `bench_fft` measures pffft against other FFT libraries (FFTPACK, FFTW,
