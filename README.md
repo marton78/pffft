@@ -354,13 +354,14 @@ transforms every pass has to go through main memory. So for arrays larger
 than `PFFFT_SPLIT_MAX` bytes, the transform is split into 3, 4 or 5
 independent shorter transforms, recursively until they fit in the cache,
 which are then processed one after the other. This divide and conquer
-approach makes transforms of 2^20 points and more up to 15% faster on ARM
-(the most on Apple's chips, hardly at all on Arm's Neoverse servers),
-and 27-34% faster on Intel CPUs.
+approach makes transforms of 2^20 points and more up to 21% faster on ARM
+(the most on an Android phone and on Apple's chips, hardly at all on Arm's
+Neoverse servers), and 27-34% faster on Intel CPUs.
 
 The best size depends on the CPU's caches, so the default depends on the
-target: 1 MiB on x86, 8 MiB on Apple's arm64 chips and when the compiler
-targets AMD Zen (as for the prefetching above), 16 MiB on other Arm CPUs.
+target: 1 MiB on x86 and Android, 8 MiB on Apple's arm64 chips and when
+the compiler targets AMD Zen (as for the prefetching above), 16 MiB on
+other Arm CPUs.
 AMD CPUs do best with 8 MiB; with 1 MiB some lengths are slower than
 without splitting. Set it yourself for builds the compiler can't
 target at Zen (the list above):
