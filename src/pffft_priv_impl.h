@@ -2177,17 +2177,19 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
 
   Arrays of at most PFFFT_SPLIT_MAX bytes are not split. The best size was
   measured with 0.25 to 16 MiB on eight machines (N = 65536 to 4194304):
-  - Intel (Xeon 6975P-C, Core i7-8700B): 0.5 to 2 MiB, about the L2 of a
-    core. With 8 MiB, arrays of 2 to 8 MiB gave up 30 to 70 points of their
-    gain.
+  - Intel: 0.5 to 1 MiB on a Xeon 6975P-C, 1 to 2 MiB on a Core i7-8700B,
+    about the L2 of a core (2 MiB cost the Xeon 15 points on average). With
+    8 MiB, arrays of 2 to 8 MiB on the Xeon gave up 19 to 64 points of their
+    gain, arrays of 4 to 8 MiB on the Core i7 5 to 57.
   - AMD Zen 3 (EPYC 7763): 8 MiB. Its L3 is fast enough that splitting
-    arrays of 2 to 11 MiB with 1 MiB cost up to 10 points.
+    arrays of 2 to 11 MiB with 1 MiB cost up to 10.5 points.
   - Apple (M2, A13): 4 to 8 MiB, about half the L2 of a cluster.
   - Arm Neoverse N2 (also the Cobalt 100): 16 MiB, where it gained a little
-    at 4 MiB and above; splitting smaller arrays lost up to 10%. Their 128 MiB
-    system cache serves the passes nearly as fast as L2.
+    at 4 MiB and above; splitting smaller arrays lost up to 11% (14% on the
+    Cobalt 100). Their 128 MiB system cache holds the arrays of a 2^20
+    transform.
   - A MediaTek MT6878 phone (Android): 0.25 to 1 MiB, 15 to 17% faster than
-    not splitting on average; from 4 MiB on it gained nothing.
+    not splitting on average; from 4 MiB on it gained 1% or less.
   The default follows the target: Zen targets (-march=znverN) as AMD, other
   x86 as Intel, Android as the phone, other Arm as the Neoverse (a Linux
   build for a phone-class chip, a Raspberry Pi say, gets the server value).
