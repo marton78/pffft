@@ -223,6 +223,11 @@ static NEVER_INLINE(void) passf2_ps(int ido, int l1, const v4sf * RESTRICT cc, v
   The radix-3/5 twiddle constants are written as full-precision double literals
   without an 'f' suffix, for when this file is compiled with '#define float double'.
   In the float build, the values round to the same floats as the old suffixed literals.
+
+  ido == 2 (one complex vector per leg) is the last pass of a complex
+  transform whose Ncvec has no factor 4, which is only possible with
+  SIMD_SZ == 1 (cffti1_ps). The loop then runs once per k, with the
+  twiddles 1 and 0 that cffti1_ps writes for the first element of each leg.
 */
 static ALWAYS_INLINE(void) passf3_loop_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
                                           const float *wa1, const float *wa2, const float fsign,
@@ -233,7 +238,7 @@ static ALWAYS_INLINE(void) passf3_loop_ps(int ido, int l1, const v4sf * RESTRICT
   v4sf tr2, ti2, cr2, ci2, cr3, ci3, dr2, di2, dr3, di3;
   int l1ido = l1*ido;
   float wr1, wi1, wr2, wi2;
-  assert(ido > 2);
+  assert(ido >= 2);
   for (k=0; k< l1ido; k += ido, cc+= 3*ido, ch +=ido) {
     for (i=0; i<ido-1; i+=2) {
       PF_PREFETCH(pf, ch + i, 1);
@@ -388,6 +393,8 @@ static NEVER_INLINE(void) passf4_pf_ps(int ido, int l1, const v4sf * RESTRICT cc
 
 /*
   passf5 and passb5 has been merged here, fsign = -1 for passf5, +1 for passb5
+
+  ido == 2 as for passf3_loop_ps
 */
 static ALWAYS_INLINE(void) passf5_loop_ps(int ido, int l1, const v4sf * RESTRICT cc, v4sf * RESTRICT ch,
                                           const float *wa1, const float *wa2,
@@ -407,7 +414,7 @@ static ALWAYS_INLINE(void) passf5_loop_ps(int ido, int l1, const v4sf * RESTRICT
 #define cc_ref(a_1,a_2) cc[(a_2-1)*ido + a_1 + 1]
 #define ch_ref(a_1,a_3) ch[(a_3-1)*l1*ido + a_1 + 1]
 
-  assert(ido > 2);
+  assert(ido >= 2);
   for (k = 0; k < l1; ++k, cc += 5*ido, ch += ido) {
     for (i = 0; i < ido-1; i += 2) {
       ti5 = VSUB(cc_ref(i  , 2), cc_ref(i  , 5));
@@ -2032,8 +2039,9 @@ static void cffti1_ps(int n, float *wa, int *ifac)
      end instead, as twiddle-free as the radix-8 one (passf6_ps):
      [2, 5.., 3, 3.., 4..] -> [5.., 3.., 4.., 6]. The radix-2 and a
      radix-3 pass with twiddles go away, and all the 4s stay. The other
-     factors keep their order, so the 3s and 5s still run at an ido of
-     at least 6 (idot > 2), as passf3_ps and passf5_ps assume. The loop
+     factors keep their order. Without a 4, which is only possible with
+     SIMD_SZ == 1, the last pass is a 3 or a 5 at ido == 1 (idot == 2),
+     and a lone 2 with only 5s stays a radix-2 pass. The loop
      below writes the 6 (ido == 1) only trivial twiddles, which passf6_ps
      does not read, as for the 8; the twiddles of all passes still take
      2*n floats, as sum (ip-1)*ido = n-1 for any order of the factors. */
