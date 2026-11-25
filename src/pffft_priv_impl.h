@@ -1787,6 +1787,80 @@ static NEVER_INLINE(void) radb6_pf_ps(int l1, const v4sf * RESTRICT cc, v4sf * R
 }
 #endif
 
+/* one radix-ip pass of the real forward FFT, as in rfftf1_ps; wa: its twiddles */
+static ALWAYS_INLINE(void) rfftf_pass_ps(int ip, int ido, int l1, const v4sf *in, v4sf *out,
+                                         const float *wa, int pf) {
+  (void)pf;
+  switch (ip) {
+    case 5: {
+      int ix2 = ido;
+      int ix3 = ix2 + ido;
+      int ix4 = ix3 + ido;
+      PF_CALL(pf, radf5, (ido, l1, in, out, &wa[0], &wa[ix2], &wa[ix3], &wa[ix4]));
+    } break;
+    case 8:
+      assert(ido == 1);
+      radf8_ps(l1, in, out);
+      break;
+    case 6:
+      assert(ido == 1);
+      radf6_ps(l1, in, out);
+      break;
+    case 4: {
+      int ix2 = ido;
+      int ix3 = ix2 + ido;
+      PF_CALL(pf, radf4, (ido, l1, in, out, &wa[0], &wa[ix2], &wa[ix3]));
+    } break;
+    case 3: {
+      int ix2 = ido;
+      PF_CALL(pf, radf3, (ido, l1, in, out, &wa[0], &wa[ix2]));
+    } break;
+    case 2:
+      PF_CALL(pf, radf2, (ido, l1, in, out, &wa[0]));
+      break;
+    default:
+      assert(0);
+      break;
+  }
+}
+
+/* one radix-ip pass of the real backward FFT, as in rfftb1_ps */
+static ALWAYS_INLINE(void) rfftb_pass_ps(int ip, int ido, int l1, const v4sf *in, v4sf *out,
+                                         const float *wa, int pf) {
+  (void)pf;
+  switch (ip) {
+    case 5: {
+      int ix2 = ido;
+      int ix3 = ix2 + ido;
+      int ix4 = ix3 + ido;
+      PF_CALL(pf, radb5, (ido, l1, in, out, &wa[0], &wa[ix2], &wa[ix3], &wa[ix4]));
+    } break;
+    case 8:
+      assert(ido == 1);
+      PF_CALL(pf, radb8, (l1, in, out));
+      break;
+    case 6:
+      assert(ido == 1);
+      PF_CALL(pf, radb6, (l1, in, out));
+      break;
+    case 4: {
+      int ix2 = ido;
+      int ix3 = ix2 + ido;
+      PF_CALL(pf, radb4, (ido, l1, in, out, &wa[0], &wa[ix2], &wa[ix3]));
+    } break;
+    case 3: {
+      int ix2 = ido;
+      PF_CALL(pf, radb3, (ido, l1, in, out, &wa[0], &wa[ix2]));
+    } break;
+    case 2:
+      PF_CALL(pf, radb2, (ido, l1, in, out, &wa[0]));
+      break;
+    default:
+      assert(0);
+      break;
+  }
+}
+
 static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2,
                                       const float *wa, const int *ifac) {
   v4sf *in  = (v4sf*)input_readonly;
@@ -1803,37 +1877,7 @@ static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *w
     int l1 = l2 / ip;
     int ido = n / l2;
     iw -= (ip - 1)*ido;
-    switch (ip) {
-      case 5: {
-        int ix2 = iw + ido;
-        int ix3 = ix2 + ido;
-        int ix4 = ix3 + ido;
-        PF_CALL(pf, radf5, (ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], &wa[ix4]));
-      } break;
-      case 8:
-        assert(ido == 1);
-        radf8_ps(l1, in, out);
-        break;
-      case 6:
-        assert(ido == 1);
-        radf6_ps(l1, in, out);
-        break;
-      case 4: {
-        int ix2 = iw + ido;
-        int ix3 = ix2 + ido;
-        PF_CALL(pf, radf4, (ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3]));
-      } break;
-      case 3: {
-        int ix2 = iw + ido;
-        PF_CALL(pf, radf3, (ido, l1, in, out, &wa[iw], &wa[ix2]));
-      } break;
-      case 2:
-        PF_CALL(pf, radf2, (ido, l1, in, out, &wa[iw]));
-        break;
-      default:
-        assert(0);
-        break;
-    }
+    rfftf_pass_ps(ip, ido, l1, in, out, &wa[iw], pf);
     l2 = l1;
     if (out == work2) {
       out = work1; in = work2;
@@ -1858,37 +1902,7 @@ static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *w
     int ip = ifac[k1 + 1];
     int l2 = ip*l1;
     int ido = n / l2;
-    switch (ip) {
-      case 5: {
-        int ix2 = iw + ido;
-        int ix3 = ix2 + ido;
-        int ix4 = ix3 + ido;
-        PF_CALL(pf, radb5, (ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], &wa[ix4]));
-      } break;
-      case 8:
-        assert(ido == 1);
-        PF_CALL(pf, radb8, (l1, in, out));
-        break;
-      case 6:
-        assert(ido == 1);
-        PF_CALL(pf, radb6, (l1, in, out));
-        break;
-      case 4: {
-        int ix2 = iw + ido;
-        int ix3 = ix2 + ido;
-        PF_CALL(pf, radb4, (ido, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3]));
-      } break;
-      case 3: {
-        int ix2 = iw + ido;
-        PF_CALL(pf, radb3, (ido, l1, in, out, &wa[iw], &wa[ix2]));
-      } break;
-      case 2:
-        PF_CALL(pf, radb2, (ido, l1, in, out, &wa[iw]));
-        break;
-      default:
-        assert(0);
-        break;
-    }
+    rfftb_pass_ps(ip, ido, l1, in, out, &wa[iw], pf);
     l1 = l2;
     iw += (ip - 1)*ido;
 
@@ -2073,6 +2087,41 @@ static void cffti1_ps(int n, float *wa, int *ifac)
 } /* cffti1 */
 
 
+/* one radix-ip pass of the complex FFT, as in cfftf1_ps; wa: its twiddles */
+static ALWAYS_INLINE(void) cfft_pass_ps(int ip, int ido, int l1, const v4sf *in, v4sf *out,
+                                        const float *wa, int isign, int pf) {
+  int idot = ido + ido;
+  (void)pf;
+  switch (ip) {
+    case 8: {
+      PF_CALL(pf, passf8, (idot, l1, in, out, isign));
+    } break;
+    case 6: {
+      PF_CALL(pf, passf6, (idot, l1, in, out, isign));
+    } break;
+    case 5: {
+      int ix2 = idot;
+      int ix3 = ix2 + idot;
+      int ix4 = ix3 + idot;
+      passf5_ps(idot, l1, in, out, &wa[0], &wa[ix2], &wa[ix3], &wa[ix4], isign);
+    } break;
+    case 4: {
+      int ix2 = idot;
+      int ix3 = ix2 + idot;
+      PF_CALL(pf, passf4, (idot, l1, in, out, &wa[0], &wa[ix2], &wa[ix3], isign));
+    } break;
+    case 2: {
+      passf2_ps(idot, l1, in, out, &wa[0], isign);
+    } break;
+    case 3: {
+      int ix2 = idot;
+      PF_CALL(pf, passf3, (idot, l1, in, out, &wa[0], &wa[ix2], isign));
+    } break;
+    default:
+      assert(0);
+  }
+}
+
 static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2, const float *wa, const int *ifac, int isign) {
   v4sf *in  = (v4sf*)input_readonly;
   v4sf *out = (in == work2 ? work1 : work2);
@@ -2086,37 +2135,9 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
     int ip = ifac[k1];
     int l2 = ip*l1;
     int ido = n / l2;
-    int idot = ido + ido;
-    switch (ip) {
-      case 8: {
-        PF_CALL(pf, passf8, (idot, l1, in, out, isign));
-      } break;
-      case 6: {
-        PF_CALL(pf, passf6, (idot, l1, in, out, isign));
-      } break;
-      case 5: {
-        int ix2 = iw + idot;
-        int ix3 = ix2 + idot;
-        int ix4 = ix3 + idot;
-        passf5_ps(idot, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], &wa[ix4], isign);
-      } break;
-      case 4: {
-        int ix2 = iw + idot;
-        int ix3 = ix2 + idot;
-        PF_CALL(pf, passf4, (idot, l1, in, out, &wa[iw], &wa[ix2], &wa[ix3], isign));
-      } break;
-      case 2: {
-        passf2_ps(idot, l1, in, out, &wa[iw], isign);
-      } break;
-      case 3: {
-        int ix2 = iw + idot;
-        PF_CALL(pf, passf3, (idot, l1, in, out, &wa[iw], &wa[ix2], isign));
-      } break;
-      default:
-        assert(0);
-    }
+    cfft_pass_ps(ip, ido, l1, in, out, &wa[iw], isign, pf);
     l1 = l2;
-    iw += (ip - 1)*idot;
+    iw += (ip - 1)*2*ido;
     if (out == work2) {
       out = work1; in = work2;
     } else {
