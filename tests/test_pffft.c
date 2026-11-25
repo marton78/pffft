@@ -122,9 +122,14 @@ int test(int N, int cplx, int useOrdered) {
      radix-3/5 codelets' outputs are zero no matter what their twiddle
      constants are. For non-power-of-two N use a step coprime to N (full
      period, every stage sees distinct inputs). Powers of two keep N/16,
-     which also visits the DC and Nyquist bins. */
+     which also visits the DC and Nyquist bins. Below N = 32 that would
+     give a step of 0 or less: there, every bin (step 1). */
+  if ( step < 1 )
+    step = 1;
   if ( N & (N-1) ) {
     int a, b;
+    if ( step < 2 )
+      step = 2;  /* the loop below starts with --step */
     do {
       --step;
       for ( a = step, b = N; b; ) { int t = a % b; a = b; b = t; }  /* a = gcd(step, N) */
@@ -846,13 +851,15 @@ int main(int argc, char **argv)
   }
   /* complex sizes whose N/SIMD_SZ has no factor 4, so that cffti1_ps ends
      on a radix-3 or radix-5 pass at ido == 1 (idot == 2 in cfftf1_ps):
-     a 3 after 5s (45, 75, 135, 375, 1875), only 3s (81), only 5s (125)
-     and a lone 2 with 5s, which stays a radix-2 pass (50, 250). Never
-     with SIMD_SZ == 4, where these sizes are not valid; with
-     SIMD_SZ == 1, any N = 2^a * 3^b * 5^c with a <= 1 and no 3 next to
-     the 2 (which makes it a radix-6 pass). test() needs N >= 32. */
+     a single pass (3, 5), a 3 after 5s (15, 45, 75, 135, 375, 1875),
+     only 3s (9, 81), only 5s (25, 125) and a lone 2 with 5s, which stays
+     a radix-2 pass (10, 50, 250). As a control, a lone 2 with a 3, which
+     cffti1_ps merges into a radix-6 pass at ido == 1 instead (6, 30).
+     Never with SIMD_SZ == 4, where these sizes are not valid; with
+     SIMD_SZ == 1, any N = 2^a * 3^b * 5^c with a <= 1. */
   {
-    static const int sizes[] = { 45, 50, 75, 81, 125, 135, 250, 375, 1875 };
+    static const int sizes[] = { 3, 5, 6, 9, 10, 15, 25, 30,
+                                 45, 50, 75, 81, 125, 135, 250, 375, 1875 };
     for ( i = 0; i < (int)(sizeof(sizes)/sizeof(sizes[0])); ++i )
     {
       N = sizes[i];
