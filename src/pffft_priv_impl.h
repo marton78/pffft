@@ -2148,6 +2148,200 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
   return in; /* this is in fact the output .. */
 }
 
+/*
+  Long transforms (issue #130).
+
+  The drivers above run their passes breadth-first: each pass sweeps the
+  whole array and ping-pongs between two of them. Once two arrays no longer
+  fit in the cache, every pass is a trip through memory, and an f64 complex
+  transform of 2^20 points ran at less than half the speed it reached in L1
+  on an M2. The split transforms below go through memory three or four times
+  instead, and still only in streams: strided access, as the four-step
+  algorithm needs, ran at 13-33 GB/s on an M2 against 50-87 for a copy.
+
+  The pass with l1 == 1 splits a DFT of length n into p = ifac[2] DFTs of
+  length n/p, each on a contiguous block. In a complex transform, and in
+  the real backward one, it is the first pass (decimation in frequency):
+
+    block j [i] = w_n^(i*j) sum_a w_p^(a*j) x[i + a*n/p],   DFT(block j)[m] = X[j + p*m]
+
+  so the blocks' DFTs are followed by a sweep that interleaves them. In the
+  real forward transform it is the last pass (decimation in time), and a
+  sweep that deinterleaves x[j + p*m] into block j comes first. The blocks
+  are transformed one after the other, each while it is in cache, with the
+  remaining factors and the twiddles of the full-length plan (those of a
+  pass depend only on ip*ido), recursively until a block takes at most
+  PFFFT_SPLIT_MAX. So the result is bit for bit that of the
+  breadth-first drivers. The interleave of the complex transforms is fused
+  with the step after it (split_cplx_last).
+
+  Arrays of at most PFFFT_SPLIT_MAX bytes are not split. The best size was
+  measured with 0.5 to 16 MiB on seven machines (N = 65536 to 4194304):
+  - Intel (Xeon 6975P-C, Core i7-8700B): 0.5 to 1 MiB, about the L2 of a
+    core. With 8 MiB, lengths from 256 KiB to 4 MiB arrays gave up 30 to 70
+    points of their gain.
+  - AMD Zen 3 (EPYC 7763): 8 MiB. Its L3 is fast enough that splitting
+    arrays of 0.5 to 2 MiB cost up to 10 points.
+  - Apple (M2, A13): 4 to 8 MiB, about half the L2 of a cluster.
+  - Arm Neoverse N2 (also the Cobalt 100): 16 MiB, where it gained a little
+    at 4 MiB and above; splitting smaller arrays lost up to 10%.
+  The default follows the target: Zen targets (-march=znverN) as AMD, other
+  x86 as Intel. A build for AMD CPUs with MSVC or for generic x86 cannot tell
+  them apart: set PFFFT_SPLIT_MAX to 8388608 there (README).
+*/
+#ifndef PFFFT_SPLIT_MAX
+#  if defined(__znver1__) || defined(__znver2__) || defined(__znver3__) || \
+      defined(__znver4__) || defined(__znver5__) || defined(__znver6__)
+#    define PFFFT_SPLIT_MAX 8388608
+#  elif defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#    define PFFFT_SPLIT_MAX 1048576
+#  elif defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
+#    define PFFFT_SPLIT_MAX 8388608
+#  elif defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__) || defined(_M_ARM)
+#    define PFFFT_SPLIT_MAX 16777216
+#  else
+#    define PFFFT_SPLIT_MAX 8388608
+#  endif
+#endif
+
+#if SIMD_SZ == 4 /* the split transforms need split_cplx_last */
+/* the factors of the DFTs of the blocks: ifac without its first factor */
+static void split_sub_ifac(const int *ifac, int *sub) {
+  int k, nf = ifac[1];
+  sub[0] = ifac[0] / ifac[2]; sub[1] = nf - 1;
+  for (k = 2; k <= nf; ++k) sub[k] = ifac[k + 1];
+}
+
+/* whether a DFT of length n, of elements of vec_per_elem vectors, is split */
+static int split_here(int n, const int *ifac, size_t vec_per_elem) {
+  return ifac[1] > 2 && (size_t)n*vec_per_elem*sizeof(v4sf) > (size_t)PFFFT_SPLIT_MAX;
+}
+
+/* x[p*m + j] = blk_j[m]: p blocks of M elements of e vectors (e = 1 or 2) */
+static NEVER_INLINE(void) split_interleave(int p, int M, int e, const v4sf *src, v4sf *dst) {
+  int m, j;
+  if (e == 2) {
+    for (m = 0; m < M; ++m) {
+      for (j = 0; j < p; ++j) {
+        dst[0] = src[2*((size_t)j*M + m)];
+        dst[1] = src[2*((size_t)j*M + m) + 1];
+        dst += 2;
+      }
+    }
+  } else {
+    for (m = 0; m < M; ++m) {
+      for (j = 0; j < p; ++j) {
+        *dst++ = src[(size_t)j*M + m];
+      }
+    }
+  }
+}
+
+/* blk_j[m] = x[p*m + j] */
+static NEVER_INLINE(void) split_deinterleave(int p, int M, int e, const v4sf *src, v4sf *dst) {
+  int m, j;
+  if (e == 2) {
+    for (m = 0; m < M; ++m) {
+      for (j = 0; j < p; ++j) {
+        dst[2*((size_t)j*M + m)]     = src[0];
+        dst[2*((size_t)j*M + m) + 1] = src[1];
+        src += 2;
+      }
+    }
+  } else {
+    for (m = 0; m < M; ++m) {
+      for (j = 0; j < p; ++j) {
+        dst[(size_t)j*M + m] = *src++;
+      }
+    }
+  }
+}
+
+/* The first pass and the DFTs of the blocks of cfft_split_ps: returns a or b,
+   the array that holds the p results, each a block of n/p; b if the blocks'
+   DFTs, cfftf1_ps calls, have an even number of passes. split_here() must
+   hold. */
+static v4sf *cfft_split_blocks_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *ifac,
+                                  int isign);
+
+/* The complex DFT of length n of a, into a or b (the returned one): a if the
+   blocks' DFTs have an even number of passes, as cfftf1_ps(n, a, a, b, ...)
+   would. ifac and wa as for cfftf1_ps. */
+static v4sf *cfft_split_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *ifac, int isign) {
+  v4sf *res;
+  int p, M;
+  if (!split_here(n, ifac, 2)) return cfftf1_ps(n, a, a, b, wa, ifac, isign);
+  p = ifac[2];
+  M = n / p;
+  res = cfft_split_blocks_ps(n, a, b, wa, ifac, isign);
+  if (res == b) { split_interleave(p, M, 2, b, a); return a; }
+  split_interleave(p, M, 2, a, b); return b;
+}
+
+static v4sf *cfft_split_blocks_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *ifac,
+                                  int isign) {
+  int p = ifac[2], M = n / p, j;
+  int sub[IFAC_MAX_SIZE];
+  v4sf *res = 0;
+  cfft_pass_ps(p, M, 1, a, b, wa, isign, PF_USE_PREFETCH(2*n));
+  split_sub_ifac(ifac, sub);
+  for (j = 0; j < p; ++j) {
+    res = cfft_split_ps(M, b + 2*(size_t)j*M, a + 2*(size_t)j*M, wa + (p - 1)*2*M, sub, isign);
+  }
+  /* every block ends in the same array: res is block p-1 of a or b */
+  return (res == b + 2*(size_t)(p - 1)*M) ? b : a;
+}
+
+/* The real forward FFT of length n of in, into a or b (the returned one): a if
+   the blocks' FFTs have an odd number of passes. in is not written unless it
+   is b; it is not a. */
+static v4sf *rfftf_split_ps(int n, const v4sf *in, v4sf *a, v4sf *b, const float *wa,
+                            const int *ifac) {
+  int p, M, j;
+  int sub[IFAC_MAX_SIZE];
+  const v4sf *res = 0;
+  assert(in != a);
+  if (!split_here(n, ifac, 1)) return rfftf1_ps(n, in, a, b, wa, ifac);
+  p = ifac[2];
+  M = n / p;
+  split_deinterleave(p, M, 1, in, a);
+  split_sub_ifac(ifac, sub);
+  for (j = 0; j < p; ++j) {
+    res = rfftf_split_ps(M, a + (size_t)j*M, b + (size_t)j*M, a + (size_t)j*M, wa + (p - 1)*M,
+                         sub);
+  }
+  if (res == b + (size_t)(p - 1)*M) { rfftf_pass_ps(p, M, 1, b, a, wa, PF_USE_PREFETCH(n)); return a; }
+  rfftf_pass_ps(p, M, 1, a, b, wa, PF_USE_PREFETCH(n)); return b;
+}
+
+/* The real backward FFT of length n of a, into a or b (the returned one): a if
+   the blocks' FFTs have an even number of passes. */
+static v4sf *rfftb_split_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *ifac) {
+  int p, M, j;
+  int sub[IFAC_MAX_SIZE];
+  v4sf *res = 0;
+  if (!split_here(n, ifac, 1)) return rfftb1_ps(n, a, a, b, wa, ifac);
+  p = ifac[2];
+  M = n / p;
+  rfftb_pass_ps(p, M, 1, a, b, wa, PF_USE_PREFETCH(n));
+  split_sub_ifac(ifac, sub);
+  for (j = 0; j < p; ++j) {
+    res = rfftb_split_ps(M, b + (size_t)j*M, a + (size_t)j*M, wa + (p - 1)*M, sub);
+  }
+  if (res == b + (size_t)(p - 1)*M) { split_interleave(p, M, 1, b, a); return a; }
+  split_interleave(p, M, 1, a, b); return b;
+}
+
+/* the number of passes of the blocks' FFTs, odd or even */
+static int split_leaf_odd(int n, const int *ifac, size_t vec_per_elem) {
+  int sub[IFAC_MAX_SIZE];
+  if (!split_here(n, ifac, vec_per_elem)) return ifac[1] & 1;
+  split_sub_ifac(ifac, sub);
+  return split_leaf_odd(sub[0], sub, vec_per_elem);
+}
+
+#endif /* SIMD_SZ == 4 */
+
 #undef PF_PREFETCH
 #undef PF_USE_PREFETCH
 #undef PF_CALL
@@ -2163,7 +2357,10 @@ struct SETUP_STRUCT {
   v4sf *data;     /* allocated room for twiddle coefs */
   float *e;       /* points into 'data', N/4*3 elements */
   float *twiddle; /* points into 'data', N/4 elements */
+  int split;      /* cfft_split_ps / rfft?_split_ps instead of cfftf1_ps / rfft?1_ps */
+  int nf_odd;     /* the number of passes (of the blocks if split), odd or even */
 };
+
 
 SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
   SETUP_STRUCT *s = 0;
@@ -2207,6 +2404,17 @@ SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
   } else {
     cffti1_ps(N/SIMD_SZ, s->twiddle, s->ifac);
   }
+  s->split = 0;
+  s->nf_odd = s->ifac[1] & 1;
+#if SIMD_SZ == 4 /* the split transforms need SIMD_SZ == 4 (split_cplx_last) */
+  {
+    int vec_per_elem = (transform == PFFFT_REAL ? 1 : 2), n = 2*s->Ncvec/vec_per_elem;
+    if (split_here(n, s->ifac, vec_per_elem)) {
+      s->split = 1;
+      s->nf_odd = split_leaf_odd(n, s->ifac, vec_per_elem);
+    }
+  }
+#endif
 
   /* check that N is decomposable with allowed prime factors */
   for (k=0, m=1; k < s->ifac[1]; ++k) { m *= s->ifac[2+k]; }
@@ -2697,6 +2905,60 @@ static NEVER_INLINE(void) real_finalize_reorder(int Ncvec, const v4sf *in, v4sf 
   }
 }
 
+/* The last step of a split complex transform (cfft_split_blocks_ps): the
+   interleave of its p blocks of M, fused with FUNC_CPLX_FINALIZE (forward,
+   reorder == 0), with that and FUNC_ZREORDER (forward, reorder == 1), or with
+   the INTERLEAVE2 that ends a backward transform (backward == 1). Element K of
+   the DFT is element K / p of block K % p. */
+static NEVER_INLINE(void) split_cplx_last(int p, int M, const v4sf *src, v4sf *out, const v4sf *e,
+                                          int backward, int reorder) {
+  int Ncvec = p*M, k, dk = Ncvec/SIMD_SZ, q;
+  int j = 0, m = 0; /* block and index of element 4k + q */
+  v4sf r[4], i[4];
+  v4sf sr0, dr0, sr1, dr1, si0, di0, si1, di1;
+  assert(src != out);
+  if (backward) {
+    for (k=0; k < Ncvec; ++k) {
+      const v4sf *x = src + 2*((size_t)j*M + m);
+      INTERLEAVE2(x[0], x[1], out[2*k], out[2*k+1]);
+      if (++j == p) { j = 0; ++m; }
+    }
+    return;
+  }
+  for (k=0; k < dk; ++k) {
+    for (q=0; q < 4; ++q) {
+      const v4sf *x = src + 2*((size_t)j*M + m);
+      r[q] = x[0]; i[q] = x[1];
+      if (++j == p) { j = 0; ++m; }
+    }
+    VTRANSPOSE4(r[0],r[1],r[2],r[3]);
+    VTRANSPOSE4(i[0],i[1],i[2],i[3]);
+    VCPLXMUL(r[1],i[1],e[k*6+0],e[k*6+1]);
+    VCPLXMUL(r[2],i[2],e[k*6+2],e[k*6+3]);
+    VCPLXMUL(r[3],i[3],e[k*6+4],e[k*6+5]);
+
+    sr0 = VADD(r[0],r[2]); dr0 = VSUB(r[0], r[2]);
+    sr1 = VADD(r[1],r[3]); dr1 = VSUB(r[1], r[3]);
+    si0 = VADD(i[0],i[2]); di0 = VSUB(i[0], i[2]);
+    si1 = VADD(i[1],i[3]); di1 = VSUB(i[1], i[3]);
+
+    r[0] = VADD(sr0, sr1); i[0] = VADD(si0, si1);
+    r[1] = VADD(dr0, di1); i[1] = VSUB(di0, dr1);
+    r[2] = VSUB(sr0, sr1); i[2] = VSUB(si0, si1);
+    r[3] = VSUB(dr0, di1); i[3] = VADD(di0, dr1);
+
+    if (reorder) {
+      for (q=0; q < 4; ++q) {
+        INTERLEAVE2(r[q], i[q], out[2*(k + q*dk)], out[2*(k + q*dk) + 1]);
+      }
+    } else {
+      for (q=0; q < 4; ++q) {
+        out[8*k + 2*q] = r[q]; out[8*k + 2*q + 1] = i[q];
+      }
+    }
+  }
+}
+
 /* one vector pair of unreversed_copy(dk, in, ...): the pair it writes j-th */
 static ALWAYS_INLINE(void) unreversed_pair(int j, int dk, const v4sf *in, v4sf *o0, v4sf *o1) {
   v4sf a = in[2*j], b = in[2*j+1], c = in[j == dk-1 ? 0 : 2*j+2];
@@ -2743,7 +3005,7 @@ static NEVER_INLINE(void) real_reorder_preprocess(int Ncvec, const v4sf *in, v4s
 void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, float *foutput, v4sf *scratch,
                              pffft_direction_t direction, int ordered) {
   int k, Ncvec   = setup->Ncvec;
-  int nf_odd = (setup->ifac[1] & 1);
+  int nf_odd = setup->nf_odd;
 
   /* temporary buffer is allocated on the stack if the scratch pointer is NULL */
   int stack_allocate = (scratch == 0 ? Ncvec*2 : 1);
@@ -2762,10 +3024,27 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
   if (direction == PFFFT_FORWARD) {
     ib = !ib;
     if (setup->transform == PFFFT_REAL) {
-      ib = (rfftf1_ps(Ncvec*2, vinput, buff[ib], buff[!ib],
-                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
+      if (setup->split) {
+        /* as rfftf1_ps, the result is in buff[!ib] if nf_odd */
+        v4sf *a = buff[!ib], *b = buff[ib];
+        if (vinput == a) { a = b; b = buff[!ib]; } /* in place: the copy at the end may be needed */
+        ib = (rfftf_split_ps(Ncvec*2, vinput, a, b, setup->twiddle, setup->ifac) == buff[0] ? 0 : 1);
+      } else {
+        ib = (rfftf1_ps(Ncvec*2, vinput, buff[ib], buff[!ib],
+                        setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
+      }
       if (ordered) real_finalize_reorder(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
       else FUNC_REAL_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
+    } else if (setup->split) {
+      /* the result is where the uninterleave writes if nf_odd is 0 */
+      v4sf *a = buff[nf_odd], *b = buff[!nf_odd], *res;
+      for (k=0; k < Ncvec; ++k) {
+        UNINTERLEAVE2(vinput[k*2], vinput[k*2+1], a[k*2], a[k*2+1]);
+      }
+      res = cfft_split_blocks_ps(Ncvec, a, b, setup->twiddle, setup->ifac, -1);
+      split_cplx_last(setup->ifac[2], Ncvec/setup->ifac[2], res, res == a ? b : a,
+                      (v4sf*)setup->e, 0, ordered);
+      ib = (res == buff[0]); /* the other one */
     } else {
       v4sf *tmp = buff[ib];
       for (k=0; k < Ncvec; ++k) {
@@ -2775,8 +3054,9 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
                       setup->twiddle, &setup->ifac[0], -1) == buff[0] ? 0 : 1);
       if (ordered) cplx_finalize_reorder(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
       else FUNC_CPLX_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
+      ib = !ib;
     }
-    ib = !ib;
+    if (setup->transform == PFFFT_REAL) ib = !ib;
   } else {
     if (vinput == buff[ib]) {
       ib = !ib; /* may happen when finput == foutput */
@@ -2784,8 +3064,22 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
     if (setup->transform == PFFFT_REAL) {
       if (ordered) real_reorder_preprocess(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       else FUNC_REAL_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
-      ib = (rfftb1_ps(Ncvec*2, buff[ib], buff[0], buff[1],
-                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
+      if (setup->split) {
+        ib = (rfftb_split_ps(Ncvec*2, buff[ib], buff[!ib], setup->twiddle, setup->ifac) == buff[0] ? 0 : 1);
+      } else {
+        ib = (rfftb1_ps(Ncvec*2, buff[ib], buff[0], buff[1],
+                        setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
+      }
+    } else if (setup->split) {
+      /* the result is where the preprocess writes if nf_odd is 0 */
+      v4sf *a = buff[nf_odd], *b = buff[!nf_odd], *res;
+      if (vinput == a) { a = b; b = buff[nf_odd]; } /* in place: the copy at the end is needed */
+      if (ordered) cplx_reorder_preprocess(Ncvec, vinput, a, (v4sf*)setup->e);
+      else FUNC_CPLX_PREPROCESS(Ncvec, vinput, a, (v4sf*)setup->e);
+      res = cfft_split_blocks_ps(Ncvec, a, b, setup->twiddle, setup->ifac, +1);
+      split_cplx_last(setup->ifac[2], Ncvec/setup->ifac[2], res, res == a ? b : a,
+                      (v4sf*)setup->e, 1, 0);
+      ib = (res == buff[0]); /* the other one */
     } else {
       if (ordered) cplx_reorder_preprocess(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       else FUNC_CPLX_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);

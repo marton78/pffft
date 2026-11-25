@@ -346,6 +346,31 @@ empty value keeps the default. Without CMake, define them as compile
 definitions (`-DPFFFT_PREFETCH_DIST=0`, or `/DPFFFT_PREFETCH_DIST=0` with
 MSVC).
 
+### Long transforms: splitting, and AMD
+
+The passes of the FFT sweep the whole array one after the other. Once the
+arrays no longer fit in the cache, every pass goes through memory. So
+transforms of arrays larger than `PFFFT_SPLIT_MAX` bytes run their first
+(or, forward real, last) pass over the whole array, which splits the
+transform into 3 to 5 independent ones on contiguous blocks, and transform
+the blocks one after the other while each is in cache, splitting them
+again where they are still larger. The result is bit for bit the same.
+
+The best `PFFFT_SPLIT_MAX` depends on the caches, so the default depends on
+the target: 1 MiB on x86, 8 MiB when the compiler targets AMD Zen (as for
+the prefetching above) and on Apple's arm64 chips, 16 MiB on other Arm
+CPUs. On AMD CPUs, 1 MiB costs up to 10% at single lengths of 0.5 to 2
+MiB, where 8 MiB gains; set it yourself for builds the compiler can't
+target at Zen (the list above):
+
+```
+cmake -DPFFFT_SPLIT_MAX=8388608 ..
+```
+
+A larger value splits less; a value larger than any array turns splitting
+off. Splitting needs SIMD (`SIMD_SZ` 4). As for the prefetching, an empty
+value keeps the default, and without CMake it is a compile definition.
+
 ### ARMv7 (32-bit ARM): prefer clang over gcc
 
 On 32-bit ARM, **gcc emits very inefficient assembly**, with a lot more
