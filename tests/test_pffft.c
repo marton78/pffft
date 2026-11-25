@@ -844,6 +844,34 @@ int main(int argc, char **argv)
         printf("tests for real size %d succeeded successfully.\n", N);
     }
   }
+  /* complex sizes whose N/SIMD_SZ has no factor 4, so that cffti1_ps ends
+     on a radix-3 or radix-5 pass at ido == 1 (idot == 2 in cfftf1_ps):
+     a 3 after 5s (45, 75, 135, 375, 1875), only 3s (81), only 5s (125)
+     and a lone 2 with 5s, which stays a radix-2 pass (50, 250). Never
+     with SIMD_SZ == 4, where these sizes are not valid; with
+     SIMD_SZ == 1, any N = 2^a * 3^b * 5^c with a <= 1 and no 3 next to
+     the 2 (which makes it a radix-6 pass). test() needs N >= 32. */
+  {
+    static const int sizes[] = { 45, 50, 75, 81, 125, 135, 250, 375, 1875 };
+    for ( i = 0; i < (int)(sizeof(sizes)/sizeof(sizes[0])); ++i )
+    {
+      N = sizes[i];
+#ifdef PFFFT_ENABLE_FLOAT
+      if (!pffft_is_valid_size(N, PFFFT_COMPLEX))
+#else
+      if (!pffftd_is_valid_size(N, PFFFT_COMPLEX))
+#endif
+        continue;
+      result = test(N, 1 /* cplx fft */, 1 /* useOrdered */);
+      resN = result;
+      resFFT |= result;
+      result = test(N, 1 /* cplx fft */, 0 /* useOrdered */);
+      resN |= result;
+      resFFT |= result;
+      if (!resN)
+        printf("tests for complex size %d succeeded successfully.\n", N);
+    }
+  }
 
   if (!resFFT) {
 #ifdef PFFFT_ENABLE_FLOAT
