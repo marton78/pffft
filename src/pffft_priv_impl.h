@@ -3142,10 +3142,12 @@ static NEVER_INLINE(void) FUNC_REAL_PREPROCESS(int Ncvec, const v4sf *in, v4sf *
   i7 at n = 1024 to 2400). So on x86, double-precision real transforms of at
   most REAL_REORDER_APART_MAX bytes keep FUNC_ZREORDER as a step of its own.
 */
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-#  define REAL_REORDER_APART_MAX (sizeof(float) == 8 ? 24576 : 0) /* float is double in pffft_double.c */
-#else
-#  define REAL_REORDER_APART_MAX 0
+#ifndef REAL_REORDER_APART_MAX /* -DREAL_REORDER_APART_MAX=0: always fused */
+#  if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#    define REAL_REORDER_APART_MAX (sizeof(float) == 8 ? 24576 : 0) /* float is double in pffft_double.c */
+#  else
+#    define REAL_REORDER_APART_MAX 0
+#  endif
 #endif
 
 /*
