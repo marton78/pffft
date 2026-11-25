@@ -2176,18 +2176,24 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
   with the step after it (split_cplx_last).
 
   Arrays of at most PFFFT_SPLIT_MAX bytes are not split. The best size was
-  measured with 0.5 to 16 MiB on seven machines (N = 65536 to 4194304):
-  - Intel (Xeon 6975P-C, Core i7-8700B): 0.5 to 1 MiB, about the L2 of a
-    core. With 8 MiB, lengths from 256 KiB to 4 MiB arrays gave up 30 to 70
-    points of their gain.
+  measured with 0.25 to 16 MiB on eight machines (N = 65536 to 4194304):
+  - Intel (Xeon 6975P-C, Core i7-8700B): 0.5 to 2 MiB, about the L2 of a
+    core. With 8 MiB, arrays of 2 to 8 MiB gave up 30 to 70 points of their
+    gain.
   - AMD Zen 3 (EPYC 7763): 8 MiB. Its L3 is fast enough that splitting
-    arrays of 0.5 to 2 MiB cost up to 10 points.
+    arrays of 2 to 11 MiB with 1 MiB cost up to 10 points.
   - Apple (M2, A13): 4 to 8 MiB, about half the L2 of a cluster.
   - Arm Neoverse N2 (also the Cobalt 100): 16 MiB, where it gained a little
-    at 4 MiB and above; splitting smaller arrays lost up to 10%.
+    at 4 MiB and above; splitting smaller arrays lost up to 10%. Their 128 MiB
+    system cache serves the passes nearly as fast as L2.
+  - A MediaTek MT6878 phone (Android): 0.25 to 1 MiB, 15 to 17% faster than
+    not splitting on average; from 4 MiB on it gained nothing.
   The default follows the target: Zen targets (-march=znverN) as AMD, other
-  x86 as Intel. A build for AMD CPUs with MSVC or for generic x86 cannot tell
-  them apart: set PFFFT_SPLIT_MAX to 8388608 there (README).
+  x86 as Intel, Android as the phone, other Arm as the Neoverse (a Linux
+  build for a phone-class chip, a Raspberry Pi say, gets the server value).
+  A build for AMD CPUs with MSVC or for generic x86 cannot tell them apart:
+  set PFFFT_SPLIT_MAX to 8388608 there (README). Choosing the size at run
+  time, from the CPU and its caches, is for #122.
 */
 #ifndef PFFFT_SPLIT_MAX
 #  if defined(__znver1__) || defined(__znver2__) || defined(__znver3__) || \
@@ -2197,6 +2203,8 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
 #    define PFFFT_SPLIT_MAX 1048576
 #  elif defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
 #    define PFFFT_SPLIT_MAX 8388608
+#  elif defined(__ANDROID__)
+#    define PFFFT_SPLIT_MAX 1048576
 #  elif defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__) || defined(_M_ARM)
 #    define PFFFT_SPLIT_MAX 16777216
 #  else
