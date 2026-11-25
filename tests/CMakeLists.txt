@@ -44,7 +44,10 @@ add_library( PFFFT_SPLIT_TEST STATIC ${SPLIT_TEST_SOURCES} )
 get_target_property( SPLIT_TEST_DEFS PFFFT COMPILE_DEFINITIONS )
 list( FILTER SPLIT_TEST_DEFS EXCLUDE REGEX "^PFFFT_SPLIT_MAX=" )
 target_compile_definitions( PFFFT_SPLIT_TEST PRIVATE ${SPLIT_TEST_DEFS} PFFFT_SPLIT_MAX=1024 )
-target_compile_options( PFFFT_SPLIT_TEST PRIVATE $<TARGET_PROPERTY:PFFFT,COMPILE_OPTIONS> )
+# PFFFT's options replace the library's own, which start with those of this
+# directory: appended, CMake would drop the later copy of a -march that PFFFT
+# has after auto's, and auto's would win here
+set_property( TARGET PFFFT_SPLIT_TEST PROPERTY COMPILE_OPTIONS "$<TARGET_PROPERTY:PFFFT,COMPILE_OPTIONS>" )
 target_include_directories( PFFFT_SPLIT_TEST PRIVATE $<TARGET_PROPERTY:PFFFT,INCLUDE_DIRECTORIES> )
 target_include_directories( PFFFT_SPLIT_TEST PUBLIC $<TARGET_PROPERTY:PFFFT,INTERFACE_INCLUDE_DIRECTORIES> )
 target_compile_definitions( PFFFT_SPLIT_TEST PUBLIC PFFFT_STATIC_DEFINE )
