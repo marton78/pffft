@@ -359,9 +359,15 @@ again where they are still larger. The result is bit for bit the same.
 The best `PFFFT_SPLIT_MAX` depends on the caches, so the default depends on
 the target: 1 MiB on x86, 8 MiB when the compiler targets AMD Zen (as for
 the prefetching above) and on Apple's arm64 chips, 16 MiB on other Arm
-CPUs. On AMD CPUs, 1 MiB costs up to 10% at single lengths of 0.5 to 2
-MiB, where 8 MiB gains; set it yourself for builds the compiler can't
-target at Zen (the list above):
+CPUs. Against not splitting, transforms of 2^20 to 2^22 points ran 27 to
+34% faster on average on Intel CPUs (up to 56%), 15% on Apple's (the
+iPhone measured up to 2^21) and an AMD EPYC 7763 (up to 45%), and about
+as fast on the Neoverse N2 and the Cobalt 100 (-4.5 to +6.8%). Below 2^20
+points, splitting made a Xeon 6975P-C up to 63% faster (double-precision
+real 2^18). On an AMD EPYC 7763, 1 MiB made arrays of 2 to 12 MiB up to
+10.5% slower than not splitting, while 8 MiB leaves them whole (up to
+11.6% faster than 1 MiB there); set it yourself for builds the compiler
+can't target at Zen (the list above):
 
 ```
 cmake -DPFFFT_SPLIT_MAX=8388608 ..
@@ -490,11 +496,12 @@ The `bench_*` tests are excluded because they allocate about 1 GiB.
 pffft is faster than most FFT libraries: on nine machines, from phones to
 servers, arm64 and x86, it beat PocketFFT, KISS FFT, FFTPACK, Green FFT and
 Ooura's FFT at nearly every length. Only FFTW and Apple's vDSP are often
-faster; Ooura's FFT is in double precision at large powers of two, and
-PocketFFT at some complex lengths on an AMD EPYC.
-Thanks to performance fixes, pffft is now on average 21 to 22% faster than
-Julien Pommier's original below n = 4096 on arm64, and 10.5 to 13% faster at
-larger n; on x86 with Intel CPUs, 20 to 23% and 17 to 19%.
+faster; Ooura's FFT is in double precision from 2^18 to 2^20 on Intel
+CPUs, and PocketFFT at some complex lengths on an AMD EPYC.
+Thanks to performance fixes, pffft is now on average 33 to 34% faster than
+Julien Pommier's original below n = 4096 on Apple's arm64 chips, and 27 to
+30% faster at larger n (up to 2^22); on x86 with Intel CPUs, 25 to 26% and
+35 to 48%.
 [docs/benchmarks.md](docs/benchmarks.md) has the details.
 
 `bench_fft` measures pffft against other FFT libraries (FFTPACK, FFTW,
