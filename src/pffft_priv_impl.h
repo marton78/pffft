@@ -175,18 +175,24 @@ const char * FUNC_SIMD_ARCH(void) { return VARCH; }
       instruction. */
 #  define PF_PREFETCH(pf, p, dir) do { if (pf) \
      _mm_prefetch((const char *)(p) + (dir) * PFFFT_PREFETCH_DIST, _MM_HINT_T0); } while (0)
-   /* whether the passes over nvec vectors (every pass of a transform writes
-      all of them) take the kernels with the prefetches */
-#  define PF_USE_PREFETCH(nvec) ((size_t)(nvec) * sizeof(v4sf) >= (size_t)PFFFT_PREFETCH_MIN)
    /* call the kernel f##_pf_ps, with the prefetches, if pf, else f##_ps */
 #  define PF_CALL(pf, f, args) do { if (pf) f##_pf_ps args; else f##_ps args; } while (0)
 #  define PF_ON 1
 #else
 #  define PF_PREFETCH(pf, p, dir) ((void)(pf))
-#  define PF_USE_PREFETCH(nvec) 0
 #  define PF_CALL(pf, f, args) f##_ps args
 #  define PF_ON 0
 #endif
+/* The passes of a transform whose arrays take `bytes` prefetch, from the
+   setup's prefetch threshold pf_min (bytes per array; every pass writes a
+   whole array): PF_ALL in every pass from pf_min on, PF_FIRST in the first
+   pass of rfftb1_ps from pf_min/2 on (see there). */
+#define PF_ALL   1
+#define PF_FIRST 2
+static int pf_flags(size_t bytes, size_t pf_min) {
+  if (!PF_ON) return 0;
+  return (bytes >= pf_min ? PF_ALL : 0) | (bytes >= pf_min/2 ? PF_FIRST : 0);
+}
 
 /*
   passf2 and passb2 has been merged here, fsign = -1 for passf2, +1 for passb2
@@ -1868,14 +1874,15 @@ static ALWAYS_INLINE(void) rfftb_pass_ps(int ip, int ido, int l1, const v4sf *in
   }
 }
 
+/* pf_mask: pf_flags() of its arrays, of which only PF_ALL counts here */
 static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2,
-                                      const float *wa, const int *ifac) {
+                                      const float *wa, const int *ifac, int pf_mask) {
   v4sf *in  = (v4sf*)input_readonly;
   v4sf *out = (in == work2 ? work1 : work2);
   int nf = ifac[1], k1;
   int l2 = n;
   int iw = n-1;
-  const int pf = PF_USE_PREFETCH(n); /* the same for every pass */
+  const int pf = pf_mask & PF_ALL; /* the same for every pass */
   (void)pf;
   assert(in != out && work1 != work2);
   for (k1 = 1; k1 <= nf; ++k1) {
@@ -1895,18 +1902,19 @@ static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *w
   return in; /* this is in fact the output .. */
 } /* rfftf1 */
 
+/* pf_mask: pf_flags() of its arrays */
 static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2,
-                                      const float *wa, const int *ifac) {
+                                      const float *wa, const int *ifac, int pf_mask) {
   v4sf *in  = (v4sf*)input_readonly;
   v4sf *out = (in == work2 ? work1 : work2);
   int nf = ifac[1], k1;
   int l1 = 1;
   int iw = 0;
-  const int pf = PF_USE_PREFETCH(n); /* the same for every pass */
+  const int pf = pf_mask & PF_ALL; /* the same for every pass */
   /* the first pass writes a buffer this transform has not touched yet,
      often out of L1: its stores stall without prefetches already from half
-     of PFFFT_PREFETCH_MIN on (f64 real 1920 to 2560 on Xeons: 2 to 9%) */
-  const int pf_first = pf || PF_USE_PREFETCH(2*(size_t)n);
+     of the prefetch threshold on (f64 real 1920 to 2560 on Xeons: 2 to 9%) */
+  const int pf_first = (pf_mask & PF_FIRST) != 0;
   (void)pf; (void)pf_first;
   assert(in != out);
   for (k1=1; k1<=nf; k1++) {
@@ -1995,7 +2003,8 @@ static void cos_sin_2pi_ps(int m, int n, float *c, float *s) {
    radix-6 instead of a radix-8 pass where it can (see rffti1_ps) */
 #define RADIX6_MAX_BYTES 32768
 
-static void rffti1_ps(int n, float *wa, int *ifac)
+/* radix6_max: the setup's RADIX6_MAX_BYTES */
+static void rffti1_ps(int n, float *wa, int *ifac, size_t radix6_max)
 {
   static const int ntryh[] = { 4,2,3,5,0 };
   int k1, j, ii;
@@ -2019,7 +2028,7 @@ static void rffti1_ps(int n, float *wa, int *ifac)
      cache slower (N = 24576, f32 and f64: 1-5%). */
   if (nf >= 2 && ifac[2] == 2 && ifac[3] == 4) {
     int i3 = 0;
-    if ((size_t)n * sizeof(v4sf) <= RADIX6_MAX_BYTES)
+    if ((size_t)n * sizeof(v4sf) <= radix6_max)
       for (k1 = 4; k1 <= nf+1; ++k1) if (ifac[k1] == 3) { i3 = k1; break; }
     if (i3) {
       for (k1 = 2; k1 < i3-1; ++k1) ifac[k1] = ifac[k1+1];
@@ -2162,13 +2171,15 @@ static ALWAYS_INLINE(void) cfft_pass_ps(int ip, int ido, int l1, const v4sf *in,
   }
 }
 
-static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2, const float *wa, const int *ifac, int isign) {
+/* pf_mask: pf_flags() of its arrays, of which only PF_ALL counts here */
+static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2, const float *wa,
+                       const int *ifac, int isign, int pf_mask) {
   v4sf *in  = (v4sf*)input_readonly;
   v4sf *out = (in == work2 ? work1 : work2);
   int nf = ifac[1], k1;
   int l1 = 1;
   int iw = 0;
-  const int pf = PF_USE_PREFETCH(2*n); /* the same for every pass */
+  const int pf = pf_mask & PF_ALL; /* the same for every pass */
   (void)pf;
   assert(in != out && work1 != work2);
   for (k1=2; k1<=nf+1; k1++) {
@@ -2263,9 +2274,16 @@ static void split_sub_ifac(const int *ifac, int *sub) {
   for (k = 2; k <= nf; ++k) sub[k] = ifac[k + 1];
 }
 
-/* whether a DFT of length n, of elements of vec_per_elem vectors, is split */
-static int split_here(int n, const int *ifac, size_t vec_per_elem) {
-  return ifac[1] > 2 && (size_t)n*vec_per_elem*sizeof(v4sf) > (size_t)PFFFT_SPLIT_MAX;
+/* How deep a DFT of length n, of elements of vec_per_elem vectors, is split:
+   into blocks while an array takes more than split_max bytes and the blocks
+   have two passes or more. All blocks of a level have the same length and
+   factors, so the setup stores the number and the transforms count it down
+   (levels). */
+static int split_levels(int n, const int *ifac, size_t vec_per_elem, size_t split_max) {
+  int sub[IFAC_MAX_SIZE];
+  if (ifac[1] <= 2 || (size_t)n*vec_per_elem*sizeof(v4sf) <= split_max) return 0;
+  split_sub_ifac(ifac, sub);
+  return 1 + split_levels(sub[0], sub, vec_per_elem, split_max);
 }
 
 /* x[p*m + j] = blk_j[m]: p blocks of M elements of e vectors (e = 1 or 2) */
@@ -2308,23 +2326,27 @@ static NEVER_INLINE(void) split_deinterleave(int p, int M, int e, const v4sf *sr
   }
 }
 
+/* The split transforms take levels, the number of split levels left
+   (split_levels(); 0: the blocks' DFTs are not split), and pf_min, the
+   setup's prefetch threshold for the passes (pf_flags()). */
+
 /* The first pass and the DFTs of the blocks of cfft_split_ps: returns a or b,
    the array that holds the p results, each a block of n/p; b if the blocks'
-   DFTs, cfftf1_ps calls, have an even number of passes. split_here() must
-   hold. */
+   DFTs, cfftf1_ps calls, have an even number of passes. levels > 0. */
 static v4sf *cfft_split_blocks_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *ifac,
-                                  int isign);
+                                  int isign, int levels, size_t pf_min);
 
 /* The complex DFT of length n of a, into a or b (the returned one): a if the
    blocks' DFTs have an even number of passes, as cfftf1_ps(n, a, a, b, ...)
    would. ifac and wa as for cfftf1_ps. */
-static v4sf *cfft_split_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *ifac, int isign) {
+static v4sf *cfft_split_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *ifac, int isign,
+                           int levels, size_t pf_min) {
   v4sf *res;
   int p, M;
-  if (!split_here(n, ifac, 2)) return cfftf1_ps(n, a, a, b, wa, ifac, isign);
+  if (!levels) return cfftf1_ps(n, a, a, b, wa, ifac, isign, pf_flags(2*(size_t)n*sizeof(v4sf), pf_min));
   p = ifac[2];
   M = n / p;
-  res = cfft_split_blocks_ps(n, a, b, wa, ifac, isign);
+  res = cfft_split_blocks_ps(n, a, b, wa, ifac, isign, levels, pf_min);
   if (res == b) { split_interleave(p, M, 2, b, a); return a; }
   split_interleave(p, M, 2, a, b); return b;
 }
@@ -2332,70 +2354,76 @@ static v4sf *cfft_split_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *
 /* the DFTs of the p blocks of b, the output of the first pass of
    cfft_split_blocks_ps: returns a or b, as that */
 static v4sf *cfft_split_sub_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *ifac,
-                               int isign) {
+                               int isign, int levels, size_t pf_min) {
   int p = ifac[2], M = n / p, j;
   int sub[IFAC_MAX_SIZE];
   v4sf *res = 0;
   split_sub_ifac(ifac, sub);
   for (j = 0; j < p; ++j) {
-    res = cfft_split_ps(M, b + 2*(size_t)j*M, a + 2*(size_t)j*M, wa + (p - 1)*2*M, sub, isign);
+    res = cfft_split_ps(M, b + 2*(size_t)j*M, a + 2*(size_t)j*M, wa + (p - 1)*2*M, sub, isign,
+                        levels - 1, pf_min);
   }
   /* every block ends in the same array: res is block p-1 of a or b */
   return (res == b + 2*(size_t)(p - 1)*M) ? b : a;
 }
 
 static v4sf *cfft_split_blocks_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *ifac,
-                                  int isign) {
-  cfft_pass_ps(ifac[2], n / ifac[2], 1, a, b, wa, isign, PF_USE_PREFETCH(2*n));
-  return cfft_split_sub_ps(n, a, b, wa, ifac, isign);
+                                  int isign, int levels, size_t pf_min) {
+  cfft_pass_ps(ifac[2], n / ifac[2], 1, a, b, wa, isign,
+               pf_flags(2*(size_t)n*sizeof(v4sf), pf_min) & PF_ALL);
+  return cfft_split_sub_ps(n, a, b, wa, ifac, isign, levels, pf_min);
 }
 
 /* The real forward FFT of length n of in, into a or b (the returned one): a if
    the blocks' FFTs have an odd number of passes. in is not written unless it
    is b; it is not a. */
 static v4sf *rfftf_split_ps(int n, const v4sf *in, v4sf *a, v4sf *b, const float *wa,
-                            const int *ifac) {
-  int p, M, j;
+                            const int *ifac, int levels, size_t pf_min) {
+  int p, M, j, pf;
   int sub[IFAC_MAX_SIZE];
   const v4sf *res = 0;
   assert(in != a);
-  if (!split_here(n, ifac, 1)) return rfftf1_ps(n, in, a, b, wa, ifac);
+  pf = pf_flags((size_t)n*sizeof(v4sf), pf_min);
+  if (!levels) return rfftf1_ps(n, in, a, b, wa, ifac, pf);
   p = ifac[2];
   M = n / p;
   split_deinterleave(p, M, 1, in, a);
   split_sub_ifac(ifac, sub);
   for (j = 0; j < p; ++j) {
     res = rfftf_split_ps(M, a + (size_t)j*M, b + (size_t)j*M, a + (size_t)j*M, wa + (p - 1)*M,
-                         sub);
+                         sub, levels - 1, pf_min);
   }
-  if (res == b + (size_t)(p - 1)*M) { rfftf_pass_ps(p, M, 1, b, a, wa, PF_USE_PREFETCH(n)); return a; }
-  rfftf_pass_ps(p, M, 1, a, b, wa, PF_USE_PREFETCH(n)); return b;
+  if (res == b + (size_t)(p - 1)*M) { rfftf_pass_ps(p, M, 1, b, a, wa, pf & PF_ALL); return a; }
+  rfftf_pass_ps(p, M, 1, a, b, wa, pf & PF_ALL); return b;
 }
 
 /* The real backward FFT of length n of a, into a or b (the returned one): a if
    the blocks' FFTs have an even number of passes. */
-static v4sf *rfftb_split_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *ifac) {
-  int p, M, j;
+static v4sf *rfftb_split_ps(int n, v4sf *a, v4sf *b, const float *wa, const int *ifac, int levels,
+                            size_t pf_min) {
+  int p, M, j, pf;
   int sub[IFAC_MAX_SIZE];
   v4sf *res = 0;
-  if (!split_here(n, ifac, 1)) return rfftb1_ps(n, a, a, b, wa, ifac);
+  pf = pf_flags((size_t)n*sizeof(v4sf), pf_min);
+  if (!levels) return rfftb1_ps(n, a, a, b, wa, ifac, pf);
   p = ifac[2];
   M = n / p;
-  rfftb_pass_ps(p, M, 1, a, b, wa, PF_USE_PREFETCH(n));
+  rfftb_pass_ps(p, M, 1, a, b, wa, pf & PF_ALL);
   split_sub_ifac(ifac, sub);
   for (j = 0; j < p; ++j) {
-    res = rfftb_split_ps(M, b + (size_t)j*M, a + (size_t)j*M, wa + (p - 1)*M, sub);
+    res = rfftb_split_ps(M, b + (size_t)j*M, a + (size_t)j*M, wa + (p - 1)*M, sub, levels - 1, pf_min);
   }
   if (res == b + (size_t)(p - 1)*M) { split_interleave(p, M, 1, b, a); return a; }
   split_interleave(p, M, 1, a, b); return b;
 }
 
-/* the number of passes of the blocks' FFTs, odd or even */
-static int split_leaf_odd(int n, const int *ifac, size_t vec_per_elem) {
+/* the number of passes of the blocks' FFTs after levels split levels, odd or
+   even */
+static int split_leaf_odd(const int *ifac, int levels) {
   int sub[IFAC_MAX_SIZE];
-  if (!split_here(n, ifac, vec_per_elem)) return ifac[1] & 1;
+  if (!levels) return ifac[1] & 1;
   split_sub_ifac(ifac, sub);
-  return split_leaf_odd(sub[0], sub, vec_per_elem);
+  return split_leaf_odd(sub, levels - 1);
 }
 
 /*
@@ -2660,8 +2688,8 @@ static int split_top_fused(int p, int M) {
    backward: they preprocess chunk bytes of each block at a time into tmp
    (p*chunk bytes, or 2*p*M vectors), which is neither in nor ch */
 static NEVER_INLINE(void) split_top_ps(int p, int mode, int M, const v4sf *in, v4sf *ch,
-                                        const float *wa, const v4sf *e, v4sf *tmp, size_t chunk) {
-  const int pf = PF_USE_PREFETCH(2*(size_t)p*M);
+                                        const float *wa, const v4sf *e, v4sf *tmp, size_t chunk,
+                                        int pf) {
   assert(split_top_fused(p, M) && in != ch);
   (void)pf;
 #define SPLIT_TOP_P(P) do { \
@@ -2691,17 +2719,16 @@ static NEVER_INLINE(void) split_top_ps(int p, int mode, int M, const v4sf *in, v
    not in the frame of every transform (a probe per call, which cost the
    shortest transforms on x86 up to 19%). */
 static NEVER_INLINE(void) split_top_inplace_ps(int p, int mode, int M, v4sf *x, v4sf *y,
-                                                const float *wa, const v4sf *e) {
+                                                const float *wa, const v4sf *e, int pf) {
   v4sf stk[SPLIT_TOP_STACK_BYTES / sizeof(v4sf)];
   size_t k;
   for (k = 0; k < 2*(size_t)p*M; ++k) y[k] = x[k];
-  split_top_ps(p, mode, M, y, x, wa, e, stk, SPLIT_TOP_STACK_BYTES / 5);
+  split_top_ps(p, mode, M, y, x, wa, e, stk, SPLIT_TOP_STACK_BYTES / 5, pf);
 }
 
 #endif /* SIMD_SZ == 4 */
 
 #undef PF_PREFETCH
-#undef PF_USE_PREFETCH
 #undef PF_CALL
 #undef PF_ON
 
@@ -2715,14 +2742,32 @@ struct SETUP_STRUCT {
   v4sf *data;     /* allocated room for twiddle coefs */
   float *e;       /* points into 'data', N/4*3 elements */
   float *twiddle; /* points into 'data', N/4 elements */
-  int split;      /* cfft_split_ps / rfft?_split_ps instead of cfftf1_ps / rfft?1_ps */
+  int split;      /* split levels (split_levels()); if not 0, cfft_split_ps /
+                     rfft?_split_ps instead of cfftf1_ps / rfft?1_ps */
   int nf_odd;     /* the number of passes (of the blocks if split), odd or even */
+  int pf;         /* pf_flags() of the arrays of the transform */
+  size_t pf_min;  /* the prefetch threshold, for the blocks of split transforms */
 };
 
+/* The thresholds that depend on the CPU, in bytes per array. */
+typedef struct {
+  size_t split_max_real;    /* split the arrays larger than this (split_levels()) */
+  size_t split_max_complex;
+  size_t prefetch_min;      /* prefetch in passes from this size on (pf_flags()) */
+  size_t radix6_max;        /* a radix-6 instead of a radix-8 pass up to this (rffti1_ps) */
+} tuning_t;
 
-SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
+static void default_tuning(tuning_t *t) {
+  t->split_max_real = t->split_max_complex = PFFFT_SPLIT_MAX;
+  t->prefetch_min = PFFFT_PREFETCH_MIN;
+  t->radix6_max = RADIX6_MAX_BYTES;
+}
+
+
+static SETUP_STRUCT *new_setup_tuned(int N, pffft_transform_t transform, const tuning_t *t) {
   SETUP_STRUCT *s = 0;
   int k, m;
+  size_t array_bytes;
   /* validate N for negative values or potential int overflow */
   if (N < 0) {
     return s;
@@ -2759,19 +2804,21 @@ SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
   }
 
   if (transform == PFFFT_REAL) {
-    rffti1_ps(N/SIMD_SZ, s->twiddle, s->ifac);
+    rffti1_ps(N/SIMD_SZ, s->twiddle, s->ifac, t->radix6_max);
   } else {
     cffti1_ps(N/SIMD_SZ, s->twiddle, s->ifac);
   }
+  array_bytes = 2*(size_t)s->Ncvec*sizeof(v4sf);
+  s->pf_min = t->prefetch_min;
+  s->pf = pf_flags(array_bytes, s->pf_min);
   s->split = 0;
   s->nf_odd = s->ifac[1] & 1;
 #if SIMD_SZ == 4 /* the split transforms need SIMD_SZ == 4 (split_cplx_last) */
   {
     int vec_per_elem = (transform == PFFFT_REAL ? 1 : 2), n = 2*s->Ncvec/vec_per_elem;
-    if (split_here(n, s->ifac, vec_per_elem)) {
-      s->split = 1;
-      s->nf_odd = split_leaf_odd(n, s->ifac, vec_per_elem);
-    }
+    s->split = split_levels(n, s->ifac, vec_per_elem,
+                            transform == PFFFT_REAL ? t->split_max_real : t->split_max_complex);
+    s->nf_odd = split_leaf_odd(s->ifac, s->split);
   }
 #endif
 
@@ -2782,6 +2829,12 @@ SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
   }
 
   return s;
+}
+
+SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
+  tuning_t t;
+  default_tuning(&t);
+  return new_setup_tuned(N, transform, &t);
 }
 
 
@@ -3456,7 +3509,8 @@ static NEVER_INLINE(int) transform_split(const SETUP_STRUCT *setup, const v4sf *
       /* as rfftf1_ps, the result is in buff[!ib] if nf_odd */
       v4sf *a = buff[!ib], *b = buff[ib];
       if (vinput == a) { a = b; b = buff[!ib]; } /* in place: the copy at the end may be needed */
-      ib = (rfftf_split_ps(Ncvec*2, vinput, a, b, setup->twiddle, setup->ifac) == buff[0] ? 0 : 1);
+      ib = (rfftf_split_ps(Ncvec*2, vinput, a, b, setup->twiddle, setup->ifac, setup->split,
+                            setup->pf_min) == buff[0] ? 0 : 1);
       if (ordered) real_finalize_reorder(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
       else FUNC_REAL_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
     } else {
@@ -3465,13 +3519,14 @@ static NEVER_INLINE(int) transform_split(const SETUP_STRUCT *setup, const v4sf *
       int p = setup->ifac[2];
       if (split_top_fused(p, Ncvec/p)) {
         if (vinput == b) { b = a; a = buff[!nf_odd]; } /* in place: the copy at the end is needed */
-        split_top_ps(p, SPLIT_TOP_IL, Ncvec/p, vinput, b, setup->twiddle, 0, 0, 0);
-        res = cfft_split_sub_ps(Ncvec, a, b, setup->twiddle, setup->ifac, -1);
+        split_top_ps(p, SPLIT_TOP_IL, Ncvec/p, vinput, b, setup->twiddle, 0, 0, 0, setup->pf & PF_ALL);
+        res = cfft_split_sub_ps(Ncvec, a, b, setup->twiddle, setup->ifac, -1, setup->split, setup->pf_min);
       } else {
         for (k=0; k < Ncvec; ++k) {
           UNINTERLEAVE2(vinput[k*2], vinput[k*2+1], a[k*2], a[k*2+1]);
         }
-        res = cfft_split_blocks_ps(Ncvec, a, b, setup->twiddle, setup->ifac, -1);
+        res = cfft_split_blocks_ps(Ncvec, a, b, setup->twiddle, setup->ifac, -1, setup->split,
+                                   setup->pf_min);
       }
       split_cplx_last(setup->ifac[2], Ncvec/setup->ifac[2], res, res == a ? b : a,
                       (v4sf*)setup->e, 0, ordered);
@@ -3485,7 +3540,8 @@ static NEVER_INLINE(int) transform_split(const SETUP_STRUCT *setup, const v4sf *
     if (setup->transform == PFFFT_REAL) {
       if (ordered) real_reorder_preprocess(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       else FUNC_REAL_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
-      ib = (rfftb_split_ps(Ncvec*2, buff[ib], buff[!ib], setup->twiddle, setup->ifac) == buff[0] ? 0 : 1);
+      ib = (rfftb_split_ps(Ncvec*2, buff[ib], buff[!ib], setup->twiddle, setup->ifac, setup->split,
+                            setup->pf_min) == buff[0] ? 0 : 1);
     } else {
       /* the result is where the preprocess writes if nf_odd is 0 */
       v4sf *a = buff[nf_odd], *b = buff[!nf_odd], *res;
@@ -3494,17 +3550,18 @@ static NEVER_INLINE(int) transform_split(const SETUP_STRUCT *setup, const v4sf *
         int mode = ordered ? SPLIT_TOP_RPRE : SPLIT_TOP_PRE;
         if (vinput != a && vinput != b) {
           split_top_ps(p, mode, Ncvec/p, vinput, b, setup->twiddle, (v4sf*)setup->e, a,
-                       SPLIT_TOP_CHUNK_BYTES);
+                       SPLIT_TOP_CHUNK_BYTES, setup->pf & PF_ALL);
         } else {
           if (vinput == a) { a = b; b = buff[nf_odd]; } /* b is vinput */
-          split_top_inplace_ps(p, mode, Ncvec/p, b, a, setup->twiddle, (v4sf*)setup->e);
+          split_top_inplace_ps(p, mode, Ncvec/p, b, a, setup->twiddle, (v4sf*)setup->e, setup->pf & PF_ALL);
         }
-        res = cfft_split_sub_ps(Ncvec, a, b, setup->twiddle, setup->ifac, +1);
+        res = cfft_split_sub_ps(Ncvec, a, b, setup->twiddle, setup->ifac, +1, setup->split, setup->pf_min);
       } else {
         if (vinput == a) { a = b; b = buff[nf_odd]; } /* in place: the copy at the end is needed */
         if (ordered) cplx_reorder_preprocess(Ncvec, vinput, a, (v4sf*)setup->e);
         else FUNC_CPLX_PREPROCESS(Ncvec, vinput, a, (v4sf*)setup->e);
-        res = cfft_split_blocks_ps(Ncvec, a, b, setup->twiddle, setup->ifac, +1);
+        res = cfft_split_blocks_ps(Ncvec, a, b, setup->twiddle, setup->ifac, +1, setup->split,
+                                   setup->pf_min);
       }
       split_cplx_last(setup->ifac[2], Ncvec/setup->ifac[2], res, res == a ? b : a,
                       (v4sf*)setup->e, 1, 0);
@@ -3539,7 +3596,7 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
     ib = !ib;
     if (setup->transform == PFFFT_REAL) {
       ib = (rfftf1_ps(Ncvec*2, vinput, buff[ib], buff[!ib],
-                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
+                      setup->twiddle, &setup->ifac[0], setup->pf) == buff[0] ? 0 : 1);
       if (ordered) real_finalize_reorder(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
       else FUNC_REAL_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
       ib = !ib;
@@ -3549,7 +3606,7 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
         UNINTERLEAVE2(vinput[k*2], vinput[k*2+1], tmp[k*2], tmp[k*2+1]);
       }
       ib = (cfftf1_ps(Ncvec, buff[ib], buff[!ib], buff[ib],
-                      setup->twiddle, &setup->ifac[0], -1) == buff[0] ? 0 : 1);
+                      setup->twiddle, &setup->ifac[0], -1, setup->pf) == buff[0] ? 0 : 1);
       if (ordered) cplx_finalize_reorder(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
       else FUNC_CPLX_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
       ib = !ib;
@@ -3562,12 +3619,12 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
       if (ordered) real_reorder_preprocess(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       else FUNC_REAL_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       ib = (rfftb1_ps(Ncvec*2, buff[ib], buff[0], buff[1],
-                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
+                      setup->twiddle, &setup->ifac[0], setup->pf) == buff[0] ? 0 : 1);
     } else {
       if (ordered) cplx_reorder_preprocess(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       else FUNC_CPLX_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       ib = (cfftf1_ps(Ncvec, buff[ib], buff[0], buff[1],
-                      setup->twiddle, &setup->ifac[0], +1) == buff[0] ? 0 : 1);
+                      setup->twiddle, &setup->ifac[0], +1, setup->pf) == buff[0] ? 0 : 1);
       for (k=0; k < Ncvec; ++k) {
         INTERLEAVE2(buff[ib][k*2], buff[ib][k*2+1], buff[ib][k*2], buff[ib][k*2+1]);
       }
@@ -3857,10 +3914,10 @@ void pffft_transform_internal_nosimd(const SETUP_STRUCT *setup, const float *inp
   if (direction == PFFFT_FORWARD) {
     if (setup->transform == PFFFT_REAL) {
       ib = (rfftf1_ps(Ncvec*2, input, buff[ib], buff[!ib],
-                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
+                      setup->twiddle, &setup->ifac[0], setup->pf) == buff[0] ? 0 : 1);
     } else {
       ib = (cfftf1_ps(Ncvec, input, buff[ib], buff[!ib],
-                      setup->twiddle, &setup->ifac[0], -1) == buff[0] ? 0 : 1);
+                      setup->twiddle, &setup->ifac[0], -1, setup->pf) == buff[0] ? 0 : 1);
     }
     if (ordered) {
       FUNC_ZREORDER(setup, buff[ib], buff[!ib], PFFFT_FORWARD); ib = !ib;
@@ -3875,10 +3932,10 @@ void pffft_transform_internal_nosimd(const SETUP_STRUCT *setup, const float *inp
     }
     if (setup->transform == PFFFT_REAL) {
       ib = (rfftb1_ps(Ncvec*2, input, buff[ib], buff[!ib],
-                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
+                      setup->twiddle, &setup->ifac[0], setup->pf) == buff[0] ? 0 : 1);
     } else {
       ib = (cfftf1_ps(Ncvec, input, buff[ib], buff[!ib],
-                      setup->twiddle, &setup->ifac[0], +1) == buff[0] ? 0 : 1);
+                      setup->twiddle, &setup->ifac[0], +1, setup->pf) == buff[0] ? 0 : 1);
     }
   }
   if (buff[ib] != output) {
