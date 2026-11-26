@@ -3435,40 +3435,27 @@ static NEVER_INLINE(void) real_reorder_preprocess(int Ncvec, const v4sf *in, v4s
   ci3=-s*(Xr.f[1]-Xr.f[3]) - s*(Xi.f[1]+Xi.f[3]); uout[2*Ncvec-1].f[3] = ci3;
 }
 
-void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, float *foutput, v4sf *scratch,
-                             pffft_direction_t direction, int ordered) {
-  int k, Ncvec   = setup->Ncvec;
-  int nf_odd = setup->nf_odd;
-
-  /* temporary buffer is allocated on the stack if the scratch pointer is NULL */
-  int stack_allocate = (scratch == 0 ? Ncvec*2 : 1);
-  VLA_ARRAY_ON_STACK(v4sf, scratch_on_stack, stack_allocate);
-
-  const v4sf *vinput = (const v4sf*)finput;
-  v4sf *voutput      = (v4sf*)foutput;
-  v4sf *buff[2]      = { voutput, scratch ? scratch : scratch_on_stack };
-  /* the reordering of the ordered transforms is fused with the step next to
-     it, so it takes no step of its own */
-  int ib = (nf_odd ? 1 : 0);
-
-  assert(VALIGNED(finput) && VALIGNED(foutput));
-
-  /* assert(finput != foutput); */
+/* The split transforms (setup->split) of FUNC_TRANSFORM_INTERNAL, out of
+   line, so that the driver of all other transforms stays as small as it was
+   before them: that path is a large part of the cost of short transforms.
+   buff0 is the output, buff1 the work array; ib as in FUNC_TRANSFORM_INTERNAL.
+   Returns the index of the array that holds the result. */
+static NEVER_INLINE(int) transform_split(const SETUP_STRUCT *setup, const v4sf *vinput, v4sf *buff0, v4sf *buff1,
+                                         int ib, pffft_direction_t direction, int ordered) {
+  int k, Ncvec = setup->Ncvec, nf_odd = setup->nf_odd;
+  v4sf *buff[2];
+  buff[0] = buff0;
+  buff[1] = buff1;
   if (direction == PFFFT_FORWARD) {
     ib = !ib;
     if (setup->transform == PFFFT_REAL) {
-      if (setup->split) {
-        /* as rfftf1_ps, the result is in buff[!ib] if nf_odd */
-        v4sf *a = buff[!ib], *b = buff[ib];
-        if (vinput == a) { a = b; b = buff[!ib]; } /* in place: the copy at the end may be needed */
-        ib = (rfftf_split_ps(Ncvec*2, vinput, a, b, setup->twiddle, setup->ifac) == buff[0] ? 0 : 1);
-      } else {
-        ib = (rfftf1_ps(Ncvec*2, vinput, buff[ib], buff[!ib],
-                        setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
-      }
+      /* as rfftf1_ps, the result is in buff[!ib] if nf_odd */
+      v4sf *a = buff[!ib], *b = buff[ib];
+      if (vinput == a) { a = b; b = buff[!ib]; } /* in place: the copy at the end may be needed */
+      ib = (rfftf_split_ps(Ncvec*2, vinput, a, b, setup->twiddle, setup->ifac) == buff[0] ? 0 : 1);
       if (ordered) real_finalize_reorder(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
       else FUNC_REAL_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
-    } else if (setup->split) {
+    } else {
       /* the result is where the uninterleave writes if nf_odd is 0 */
       v4sf *a = buff[nf_odd], *b = buff[!nf_odd], *res;
       int p = setup->ifac[2];
@@ -3485,16 +3472,6 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
       split_cplx_last(setup->ifac[2], Ncvec/setup->ifac[2], res, res == a ? b : a,
                       (v4sf*)setup->e, 0, ordered);
       ib = (res == buff[0]); /* the other one */
-    } else {
-      v4sf *tmp = buff[ib];
-      for (k=0; k < Ncvec; ++k) {
-        UNINTERLEAVE2(vinput[k*2], vinput[k*2+1], tmp[k*2], tmp[k*2+1]);
-      }
-      ib = (cfftf1_ps(Ncvec, buff[ib], buff[!ib], buff[ib],
-                      setup->twiddle, &setup->ifac[0], -1) == buff[0] ? 0 : 1);
-      if (ordered) cplx_finalize_reorder(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
-      else FUNC_CPLX_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
-      ib = !ib;
     }
     if (setup->transform == PFFFT_REAL) ib = !ib;
   } else {
@@ -3504,13 +3481,8 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
     if (setup->transform == PFFFT_REAL) {
       if (ordered) real_reorder_preprocess(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       else FUNC_REAL_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
-      if (setup->split) {
-        ib = (rfftb_split_ps(Ncvec*2, buff[ib], buff[!ib], setup->twiddle, setup->ifac) == buff[0] ? 0 : 1);
-      } else {
-        ib = (rfftb1_ps(Ncvec*2, buff[ib], buff[0], buff[1],
-                        setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
-      }
-    } else if (setup->split) {
+      ib = (rfftb_split_ps(Ncvec*2, buff[ib], buff[!ib], setup->twiddle, setup->ifac) == buff[0] ? 0 : 1);
+    } else {
       /* the result is where the preprocess writes if nf_odd is 0 */
       v4sf *a = buff[nf_odd], *b = buff[!nf_odd], *res;
       int p = setup->ifac[2];
@@ -3533,6 +3505,60 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
       split_cplx_last(setup->ifac[2], Ncvec/setup->ifac[2], res, res == a ? b : a,
                       (v4sf*)setup->e, 1, 0);
       ib = (res == buff[0]); /* the other one */
+    }
+  }
+  return ib;
+}
+
+void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, float *foutput, v4sf *scratch,
+                             pffft_direction_t direction, int ordered) {
+  int k, Ncvec   = setup->Ncvec;
+  int nf_odd = setup->nf_odd;
+
+  /* temporary buffer is allocated on the stack if the scratch pointer is NULL */
+  int stack_allocate = (scratch == 0 ? Ncvec*2 : 1);
+  VLA_ARRAY_ON_STACK(v4sf, scratch_on_stack, stack_allocate);
+
+  const v4sf *vinput = (const v4sf*)finput;
+  v4sf *voutput      = (v4sf*)foutput;
+  v4sf *buff[2]      = { voutput, scratch ? scratch : scratch_on_stack };
+  /* the reordering of the ordered transforms is fused with the step next to
+     it, so it takes no step of its own */
+  int ib = (nf_odd ? 1 : 0);
+
+  assert(VALIGNED(finput) && VALIGNED(foutput));
+
+  /* assert(finput != foutput); */
+  if (setup->split) {
+    ib = transform_split(setup, vinput, buff[0], buff[1], ib, direction, ordered);
+  } else if (direction == PFFFT_FORWARD) {
+    ib = !ib;
+    if (setup->transform == PFFFT_REAL) {
+      ib = (rfftf1_ps(Ncvec*2, vinput, buff[ib], buff[!ib],
+                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
+      if (ordered) real_finalize_reorder(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
+      else FUNC_REAL_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
+      ib = !ib;
+    } else {
+      v4sf *tmp = buff[ib];
+      for (k=0; k < Ncvec; ++k) {
+        UNINTERLEAVE2(vinput[k*2], vinput[k*2+1], tmp[k*2], tmp[k*2+1]);
+      }
+      ib = (cfftf1_ps(Ncvec, buff[ib], buff[!ib], buff[ib],
+                      setup->twiddle, &setup->ifac[0], -1) == buff[0] ? 0 : 1);
+      if (ordered) cplx_finalize_reorder(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
+      else FUNC_CPLX_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
+      ib = !ib;
+    }
+  } else {
+    if (vinput == buff[ib]) {
+      ib = !ib; /* may happen when finput == foutput */
+    }
+    if (setup->transform == PFFFT_REAL) {
+      if (ordered) real_reorder_preprocess(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
+      else FUNC_REAL_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
+      ib = (rfftb1_ps(Ncvec*2, buff[ib], buff[0], buff[1],
+                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
     } else {
       if (ordered) cplx_reorder_preprocess(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       else FUNC_CPLX_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
