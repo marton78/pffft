@@ -1903,13 +1903,17 @@ static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *w
   int l1 = 1;
   int iw = 0;
   const int pf = PF_USE_PREFETCH(n); /* the same for every pass */
-  (void)pf;
+  /* the first pass writes a buffer this transform has not touched yet,
+     often out of L1: its stores stall without prefetches already from half
+     of PFFFT_PREFETCH_MIN on (f64 real 1920 to 2560 on Xeons: 2 to 9%) */
+  const int pf_first = pf || PF_USE_PREFETCH(2*(size_t)n);
+  (void)pf; (void)pf_first;
   assert(in != out);
   for (k1=1; k1<=nf; k1++) {
     int ip = ifac[k1 + 1];
     int l2 = ip*l1;
     int ido = n / l2;
-    rfftb_pass_ps(ip, ido, l1, in, out, &wa[iw], pf);
+    rfftb_pass_ps(ip, ido, l1, in, out, &wa[iw], k1 == 1 ? pf_first : pf);
     l1 = l2;
     iw += (ip - 1)*ido;
 
