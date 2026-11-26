@@ -5,9 +5,11 @@
                               [--seeds 4] [--prec LIST] [--xform LIST] [-o FILE]
 
 A revision is anything git rev-parse understands, or '.' for the working tree.
-Each is built twice as a shared library: as configured by default, and with
-PFFFT_SPLIT_MAX=1024, which splits every array of more than 1 KiB into blocks
-(a revision from before the split transforms builds the same library twice).
+Each is built twice as a shared library: as configured by default, and as the
+split library, whose setups split every array of more than 1 KiB into blocks:
+with the tuning split=1k (bench_fft --tune), or in a revision from before the
+tuning, built with PFFFT_SPLIT_MAX=1024 (one from before the split transforms
+builds the same library twice).
 bench_fft --accuracy from the working tree loads all four and gives them the
 same random inputs (benchmarks/accuracy.c). The gate fails if
 
@@ -90,6 +92,9 @@ def main() -> None:
             libs[f"{label}-split"] = target.build_lib(src, f"{label}-split", ["-DPFFFT_SPLIT_MAX=1024"], "split")
     bench_args = ["--accuracy", "--seeds", str(args.seeds), "--sizes", args.sizes, "--min", "16",
                   "--max", str(args.max)]
+    for label in libs:
+        if label.endswith("-split"):
+            bench_args += ["--tune", f"{label}=split=1k"]
     if args.bits:
         bench_args.append("--bits-only")
     for option in ("prec", "xform"):

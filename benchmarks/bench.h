@@ -106,6 +106,9 @@ struct bench_engine {
   void *lib;   /* engines from --lib: the loaded library; NULL for built-ins */
   int variant; /* private to the engine */
   int on_request; /* runs only when --engines names it, not by default */
+  /* pffft engines: changes to the library's default tuning (--tune), or
+   * NULL; ignored by a library from before the tuning */
+  const struct bench_tune *tune;
 };
 
 #define BENCH_MAX_ENGINES 32
@@ -141,6 +144,7 @@ typedef struct bench_tune {
   unsigned set;
   bench_tuning tuning;
 } bench_tune;
+#define BENCH_TUNE_NEVER ((size_t)-1)
 #define BENCH_TUNE_SPLIT_REAL    1u
 #define BENCH_TUNE_SPLIT_COMPLEX 2u
 #define BENCH_TUNE_PREFETCH_MIN  4u
@@ -148,6 +152,21 @@ typedef struct bench_tune {
 
 /* t with the changes of tune (NULL: none) */
 void bench_tune_apply(const bench_tune *tune, bench_tuning *t);
+
+/* Parses a --tune spec into tune: comma-separated KEY=VALUE, KEY one of
+ * split (both kinds), split_real, split_complex, prefetch (prefetch_min) and
+ * radix6 (radix6_max), VALUE bytes with an optional suffix k or m (KiB,
+ * MiB), or never. Returns 0, or -1 with the reason in err. */
+int bench_tune_parse(const char *spec, bench_tune *tune, char *err, size_t errlen);
+
+/* "split_real=...,split_complex=...,prefetch=...,radix6=..." of t, the
+ * fields within t->size; values in bytes, or never */
+void bench_tuning_format(const bench_tuning *t, char *buf, size_t n);
+
+/* The default tuning of a pffft (lib from bench_dl_open(), or NULL for the
+ * one linked in) in a precision: 1, or 0 if it has none (a revision from
+ * before the tuning, or not that precision). */
+int bench_default_tuning(void *lib, int f64, bench_tuning *t);
 
 /* A pffft to check: lib is a library from bench_dl_open(), or NULL for the
  * pffft linked into this program. With tune, its setups are made by

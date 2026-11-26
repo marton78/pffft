@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 """Time many pffft revisions side by side in one bench_fft process.
 
-    python3 benchmarks/compare_many.py REV [REV ...] [--sizes LIST] [--prec LIST]
-                                  [--xform LIST] [--launches 3] [--trials 2] [--target T] [-o FILE]
+    python3 benchmarks/compare_many.py REV [REV ...] [--tune LABEL=SPEC ...] [--sizes LIST]
+                                  [--prec LIST] [--xform LIST] [--launches 3] [--trials 2]
+                                  [--target T] [-o FILE]
 
 A REV is a git revision, optionally LABEL=REV. Each distinct commit is built once
 as a shared library; a revision given twice is loaded twice (as a copy), which
 measures the noise floor inside the run. The engines are pffft@LABEL (LABEL
 defaults to the revision as given). Prints, per case, each revision's speed-up
 over the first one (median and range over launches x trials).
+
+--tune LABEL=SPEC makes the setups of pffft@LABEL with the library's default
+tuning changed by SPEC (bench_fft --help: e.g. split=8m,prefetch=never). A
+label with a --tune loads the library of its commit itself, not a copy, so
+that tunings of one commit compare the same code: e.g.
+"base=HEAD s8m=HEAD --tune s8m=split=8m".
 """
 from __future__ import annotations
 
@@ -27,6 +34,8 @@ DEFAULT_SIZES = "1024,2048,4000,4096,8192,15360,16384,32768,48000,65536,100000,1
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("revs", nargs="+", metavar="REV")
+    ap.add_argument("--tune", action="append", default=[], metavar="LABEL=SPEC",
+                    help="tuning of the setups of pffft@LABEL (repeatable)")
     ap.add_argument("--sizes", default=DEFAULT_SIZES)
     ap.add_argument("--prec")
     ap.add_argument("--xform", default="real")
@@ -36,6 +45,7 @@ def main() -> None:
     ap.add_argument("--target", default="local", help="local, android[:serial] or ios[:udid] (default: local)")
     args = ap.parse_args()
 
+    tuned = {t.partition("=")[0] for t in args.tune}
     target = targets.make_target(args.target)
     harness = target.build_harness(targets.REPO)
     libs, commits, seen = {}, {}, {}
@@ -46,7 +56,7 @@ def main() -> None:
             label += "-copy"
         commit, src = targets.export_rev(rev)
         path = target.build_lib(src, label.replace("/", "_"))
-        if path in seen.values():  # same library: load a copy, as for another revision
+        if path in seen.values() and label not in tuned:  # same library: load a copy, as for another revision
             copy = path.with_name(f"copy-{label}-{path.name}")
             shutil.copy2(path, copy)
             path = copy
@@ -55,6 +65,8 @@ def main() -> None:
         commits[label] = commit
     engines = [f"pffft@{label}" for label in libs]
     bench_args = ["--sizes", args.sizes, "--trials", str(args.trials), "--engines", ",".join(engines)]
+    for t in args.tune:
+        bench_args += ["--tune", t]
     for option in ("prec", "xform"):
         if getattr(args, option):
             bench_args += [f"--{option}", getattr(args, option)]
@@ -66,6 +78,8 @@ def main() -> None:
         rows += launch_rows
     meta.update(trials=args.launches * args.trials, launches=args.launches,
                 revisions=" ".join(f"{l}={c[:10]}" for l, c in commits.items()))
+    if args.tune:
+        meta.update(tunes=" ".join(args.tune))
     if args.o:
         results.write_csv(args.o, meta, rows)
     print(f"{meta.get('cpu')}, {meta.get('os')}, counter: {meta.get('counter')}")

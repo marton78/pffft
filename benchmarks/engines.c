@@ -91,6 +91,25 @@ typedef struct state_pffft {
   bench_bufs bufs;
 } state_pffft;
 
+/* the default tuning with the changes of tune, for new_setup_tuned() */
+static pffft_tuning_t tuned(const bench_tune *tune)
+{
+  pffft_tuning_t t;
+  bench_tuning b;
+  PF(default_tuning)(&t, sizeof t);
+  b.size = t.size;
+  b.split_max_real = t.split_max_real;
+  b.split_max_complex = t.split_max_complex;
+  b.prefetch_min = t.prefetch_min;
+  b.radix6_max = t.radix6_max;
+  bench_tune_apply(tune, &b);
+  t.split_max_real = b.split_max_real;
+  t.split_max_complex = b.split_max_complex;
+  t.prefetch_min = b.prefetch_min;
+  t.radix6_max = b.radix6_max;
+  return t;
+}
+
 static int create_pffft(const bench_engine *e, int n, int cplx, const bench_bufs *bufs,
                         bench_instance *inst)
 {
@@ -99,7 +118,12 @@ static int create_pffft(const bench_engine *e, int n, int cplx, const bench_bufs
   if (!PF(is_valid_size)(n, kind)) return 1;
   s = malloc(sizeof *s);
   if (!s) return 1;
-  s->setup = PF(new_setup)(n, kind);
+  if (e->tune) {
+    pffft_tuning_t t = tuned(e->tune);
+    s->setup = PF(new_setup_tuned)(n, kind, &t);
+  } else {
+    s->setup = PF(new_setup)(n, kind);
+  }
   if (!s->setup) {
     free(s);
     return 1;
@@ -160,6 +184,8 @@ static void destroy_pffft(bench_instance *inst)
  * ---------------------------------------------------------------------- */
 
 typedef void *(*lib_new_setup_fn)(int n, int transform);
+typedef void *(*lib_new_setup_tuned_fn)(int n, int transform, const bench_tuning *tuning);
+typedef void (*lib_default_tuning_fn)(bench_tuning *tuning, size_t size);
 typedef int (*lib_is_valid_size_fn)(int n, int transform);
 typedef void (*lib_destroy_setup_fn)(void *setup);
 typedef void (*lib_transform_fn)(const void *setup, const void *in, void *out, void *work,
@@ -186,15 +212,30 @@ static int create_lib(const bench_engine *e, int n, int cplx, const bench_bufs *
 {
   const int kind = cplx ? 1 : 0; /* PFFFT_REAL is 0, PFFFT_COMPLEX is 1 */
   lib_new_setup_fn new_setup;
+  lib_new_setup_tuned_fn new_setup_tuned = NULL;
+  lib_default_tuning_fn default_tuning = NULL;
   lib_is_valid_size_fn is_valid_size;
   state_lib *s;
   lib_function(e->lib, PF_SYMBOL("new_setup"), &new_setup);
   lib_function(e->lib, PF_SYMBOL("is_valid_size"), &is_valid_size);
+  /* revisions from before the tuning have neither: they ignore e->tune */
+  if (e->tune) {
+    lib_function(e->lib, PF_SYMBOL("new_setup_tuned"), &new_setup_tuned);
+    lib_function(e->lib, PF_SYMBOL("default_tuning"), &default_tuning);
+  }
   /* revisions without is_valid_size refuse a size in new_setup */
   if (is_valid_size && !is_valid_size(n, kind)) return 1;
   s = malloc(sizeof *s);
   if (!s) return 1;
-  s->setup = new_setup(n, kind);
+  if (new_setup_tuned && default_tuning) {
+    bench_tuning t;
+    memset(&t, 0, sizeof t);
+    default_tuning(&t, sizeof t);
+    bench_tune_apply(e->tune, &t);
+    s->setup = new_setup_tuned(n, kind, &t);
+  } else {
+    s->setup = new_setup(n, kind);
+  }
   if (!s->setup) {
     free(s);
     return 1;
@@ -806,5 +847,6 @@ int BENCH_LIB_ENGINES(const char *label, const char *path, bench_engine *list, i
   list->lib = lib;
   list->variant = 0;
   list->on_request = 0;
+  list->tune = NULL;
   return 1;
 }
