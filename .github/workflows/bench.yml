@@ -42,6 +42,22 @@ on:
         description: "Two revisions for benchmarks/compare.py, e.g. 'c14802c HEAD'; empty: none"
         type: string
         default: ""
+      compare_args:
+        description: "More compare.py options, e.g. '--sizes 32,64,1024'"
+        type: string
+        default: ""
+      many:
+        description: "LABEL=REV ... for benchmarks/compare_many.py, e.g. 'master=master new=HEAD'; empty: none"
+        type: string
+        default: ""
+      many_args:
+        description: "More compare_many.py options"
+        type: string
+        default: ""
+      by_cpu:
+        description: "JSON {CPU regex: {sweep, fftw, compares: [{revs: 'A B', name}], compare_args, many, many_args}}: a runner does the entry of its CPU instead of the inputs above, or nothing (benchmarks/ci_dispatch.py)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -65,15 +81,20 @@ jobs:
       matrix:
         runner: ${{ fromJSON(needs.runners.outputs.list) }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 180
+    timeout-minutes: 350
     defaults:
       run:
         shell: bash
     env:
       RUNNER_LABEL: ${{ matrix.runner }}
+      SWEEP: ${{ inputs.sweep }}
       FFTW: ${{ inputs.fftw }}
+      COMPARES: ""
       BENCH_ARGS: ${{ inputs.bench_args }}
       COMPARE: ${{ inputs.compare }}
+      COMPARE_ARGS: ${{ inputs.compare_args }}
+      MANY: ${{ inputs.many }}
+      MANY_ARGS: ${{ inputs.many_args }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -98,9 +119,35 @@ jobs:
           } > "out/$RUNNER_LABEL-system.txt" 2>&1
           cat "out/$RUNNER_LABEL-system.txt"
 
+      - name: CPU
+        id: cpu
+        env:
+          BY_CPU: ${{ inputs.by_cpu }}
+        run: |
+          model=$(grep -m1 -iE "model name|brand_string|^Name" "out/$RUNNER_LABEL-system.txt" || true)
+          echo "cpu: $model"
+          if [ -n "$BY_CPU" ]; then
+            # the entry of this CPU replaces the inputs sweep, fftw, compare_args, many and many_args
+            MODEL="$model" $PY - <<'EOF'
+          import json, os, re
+          table, model = json.loads(os.environ["BY_CPU"]), os.environ["MODEL"]
+          key = next((k for k in table if re.search(k, model, re.I)), None)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out, open(os.environ["GITHUB_ENV"], "a") as env:
+              if key is None:
+                  out.write("skip=true\n"); print("no entry for this CPU: skipping")
+              else:
+                  e = table[key]; print(f"entry {key!r}: {json.dumps(e)}")
+                  with open(f"out/{os.environ['RUNNER_LABEL']}-entry.txt", "w") as f: f.write(key + "\n")
+                  env.write(f"SWEEP={'true' if e.get('sweep') else 'false'}\n")
+                  env.write(f"FFTW={'true' if e.get('fftw', e.get('sweep')) else 'false'}\n")
+                  env.write("COMPARES=" + json.dumps(e.get("compares", [])) + "\n")
+                  for k in ("compare_args", "many", "many_args"): env.write(f"{k.upper()}={e.get(k, '')}\n")
+          EOF
+          fi
+
       - name: Sweep
         id: sweep
-        if: inputs.sweep
+        if: env.SWEEP == 'true' && steps.cpu.outputs.skip != 'true'
         run: |
           fftw=
           # FFTW's CMake build, the one Windows can use, has no NEON
@@ -127,11 +174,35 @@ jobs:
           done
 
       - name: Compare
-        if: inputs.compare
+        if: inputs.compare && steps.cpu.outputs.skip != 'true'
         run: |
           read -r rev_a rev_b <<< "$COMPARE"
           if [ -z "$rev_b" ]; then echo "compare needs two revisions, got '$COMPARE'"; exit 1; fi
-          $PY benchmarks/compare.py "$rev_a" "$rev_b" -o "out/$RUNNER_LABEL-cmp.csv"
+          # shellcheck disable=SC2086
+          $PY benchmarks/compare.py "$rev_a" "$rev_b" $COMPARE_ARGS -o "out/$RUNNER_LABEL-cmp.csv" | tee "out/$RUNNER_LABEL-cmp.txt"
+
+      - name: Compares of the CPU's entry
+        if: env.COMPARES != '' && env.COMPARES != '[]' && steps.cpu.outputs.skip != 'true'
+        run: |
+          $PY - <<'EOF'
+          import json, os, shlex, subprocess, sys
+          lab, failed = os.environ["RUNNER_LABEL"], 0
+          for c in json.loads(os.environ["COMPARES"]):
+              a, b = c["revs"].split()
+              cmd = [sys.executable, "benchmarks/compare.py", a, b, *shlex.split(os.environ.get("COMPARE_ARGS", "")),
+                     "-o", f"out/{lab}-cmp-{c['name']}.csv"]
+              r = subprocess.run(cmd, capture_output=True, text=True)
+              with open(f"out/{lab}-cmp-{c['name']}.txt", "w") as f: f.write(r.stdout + r.stderr)
+              print(c["name"], "exit", r.returncode, r.stdout[-2000:], r.stderr[-2000:])
+              failed |= r.returncode != 0
+          sys.exit(1 if failed else 0)
+          EOF
+
+      - name: Compare many
+        if: env.MANY != '' && steps.cpu.outputs.skip != 'true'
+        run: |
+          # shellcheck disable=SC2086
+          $PY benchmarks/compare_many.py $MANY $MANY_ARGS -o "out/$RUNNER_LABEL-many.csv" | tee "out/$RUNNER_LABEL-many.txt"
 
       - name: Upload
         if: always()
