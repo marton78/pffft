@@ -3217,9 +3217,47 @@ static ALWAYS_INLINE(void) load_pairs(const float *p0, const float *p1, const fl
 #  define INTERLEAVE2_TO(a, b, p) store_pairs(a, b, (float*)(p), (float*)(p) + 2, (float*)(p) + 4, (float*)(p) + 6)
 #  define UNINTERLEAVE2_FROM(p, a, b) \
      load_pairs((const float*)(p), (const float*)(p) + 2, (const float*)(p) + 4, (const float*)(p) + 6, &(a), &(b))
+
+#  define FSTREAM(s, out, k0) float *s = (float*)((out) + 2*(k0))
+#  define FSTREAM_PUT(s, k, a, b) INTERLEAVE2_TO(a, b, s + 8*(k))
+#  define RSTREAM(s, out, k0, dk) float *s = (float*)((out) + 2*(k0)); const int s##_m = 8*(dk)
+#  define RSTREAM_PUT0(s, a, b) { \
+     store_pairs(a, b, s, s + s##_m - 2, s + s##_m - 4, s + s##_m - 6); }
+#  define RSTREAM_PUT(s, k, a, b) { \
+     float *c_ = s + s##_m - 8*(k); store_pairs(a, b, c_, c_ - 2, c_ - 4, c_ - 6); }
+#  define RSTREAM_END(s) (void)0
+static ALWAYS_INLINE(void) fstream_load(int k, int k0, const v4sf *in, v4sf *o0, v4sf *o1) {
+  UNINTERLEAVE2_FROM((const float*)(in + 2*k0) + 8*k, *o0, *o1);
+}
+static ALWAYS_INLINE(void) rstream_load(int k, int dk, const v4sf *in, v4sf *o0, v4sf *o1) {
+  const float *C = (const float*)in;
+  const int m = 8*dk;
+  const float *c = C + m - 8*k;
+  load_pairs(k ? c : C, c - 2, c - 4, c - 6, o0, o1);
+}
 #else
 #  define INTERLEAVE2_TO(a, b, p) INTERLEAVE2(a, b, (p)[0], (p)[1])
 #  define UNINTERLEAVE2_FROM(p, a, b) UNINTERLEAVE2((p)[0], (p)[1], a, b)
+
+#  define FSTREAM(s, out, k0) v4sf *s = (out) + 2*(k0)
+#  define FSTREAM_PUT(s, k, a, b) { INTERLEAVE2(a, b, s[0], s[1]); s += 2; }
+#  define RSTREAM(s, out, k0, dk) v4sf *s = (out) + 2*((k0) + (dk)), s##_first, s##_carry
+#  define RSTREAM_PUT0(s, a, b) { \
+     INTERLEAVE2(a, b, s##_first, s##_carry); *--s = VSWAPHL(s##_first, s##_carry); }
+#  define RSTREAM_PUT(s, k, a, b) { \
+     v4sf h0_, h1_; \
+     INTERLEAVE2(a, b, h0_, h1_); \
+     *--s = VSWAPHL(s##_carry, h0_); *--s = VSWAPHL(h0_, h1_); s##_carry = h1_; }
+#  define RSTREAM_END(s) *--s = VSWAPHL(s##_carry, s##_first)
+static ALWAYS_INLINE(void) fstream_load(int k, int k0, const v4sf *in, v4sf *o0, v4sf *o1) {
+  UNINTERLEAVE2(in[2*(k0+k)], in[2*(k0+k)+1], *o0, *o1);
+}
+static ALWAYS_INLINE(void) rstream_load(int k, int dk, const v4sf *in, v4sf *o0, v4sf *o1) {
+  int j = dk-1-k;
+  v4sf a = in[2*j], b = in[2*j+1], c = in[j == dk-1 ? 0 : 2*j+2];
+  v4sf h0 = VSWAPHL(b, c), g1 = VSWAPHL(a, b);
+  UNINTERLEAVE2(h0, g1, *o0, *o1);
+}
 #endif
 
 /* FUNC_CPLX_FINALIZE, then FUNC_ZREORDER forward */
@@ -3301,11 +3339,8 @@ static NEVER_INLINE(void) real_finalize_reorder(int Ncvec, const v4sf *in, v4sf 
   int k, dk = Ncvec/SIMD_SZ; /* number of 4x4 matrix blocks */
   v4sf o[8];
   v4sf cr_v = in[0], ci_v = in[Ncvec*2-1], zero = VZERO();
-#ifndef VPAIRS
-  v4sf *fa = out, *fb = out + 4*dk;            /* forward streams */
-  v4sf *ra = out + 4*dk, *rb = out + 8*dk;     /* backward streams, written with *--p */
-  v4sf ga0, ga1, gb0, gb1, h0, h1;
-#endif
+  FSTREAM(fa, out, 0); FSTREAM(fb, out, 2*dk);        /* forward streams */
+  RSTREAM(ra, out, dk, dk); RSTREAM(rb, out, 3*dk, dk); /* backward streams */
   float xr0, xi0, xr1, xi1, xr2, xi2, xr3, xi3;
   v4sf_union cr, ci;
   static const float s = (float)(M_SQRT1_2);
@@ -3326,48 +3361,19 @@ static NEVER_INLINE(void) real_finalize_reorder(int Ncvec, const v4sf *in, v4sf 
   xr3= ci.f[0] - s*(ci.f[1]-ci.f[3]);        o[6] = VSET_LANE0(o[6], xr3);
   xi3= ci.f[2] - s*(ci.f[1]+ci.f[3]);        o[7] = VSET_LANE0(o[7], xi3);
 
-#ifdef VPAIRS
-  {
-    /* the streams of o[0..1], o[2..3], o[4..5], o[6..7]; m floats each */
-    float *A = (float*)out, *C = (float*)(out + 2*dk), *B = (float*)(out + 4*dk), *D = (float*)(out + 6*dk);
-    const int m = 8*dk;
-    INTERLEAVE2_TO(o[0], o[1], A);
-    INTERLEAVE2_TO(o[4], o[5], B);
-    store_pairs(o[2], o[3], C, C + m - 2, C + m - 4, C + m - 6);
-    store_pairs(o[6], o[7], D, D + m - 2, D + m - 4, D + m - 6);
-    for (k=1; k < dk; ++k) {
-      float *c = C + m - 8*k, *d = D + m - 8*k;
-      FUNC_REAL_FINALIZE_4X4(&in[8*k-1], &in[8*k+0], in + 8*k+1, e + k*6, o);
-      INTERLEAVE2_TO(o[0], o[1], A + 8*k);
-      INTERLEAVE2_TO(o[4], o[5], B + 8*k);
-      store_pairs(o[2], o[3], c, c - 2, c - 4, c - 6);
-      store_pairs(o[6], o[7], d, d - 2, d - 4, d - 6);
-    }
+  FSTREAM_PUT(fa, 0, o[0], o[1]);
+  FSTREAM_PUT(fb, 0, o[4], o[5]);
+  RSTREAM_PUT0(ra, o[2], o[3]);
+  RSTREAM_PUT0(rb, o[6], o[7]);
+  for (k=1; k < dk; ++k) {
+    FUNC_REAL_FINALIZE_4X4(&in[8*k-1], &in[8*k+0], in + 8*k+1, e + k*6, o);
+    FSTREAM_PUT(fa, k, o[0], o[1]);
+    FSTREAM_PUT(fb, k, o[4], o[5]);
+    RSTREAM_PUT(ra, k, o[2], o[3]);
+    RSTREAM_PUT(rb, k, o[6], o[7]);
   }
-#else
-  INTERLEAVE2(o[0], o[1], fa[0], fa[1]); fa += 2;
-  INTERLEAVE2(o[4], o[5], fb[0], fb[1]); fb += 2;
-  INTERLEAVE2(o[2], o[3], ga0, ga1); *--ra = VSWAPHL(ga0, ga1);
-  INTERLEAVE2(o[6], o[7], gb0, gb1); *--rb = VSWAPHL(gb0, gb1);
-  {
-    v4sf fa0 = ga0, fb0 = gb0; /* the first of each backward stream, for its last vector */
-    for (k=1; k < dk; ++k) {
-      FUNC_REAL_FINALIZE_4X4(&in[8*k-1], &in[8*k+0], in + 8*k+1, e + k*6, o);
-      INTERLEAVE2(o[0], o[1], fa[0], fa[1]); fa += 2;
-      INTERLEAVE2(o[4], o[5], fb[0], fb[1]); fb += 2;
-      INTERLEAVE2(o[2], o[3], h0, h1);
-      *--ra = VSWAPHL(ga1, h0);
-      *--ra = VSWAPHL(h0, h1);
-      ga1 = h1;
-      INTERLEAVE2(o[6], o[7], h0, h1);
-      *--rb = VSWAPHL(gb1, h0);
-      *--rb = VSWAPHL(h0, h1);
-      gb1 = h1;
-    }
-    *--ra = VSWAPHL(ga1, fa0);
-    *--rb = VSWAPHL(gb1, fb0);
-  }
-#endif
+  RSTREAM_END(ra);
+  RSTREAM_END(rb);
 }
 
 /* The last step of a split complex transform (cfft_split_blocks_ps): the
@@ -3424,34 +3430,14 @@ static NEVER_INLINE(void) split_cplx_last(int p, int M, const v4sf *src, v4sf *o
   }
 }
 
-#ifndef VPAIRS
-/* one vector pair of unreversed_copy(dk, in, ...): the pair it writes j-th */
-static ALWAYS_INLINE(void) unreversed_pair(int j, int dk, const v4sf *in, v4sf *o0, v4sf *o1) {
-  v4sf a = in[2*j], b = in[2*j+1], c = in[j == dk-1 ? 0 : 2*j+2];
-  v4sf h0 = VSWAPHL(b, c), g1 = VSWAPHL(a, b);
-  UNINTERLEAVE2(h0, g1, *o0, *o1);
-}
-#endif
 
 /* block k of what FUNC_ZREORDER backward writes from in, which holds dk
    4x4 blocks */
 static ALWAYS_INLINE(void) zreorder_backward_block(int k, int dk, const v4sf *in, v4sf *blk) {
-#ifdef VPAIRS
-  /* the streams of blk[0..1], blk[2..3], blk[4..5], blk[6..7]; m floats each */
-  const float *A = (const float*)in, *C = (const float*)(in + 2*dk);
-  const float *B = (const float*)(in + 4*dk), *D = (const float*)(in + 6*dk);
-  const int m = 8*dk;
-  const float *c = C + m - 8*k, *d = D + m - 8*k;
-  UNINTERLEAVE2_FROM(A + 8*k, blk[0], blk[1]);
-  UNINTERLEAVE2_FROM(B + 8*k, blk[4], blk[5]);
-  load_pairs(k ? c : C, c - 2, c - 4, c - 6, &blk[2], &blk[3]);
-  load_pairs(k ? d : D, d - 2, d - 4, d - 6, &blk[6], &blk[7]);
-#else
-  UNINTERLEAVE2(in[2*k], in[2*k+1], blk[0], blk[1]);
-  UNINTERLEAVE2(in[2*(2*dk+k)], in[2*(2*dk+k)+1], blk[4], blk[5]);
-  unreversed_pair(dk-1-k, dk, in + 2*dk, &blk[2], &blk[3]);
-  unreversed_pair(dk-1-k, dk, in + 6*dk, &blk[6], &blk[7]);
-#endif
+  fstream_load(k, 0, in, &blk[0], &blk[1]);
+  fstream_load(k, 2*dk, in, &blk[4], &blk[5]);
+  rstream_load(k, dk, in + 2*dk, &blk[2], &blk[3]);
+  rstream_load(k, dk, in + 6*dk, &blk[6], &blk[7]);
 }
 
 /* FUNC_ZREORDER backward, then FUNC_REAL_PREPROCESS. Block 0, which also
