@@ -138,18 +138,20 @@ const char * FUNC_SIMD_ARCH(void) { return VARCH; }
   docs/benchmarks.md has the numbers. A read prefetch measured as good as one
   for writing (PREFETCHW), and every x86 with SSE has it.
 
-  - Passes over less than PFFFT_PREFETCH_MIN bytes mostly stay in L1, where
-    the prefetches cost 0.5-5%. All passes of a transform write the same
+  - Passes over arrays of less than the setup's prefetch_min bytes
+    (pffft_tuning_t, 24 KiB by default) mostly stay in L1, where the
+    prefetches cost 0.5-5%. All passes of a transform write the same
     number of vectors, so the transform picks the kernels once (PF_CALL):
     f_pf_ps with the prefetches or f_ps without, both from one f_loop_ps
     that takes pf as a constant. Deciding in each kernel instead cost up to
     4% at small n.
   - Not in passf5_ps, where they cost more than they gave (see there).
   - AMD Zen cores did not gain (up to 6% slower with gcc and 14% with MSVC
-    at single lengths), so the default is off when the compiler targets Zen:
-    -march=znverN, which -march=native picks on compilers that know the CPU.
-    Builds for generic x86, for other CPUs or with MSVC cannot tell: the
-    README asks to set PFFFT_PREFETCH_DIST to 0 there for AMD CPUs.
+    at single lengths), so their prefetch_min is "never"
+    (pffft_tuning.h). A build whose compiler targets Zen
+    (-march=znverN, which -march=native picks on compilers that know the
+    CPU) leaves the prefetches out altogether, as PFFFT_PREFETCH_DIST=0
+    does.
   - Never on WebAssembly, where Emscripten's _mm_prefetch does nothing.
   The x86 SIMD headers have already included pf_fma_x86.h and _mm_prefetch.
 */
@@ -161,9 +163,6 @@ const char * FUNC_SIMD_ARCH(void) { return VARCH; }
 #  else
 #    define PFFFT_PREFETCH_DIST 128
 #  endif
-#endif
-#ifndef PFFFT_PREFETCH_MIN
-#  define PFFFT_PREFETCH_MIN 24576
 #endif
 #if PFFFT_PREFETCH_DIST > 0 && defined(PFFFT_X86_HAVE_SSE) && !defined(PFFFT_SIMD_DISABLE) && \
     !defined(__EMSCRIPTEN__) && !defined(__wasm__)
@@ -1999,11 +1998,8 @@ static void cos_sin_2pi_ps(int m, int n, float *c, float *s) {
   }
 }
 
-/* the largest transform, in bytes per array of n vectors, that takes a
-   radix-6 instead of a radix-8 pass where it can (see rffti1_ps) */
-#define RADIX6_MAX_BYTES 32768
-
-/* radix6_max: the setup's RADIX6_MAX_BYTES */
+/* radix6_max: the largest transform, in bytes per array of n vectors, that
+   takes a radix-6 instead of a radix-8 pass where it can (pffft_tuning_t) */
 static void rffti1_ps(int n, float *wa, int *ifac, size_t radix6_max)
 {
   static const int ntryh[] = { 4,2,3,5,0 };
@@ -2021,7 +2017,7 @@ static void rffti1_ps(int n, float *wa, int *ifac, size_t radix6_max)
      per leg, i.e. none for the element ido-1, which needs none.
 
      Where there is a 3 and an array of the transform takes at most
-     RADIX6_MAX_BYTES, merge the 2 and a 3 into a radix-6 pass at the end
+     radix6_max (32 KiB by default), merge the 2 and a 3 into a radix-6 pass at the end
      instead: [4, ..., 3 (one fewer), ..., 5, ..., 6]. In cache that was
      faster than the radix-8 merge (transform length N = 384, i.e.
      n = 96: f32 8-10% on two Xeons, 1% on an Apple M2; f64 3-9%), out of
@@ -2222,49 +2218,18 @@ static v4sf *cfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *wor
   are transformed one after the other, each while it is in cache, with the
   remaining factors and the twiddles of the full-length plan (those of a
   pass depend only on ip*ido), recursively until a block takes at most
-  PFFFT_SPLIT_MAX. So the result is bit for bit that of the
+  the setup's split threshold. So the result is bit for bit that of the
   breadth-first drivers. The interleave of the complex transforms is fused
   with the step after it (split_cplx_last), the sweep before the first
   pass with that pass (split_top_ps).
 
-  Arrays of at most PFFFT_SPLIT_MAX bytes are not split. The best size was
-  measured with 0.25 to 16 MiB on eight machines (N = 65536 to 4194304):
-  - Intel: 0.5 to 1 MiB on a Xeon 6975P-C, 1 to 2 MiB on a Core i7-8700B,
-    about the L2 of a core (2 MiB cost the Xeon 15 points on average). With
-    8 MiB, arrays of 2 to 8 MiB on the Xeon gave up 19 to 64 points of their
-    gain, arrays of 4 to 8 MiB on the Core i7 5 to 57.
-  - AMD Zen 3 (EPYC 7763): 8 MiB. Its L3 is fast enough that splitting
-    arrays of 2 to 11 MiB with 1 MiB cost up to 10.5 points.
-  - Apple (M2, A13): 4 to 8 MiB, about half the L2 of a cluster.
-  - Arm Neoverse N2 (also the Cobalt 100): 16 MiB, where it gained a little
-    at 4 MiB and above; splitting smaller arrays lost up to 11% (14% on the
-    Cobalt 100). Their 128 MiB system cache holds the arrays of a 2^20
-    transform.
-  - A MediaTek MT6878 phone (Android): 0.25 to 1 MiB, 15 to 17% faster than
-    not splitting on average; from 4 MiB on it gained 1% or less.
-  The default follows the target: Zen targets (-march=znverN) as AMD, other
-  x86 as Intel, Android as the phone, other Arm as the Neoverse (a Linux
-  build for a phone-class chip, a Raspberry Pi say, gets the server value).
-  A build for AMD CPUs with MSVC or for generic x86 cannot tell them apart:
-  set PFFFT_SPLIT_MAX to 8388608 there (README). Choosing the size at run
-  time, from the CPU and its caches, is for #122.
+  Arrays of at most split_max_real or split_max_complex bytes
+  (pffft_tuning_t) are not split. The best size differs a lot between CPUs,
+  and not with their cache sizes alone: about 1 MiB on Intel, 8 MiB on
+  AMD Zen and Apple, never (real) or 8 MiB (complex) on Arm's Neoverse
+  servers, 0.25 MiB on a phone. pffft_tuning.h has the values per
+  kind of CPU and the measurements behind them.
 */
-#ifndef PFFFT_SPLIT_MAX
-#  if defined(__znver1__) || defined(__znver2__) || defined(__znver3__) || \
-      defined(__znver4__) || defined(__znver5__) || defined(__znver6__)
-#    define PFFFT_SPLIT_MAX 8388608
-#  elif defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-#    define PFFFT_SPLIT_MAX 1048576
-#  elif defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
-#    define PFFFT_SPLIT_MAX 8388608
-#  elif defined(__ANDROID__)
-#    define PFFFT_SPLIT_MAX 1048576
-#  elif defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__) || defined(_M_ARM)
-#    define PFFFT_SPLIT_MAX 16777216
-#  else
-#    define PFFFT_SPLIT_MAX 8388608
-#  endif
-#endif
 
 #if SIMD_SZ == 4 /* the split transforms need split_cplx_last */
 /* the factors of the DFTs of the blocks: ifac without its first factor */
@@ -2752,11 +2717,10 @@ struct SETUP_STRUCT {
 /* The thresholds that depend on the CPU (pffft_tuning_t, in bytes per
    array): split_max_* for split_levels(), prefetch_min for pf_flags(),
    radix6_max for rffti1_ps. */
+void pffft_priv_cpu_tuning(pffft_tuning_t *t); /* pffft_common.c */
+
 static void default_tuning(pffft_tuning_t *t) {
-  t->size = sizeof *t;
-  t->split_max_real = t->split_max_complex = PFFFT_SPLIT_MAX;
-  t->prefetch_min = PFFFT_PREFETCH_MIN;
-  t->radix6_max = RADIX6_MAX_BYTES;
+  pffft_priv_cpu_tuning(t);
 }
 
 void FUNC_DEFAULT_TUNING(pffft_tuning_t *tuning, size_t size) {

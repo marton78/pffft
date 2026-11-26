@@ -97,7 +97,7 @@ of two (a radix-8 or radix-6 last pass in place of the radix-2 one), complex
 butterflies that get the direction of the transform as a constant, the
 reordering of the ordered transforms in the same sweep as their last or
 first step, long transforms split into blocks that are transformed while
-they are in cache (`PFFFT_SPLIT_MAX` in the README) with the sweeps
+they are in cache ("Thresholds chosen for the CPU" in the README) with the sweeps
 before and after them fused into their first and last steps, and, on x86,
 prefetching of the output of the passes out of L1 and double-precision AVX
 code with fewer shuffles.
@@ -130,20 +130,20 @@ gains are out of cache, where the splitting works: up to 116% on the Xeon
 to 2^19 by 93 to 111%) and 70% on the Core i7 (single-precision real
 2^21); in cache, up to 85% (single-precision real n = 32 on the Core i7).
 
-The AMD EPYC 7763 (Windows, MSVC) is the case the README warns about: MSVC
-cannot tell AMD from Intel, so the default build prefetches there and
-splits arrays from 1 MiB on, as for Intel, which costs Zen at arrays
+The AMD EPYC 7763 (Windows, MSVC) was measured with a build that could not
+tell AMD from Intel, as MSVC defines nothing for the CPU: it prefetched
+there and split arrays from 1 MiB on, as for Intel, which costs Zen at arrays
 of 2 to 12 MiB, which 8 MiB would leave whole or split into larger blocks.
 pffft was 32.6% faster than 1.1.0 below n = 4096 and 15.0% from 4096 up.
 It was slower in 8 cases, by up to 5.7%: at single-precision real 15360
 and 16384 (0.9% and 0.7%), where it prefetches, and at real arrays of 2.8
-to 8 MiB (lengths from 737280 to 1048576), where it splits. The README
-recommends `PFFFT_PREFETCH_DIST=0` and `PFFFT_SPLIT_MAX=8388608` for AMD
-CPUs. In earlier measurements on this machine, the first made an earlier
-version of this code 8.6% and 4.8% faster than 1.1.0 instead of 6.4% and
-0.1% slower (pull request #129); the second made transforms of 65536 to
-2^22 points up to 13.5% faster than splitting from 1 MiB on, and none
-slower by more than 3.1%.
+to 8 MiB (lengths from 737280 to 1048576), where it splits. pffft now
+chooses both at run time, and AMD CPUs get no prefetches and splitting
+from 8 MiB on (README). In earlier measurements on this machine, the first
+made an earlier version of this code 8.6% and 4.8% faster than 1.1.0
+instead of 6.4% and 0.1% slower (pull request #129); the second made
+transforms of 65536 to 2^22 points up to 13.5% faster than splitting from
+1 MiB on, and none slower by more than 3.1%.
 
 ## Machines
 

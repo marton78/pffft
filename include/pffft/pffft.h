@@ -107,6 +107,16 @@ extern "C" {
   PFFFT_EXPORT void pffft_default_tuning(pffft_tuning_t *tuning, size_t size);
 
   /*
+    what pffft_default_tuning() goes by: the CPU as pffft identifies it
+    (x86: vendor, family and model; Arm: the MIDR's implementer and part),
+    its caches, and the row of src/pffft_tuning.h that matched, e.g.
+    "x86 AuthenticAMD family 0x19 model 0x1, L1d 32 KiB, L2 512 KiB, L3 32 MiB:
+    AMD Zen". Writes at most len bytes, terminated, to buf; returns the length
+    of the whole text, as snprintf() does.
+  */
+  PFFFT_EXPORT int pffft_cpu_describe(char *buf, int len);
+
+  /*
     pffft_new_setup() with the thresholds of tuning, or the default ones
     if tuning is NULL. Fields beyond tuning->size take their default.
     Returns NULL also if tuning->size is 0 (not set).

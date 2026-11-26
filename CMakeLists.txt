@@ -22,9 +22,7 @@ option(PFFFT_USE_SIMD        "use SIMD (SSE/AVX/NEON/ALTIVEC) CPU features? - " 
 option(PFFFT_USE_SCALAR_VECT "use 4-element vector scalar operations (if no other SIMD)" ON)
 option(PFFFT_USE_HELIUM "use the experimental, unbenchmarked Arm Helium (MVE) backend on Armv8.1-M?" OFF)
 option(PFFFT_USE_WASM_RELAXED_SIMD "use WebAssembly Relaxed SIMD for higher performance? requires a browser/runtime with Relaxed SIMD support" OFF)
-set(PFFFT_PREFETCH_DIST "" CACHE STRING "x86: prefetch distance in bytes for the FFT passes; 0 turns prefetching off (set it for AMD CPUs, see README); empty: the default")
-set(PFFFT_PREFETCH_MIN "" CACHE STRING "x86: smallest pass in bytes that prefetches; empty: the default (24576)")
-set(PFFFT_SPLIT_MAX "" CACHE STRING "largest array in bytes that the transforms do not split into blocks that fit the cache; empty: the default, by target (1 MiB on x86 but Zen and on Android, 8 MiB on Zen and Apple arm64, 16 MiB on other Arm)")
+set(PFFFT_PREFETCH_DIST "" CACHE STRING "x86: prefetch distance in bytes for the FFT passes; 0 leaves the prefetching code out (pffft turns it off at run time where it does not pay, see README); empty: the default")
 
 # what to install?
 option(INSTALL_PFFFT      "install pffft to CMAKE_INSTALL_PREFIX?" ON)
@@ -177,7 +175,7 @@ endif()
 
 ######################################################
 
-add_library(PFFFT ${FLOAT_SOURCES} ${DOUBLE_SOURCES} src/pffft_common.c src/pffft_priv_impl.h include/pffft/pffft_types.h include/pffft/pffft.hpp )
+add_library(PFFFT ${FLOAT_SOURCES} ${DOUBLE_SOURCES} src/pffft_common.c src/pffft_tuning.h src/pffft_priv_impl.h include/pffft/pffft_types.h include/pffft/pffft.hpp )
 add_library(PFFFT::PFFFT ALIAS PFFFT)
 set_target_properties(PFFFT PROPERTIES OUTPUT_NAME "pffft")
 target_compile_definitions(PFFFT PRIVATE _USE_MATH_DEFINES)
@@ -200,7 +198,7 @@ endif()
 if (NOT PFFFT_USE_SIMD)
   target_compile_definitions(PFFFT PRIVATE PFFFT_SIMD_DISABLE=1)
 endif()
-foreach(knob PFFFT_PREFETCH_DIST PFFFT_PREFETCH_MIN PFFFT_SPLIT_MAX)
+foreach(knob PFFFT_PREFETCH_DIST)
   if (NOT ${knob} STREQUAL "")
     # decimal only: a leading 0 would make the preprocessor read octal
     if (NOT ${knob} MATCHES "^(0|[1-9][0-9]*)$")

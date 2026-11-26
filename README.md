@@ -295,40 +295,59 @@ AMD Piledriver CPU, so enabling it unconditionally would break older hardware.
 Note that FMA changes results by up to one ULP, since it rounds once where the
 separate multiply and add round twice.
 
-### x86: output prefetching, and AMD
+### Thresholds chosen for the CPU: prefetching, splitting, radix 6
 
-Out of L1, the passes of the FFT are bound by their stores. On x86, pffft
-therefore prefetches the output of each pass of at least 24 KiB, 128 bytes
-ahead (all passes but the radix-5 one of complex transforms and the first
-pass of a forward real transform, which writes a single stream). On Intel CPUs
-(Xeon 6975P-C, Xeon Platinum 8573C, Core i7-8700B), real transforms out of L1
-ran up to 43% faster and complex ones up to 23%;
+Some of pffft's choices pay on one CPU and cost on another: whether the
+passes prefetch what they write, from which size long transforms are split
+into blocks that fit the cache, and up to which size real transforms end
+with a radix-6 pass. `pffft_new_setup()` takes them for the CPU it runs on,
+from a table of kinds of CPU,
+[src/pffft_tuning.h](src/pffft_tuning.h): on x86 by vendor,
+family and model (`cpuid`), on Arm by the implementer and part number of the
+fastest core (Linux and Android: `/proc/cpuinfo`, Windows: the registry), on
+Apple's chips by their vendor. A table row gives each threshold in bytes, or
+as a fraction of a cache size. So one portable build does the right thing on
+Intel and AMD CPUs alike, and on an Arm phone and an Arm server alike.
+
+A program can read them, change them and make a setup with its own:
+
+```c
+pffft_tuning_t t;
+pffft_default_tuning(&t, sizeof t); /* what this CPU gets */
+t.split_max_real = 8 << 20;         /* bytes per array; (size_t)-1: never */
+PFFFT_Setup *s = pffft_new_setup_tuned(N, PFFFT_REAL, &t);
+```
+
+`pffft_cpu_describe()` tells which row matched and why, e.g. `x86
+AuthenticAMD family 0x19 model 0x1, L1d 32 KiB, L2 512 KiB, L3 32 MiB: AMD
+Zen`. The thresholds choose between ways that give the same results bit for
+bit, except `radix6_max`, which changes the results in the last bits: pass a
+fixed value if a program needs the same bits on every CPU. The C++ wrapper has
+`Fft::defaultTuning()` and takes a `pffft::Tuning` in its constructor and in
+`prepareLength()`.
+
+**A CPU the table does not know** gets the row of its architecture (on Arm,
+that of Android or of the servers). To measure the best thresholds of a CPU
+and get the row to add, run
+
+```
+python3 benchmarks/tune.py
+```
+
+which sweeps every threshold in one build (some minutes); please send the row
+with the output of two runs in a pull request.
+
+**Prefetching (x86).** Out of L1, the passes of the FFT are bound by their
+stores. pffft therefore prefetches the output of each pass over an array of
+at least `prefetch_min` bytes (24 KiB by default), 128 bytes ahead (all passes
+but the radix-5 one of complex transforms and the first pass of a forward
+real transform, which writes a single stream); the first pass of a backward
+real transform, which writes a buffer the transform has not touched yet, from
+half of it. On Intel CPUs (Xeon 6975P-C, Xeon Platinum 8573C, Core i7-8700B),
+real transforms out of L1 ran up to 43% faster and complex ones up to 23%;
 [docs/benchmarks.md](docs/benchmarks.md) has the details. AMD Zen CPUs did
-not gain from it: with gcc they were up to 6% slower, with MSVC up to 14% at
-single lengths (5% on average from n = 4096 on).
-
-So pffft does not prefetch when the compiler targets Zen:
-`-DTARGET_C_ARCH=znver3` and the like (with gcc, clang or clang-cl), or
-`native` on a Zen CPU with a compiler that knows it (for Zen 5, e.g. gcc 14
-or clang 19). Set `PFFFT_PREFETCH_DIST` to 0 yourself if the library will run
-on AMD CPUs and is built
-
-- for generic x86-64: no `TARGET_C_ARCH`, or `x86-64-v2`, `-v3` or `-v4`, as
-  in distribution packages, also with `-mtune=znverN`, which pffft can't
-  see;
-- for an Intel or an older x86 architecture, `haswell` from the FMA note
-  above included;
-- with `native` on a Zen CPU the compiler doesn't know, or for a Zen after
-  Zen 6;
-- with MSVC (cl.exe): none of its options defines a macro that names the
-  CPU, not even `/favor:AMD64`.
-
-```
-cmake -DPFFFT_PREFETCH_DIST=0 ..
-```
-
-On an AMD EPYC 7763 with MSVC this made pffft as fast as without the
-prefetching code.
+not gain from it (with gcc up to 6% slower, with MSVC up to 14% at single
+lengths), so they do not prefetch.
 
 With MSVC the gain on Intel is smaller than with gcc or clang: MSVC computes
 each prefetch address with a few more instructions. On a Xeon Platinum
@@ -340,40 +359,32 @@ single-precision real transforms were up to 6% slower at n = 8192 and at
 lengths with a factor 5 (15360, 48000, 100000), and complex transforms up to
 7%.
 
-`PFFFT_PREFETCH_DIST` is the distance in bytes, 0 for off, and
-`PFFFT_PREFETCH_MIN` (default 24576) the smallest pass, in bytes, that
-prefetches. With CMake, set them as above (`-DPFFFT_PREFETCH_MIN=...`); an
-empty value keeps the default. Without CMake, define them as compile
-definitions (`-DPFFFT_PREFETCH_DIST=0`, or `/DPFFFT_PREFETCH_DIST=0` with
-MSVC).
-
-### Long transforms: splitting, and AMD
-
-pffft runs the passes of an FFT one after the other, each over the whole
-array. That is fast while the data fits in the cache, but for long
-transforms every pass has to go through main memory. So for arrays larger
-than `PFFFT_SPLIT_MAX` bytes, the transform is split into 3, 4 or 5
-independent shorter transforms, recursively until they fit in the cache,
-which are then processed one after the other. This divide and conquer
-approach makes transforms of 2^20 points and more up to 27% faster on ARM
-(the most on an Android phone and on Apple's chips, hardly at all on Arm's
-Neoverse servers), and 20-39% faster on Intel CPUs.
-
-The best size depends on the CPU's caches, so the default depends on the
-target: 1 MiB on x86 and Android, 8 MiB on Apple's arm64 chips and when
-the compiler targets AMD Zen (as for the prefetching above), 16 MiB on
-other Arm CPUs.
-AMD CPUs do best with 8 MiB; with 1 MiB some lengths are slower than
-without splitting. Set it yourself for builds the compiler can't
-target at Zen (the list above):
+The prefetching code is left out of the build where the compiler targets
+Zen (`-DTARGET_C_ARCH=znver3` and the like, or `native` on a Zen CPU with a
+compiler that knows it), and with
 
 ```
-cmake -DPFFFT_SPLIT_MAX=8388608 ..
+cmake -DPFFFT_PREFETCH_DIST=0 ..
 ```
 
-A larger value splits less; a value larger than any array turns splitting
-off. Splitting needs SIMD. As for the prefetching, an empty value keeps
-the default, and without CMake it is a compile definition.
+(`-DPFFFT_PREFETCH_DIST=0` or `/DPFFFT_PREFETCH_DIST=0` without CMake), for
+a build that runs only on CPUs that do not prefetch: the code that is not
+there does not move the rest around. `PFFFT_PREFETCH_DIST` is the distance
+in bytes (default 128).
+
+**Long transforms: splitting.** pffft runs the passes of an FFT one after the
+other, each over the whole array. That is fast while the data fits in the
+cache, but for long transforms every pass has to go through main memory. So
+for arrays larger than `split_max_real` or `split_max_complex` bytes, the
+transform is split into 3, 4 or 5 independent shorter transforms,
+recursively until they fit in the cache, which are then processed one after
+the other. This divide and conquer approach makes transforms of 2^20 points
+and more up to 27% faster on ARM (the most on an Android phone and on Apple's
+chips, hardly at all on Arm's Neoverse servers), and 20-39% faster on Intel
+CPUs. The best size differs a lot, and not with the cache sizes alone: about
+1 MiB on Intel, 8 MiB on AMD Zen and Apple's chips, 256 KiB on a phone's
+Cortex cores; Arm's Neoverse servers split only complex transforms, from
+8 MiB. Splitting needs SIMD.
 
 ### ARMv7 (32-bit ARM): prefer clang over gcc
 

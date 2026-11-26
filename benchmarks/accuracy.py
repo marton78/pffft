@@ -44,7 +44,7 @@ import results
 import targets
 
 # the docs' lengths: powers of two to 2^22 (split under every default
-# PFFFT_SPLIT_MAX), 3, 5, 9 and 15 times powers of two (radix 3, 5, 6 and the
+# split threshold but the Neoverse's for real transforms), 3, 5, 9 and 15 times powers of two (radix 3, 5, 6 and the
 # twiddle-free radix-8 and radix-6 last passes), and bench_fft's picked lengths
 # (up to six radix-5 passes)
 DEFAULT_SIZES = "all,picked"
