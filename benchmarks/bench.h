@@ -168,6 +168,10 @@ void bench_tuning_format(const bench_tuning *t, char *buf, size_t n);
  * before the tuning, or not that precision). */
 int bench_default_tuning(void *lib, int f64, bench_tuning *t);
 
+/* pffft_cpu_describe() of a pffft (lib, or NULL for the one linked in):
+ * 1, or 0 if it has none */
+int bench_cpu_describe(void *lib, char *buf, int len);
+
 /* A pffft to check: lib is a library from bench_dl_open(), or NULL for the
  * pffft linked into this program. With tune, its setups are made by
  * new_setup_tuned() from its default tuning with these changes; a library

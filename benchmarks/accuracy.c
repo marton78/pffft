@@ -264,6 +264,30 @@ int bench_default_tuning(void *lib, int f64, bench_tuning *t) {
   return 1;
 }
 
+#if defined(BENCH_HAVE_F32)
+int pffft_cpu_describe(char *buf, int len);
+#elif defined(BENCH_HAVE_F64)
+int pffftd_cpu_describe(char *buf, int len);
+#endif
+
+int bench_cpu_describe(void *lib, char *buf, int len) {
+  int (*describe)(char *, int) = NULL;
+  if (lib) {
+    void *address = bench_dl_sym(lib, "pffft_cpu_describe");
+    if (!address) address = bench_dl_sym(lib, "pffftd_cpu_describe");
+    memcpy(&describe, &address, sizeof address);
+  } else {
+#if defined(BENCH_HAVE_F32)
+    describe = pffft_cpu_describe;
+#elif defined(BENCH_HAVE_F64)
+    describe = pffftd_cpu_describe;
+#endif
+  }
+  if (!describe) return 0;
+  describe(buf, len);
+  return 1;
+}
+
 /* a setup of the library f, with its tune if it has one and can */
 static void *make_setup(const api *f, int n, int cplx) {
   bench_tuning t;

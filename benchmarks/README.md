@@ -56,6 +56,8 @@ python3 benchmarks/run.py -- --sizes 1024,4096 --prec f32 --trials 3   # after -
 python3 benchmarks/compare.py master .                   # the working tree against master
 python3 benchmarks/compare.py c14802c master --target android -o cmp.csv
 python3 benchmarks/compare_many.py master a=HEAD~2 b=HEAD~1 c=HEAD --sizes 32,64,1024 -o many.csv
+python3 benchmarks/compare_many.py base=HEAD s8m=HEAD --tune s8m=split=8m --sizes 1048576  # a tuning
+python3 benchmarks/tune.py                               # the best thresholds for this CPU
 uv run --with matplotlib python3 benchmarks/plot.py local.csv -o local.png
 uv run --with matplotlib python3 benchmarks/plot.py local.csv --engines pffft -o pffft.png
 uv run --with matplotlib python3 benchmarks/plot.py local.csv android.csv -o devices.png
@@ -82,7 +84,17 @@ uv run --with matplotlib python3 benchmarks/plot.py mac-cmp.csv ios-cmp.csv --na
   engine `pffft@LABEL` (`LABEL=REV`, or the revision itself), and prints
   each one's speed-up over the first: one commit per engine separates the
   effects of the commits of a branch in one run. A revision given twice is
-  loaded twice, which shows the noise floor inside the run.
+  loaded twice, which shows the noise floor inside the run. `--tune
+  LABEL=SPEC` makes the setups of `pffft@LABEL` with a changed tuning (as
+  `bench_fft --tune`, see `--help`): e.g. `split=8m`, `prefetch=never`. A
+  label with a `--tune` loads its commit's library itself, so that tunings
+  of one commit run the same code.
+- **tune.py** sweeps each threshold of pffft's tuning (split, prefetch on
+  x86, radix-6) over its range in one build, every value a `--tune` of the
+  same library, and prints per kind and precision the speed of each value
+  against the CPU's default, the best one, and the row for
+  `src/pffft_tuning.h` (README: "Thresholds chosen for the CPU").
+  `--quick` for a first look; run it twice for a row.
 - **plot.py** draws speed against n, higher is faster: GFLOPS, counting
   5·n·log2(n) flops per complex transform and 2.5·n·log2(n) per real one
   (benchFFT's convention), so that lengths compare fairly. Where cycles were

@@ -615,6 +615,9 @@ static double mflops(const result *r) {
 static void write_tunings(FILE *f, const char *prefix, const options *o) {
   char buf[200], err[256];
   bench_tuning t;
+  /* the CPU as pffft sees it, once: every pffft from this source tree finds
+     the same, older revisions nothing */
+  if (bench_cpu_describe(NULL, buf, sizeof buf)) fprintf(f, "%spffft_cpu: %s\n", prefix, buf);
   for (int i = -1; i < o->nlibs; i++) {
     void *lib = NULL;
     if (i >= 0 && !(lib = bench_dl_open(o->lib[i].path, err, sizeof err))) continue;
