@@ -139,6 +139,14 @@ typedef union v4sf_union {
   }
 
 
+  /* A with lane 0 replaced by the scalar f */
+  static ALWAYS_INLINE(v4sf) scalvec_set_lane0(v4sf A, vsfscalar f) {
+    A.a = f;
+    return A;
+  }
+#  define VSET_LANE0(a,f) scalvec_set_lane0(a, f)
+
+
   /* reverse/flip all floats */
   static ALWAYS_INLINE(v4sf) VREV_S(v4sf A) {
     v4sf r = { A.d, A.c, A.b, A.a };

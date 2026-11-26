@@ -55,6 +55,7 @@ python3 benchmarks/run.py --target ios --fftw -o ios.csv
 python3 benchmarks/run.py -- --sizes 1024,4096 --prec f32 --trials 3   # after --: bench_fft options
 python3 benchmarks/compare.py master .                   # the working tree against master
 python3 benchmarks/compare.py c14802c master --target android -o cmp.csv
+python3 benchmarks/compare_many.py master a=HEAD~2 b=HEAD~1 c=HEAD --sizes 32,64,1024 -o many.csv
 uv run --with matplotlib python3 benchmarks/plot.py local.csv -o local.png
 uv run --with matplotlib python3 benchmarks/plot.py local.csv --engines pffft -o pffft.png
 uv run --with matplotlib python3 benchmarks/plot.py local.csv android.csv -o devices.png
@@ -77,6 +78,11 @@ uv run --with matplotlib python3 benchmarks/plot.py mac-cmp.csv ios-cmp.csv --na
   `-o` saves the measurements of all launches as one CSV, for plot.py.
   Each revision builds with its own defaults, so v1.0.0 and v1.1.0 get no
   NEON on arm64.
+- **compare_many.py** does the same for any number of revisions, each an
+  engine `pffft@LABEL` (`LABEL=REV`, or the revision itself), and prints
+  each one's speed-up over the first: one commit per engine separates the
+  effects of the commits of a branch in one run. A revision given twice is
+  loaded twice, which shows the noise floor inside the run.
 - **plot.py** draws speed against n, higher is faster: GFLOPS, counting
   5·n·log2(n) flops per complex transform and 2.5·n·log2(n) per real one
   (benchFFT's convention), so that lengths compare fairly. Where cycles were
@@ -249,6 +255,22 @@ than at home; a Linux VM may expose no cycle counter, and Windows has none
 (the CSV header says `counter: none`; plots then take the measured time). On Windows
 build_fftw.py uses FFTW's CMake build with MSVC, which has SSE2, AVX and
 AVX2 but no AVX-512 and no NEON: FFTW is left out on Windows ARM64.
+
+`-f compare_args=...` passes options to compare.py, `-f many="a=master
+b=HEAD"` (and `many_args`) runs compare_many.py as well.
+
+A runner label lands on one of several CPUs: ubuntu-26.04 and windows-2025
+on Intel Xeon and AMD EPYC machines of several generations, some of which
+come up once in 30 runs. `benchmarks/ci_dispatch.py` runs the workflow
+until each CPU of a table has done its part: every run gets the table as
+the input `by_cpu`, does the part of the CPU it lands on, and ends after a
+few seconds on any other CPU. Give a CPU everything it should measure in
+one entry (sweep, compares, compare_many); the script's docstring shows the
+table:
+
+```sh
+python3 benchmarks/ci_dispatch.py table.json ci-out --ref my-branch
+```
 
 ## CSV
 

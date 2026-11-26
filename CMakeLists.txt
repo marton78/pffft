@@ -185,6 +185,14 @@ if (PFFFT_USE_DEBUG_ASAN)
   target_compile_options(PFFFT PRIVATE "-fsanitize=address")
 endif()
 target_set_c_arch_flags(PFFFT)
+# GCC's RISC-V vector code fuses multiplies and adds into FMAs even without
+# floating-point contraction (the default with -std=c99), and not alike in
+# every function: double-precision ordered transforms then differed in their
+# last bits from pffft_transform followed by pffft_zreorder (gcc 14 and 15).
+# With contraction, GCC fuses them in the source, the same way everywhere.
+if (CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
+  target_compile_options(PFFFT PRIVATE "-ffp-contract=fast")
+endif()
 if (NOT PFFFT_USE_SIMD)
   target_compile_definitions(PFFFT PRIVATE PFFFT_SIMD_DISABLE=1)
 endif()

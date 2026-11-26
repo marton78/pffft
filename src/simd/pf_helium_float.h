@@ -94,6 +94,9 @@ static ALWAYS_INLINE(v4sf) VSWAPHL(v4sf a, v4sf b) {
   uint64x2_t r = vsetq_lane_u64(vgetq_lane_u64(vreinterpretq_u64_f32(b), 0), vreinterpretq_u64_f32(a), 0);
   return vreinterpretq_f32_u64(r);
 }
+
+/* a with lane 0 replaced by the scalar f */
+#  define VSET_LANE0(a,f) vsetq_lane_f32(f, a, 0)
 /* reverse/flip complex floats: swap the 64-bit halves */
 static ALWAYS_INLINE(v4sf) VREV_C(v4sf a) {
   uint64x2_t u = vreinterpretq_u64_f32(a);

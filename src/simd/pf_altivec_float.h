@@ -87,6 +87,9 @@ static inline v4sf ld_ps1(const float *p) { v4sf v=vec_lde(0,p); return vec_spla
   }
 #  define VSWAPHL(a,b) vec_perm(a,b, (__vector unsigned char){16,17,18,19,20,21,22,23,8,9,10,11,12,13,14,15})
 
+/* a with lane 0 replaced by the scalar f */
+#  define VSET_LANE0(a,f) vec_insert(f, a, 0)
+
 /* reverse/flip all floats */
 #  define VREV_S(a)    vec_perm(a,a, (__vector unsigned char){12,13,14,15,8,9,10,11,4,5,6,7,0,1,2,3})
 /* reverse/flip complex floats */

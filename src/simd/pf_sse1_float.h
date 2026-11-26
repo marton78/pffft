@@ -75,6 +75,9 @@ typedef union v4sf_union {
 #  define VTRANSPOSE4(x0,x1,x2,x3) _MM_TRANSPOSE4_PS(x0,x1,x2,x3)
 #  define VSWAPHL(a,b) _mm_shuffle_ps(b, a, _MM_SHUFFLE(3,2,1,0))
 
+/* a with lane 0 replaced by the scalar f */
+#  define VSET_LANE0(a,f) _mm_move_ss(a, _mm_set_ss(f))
+
 /* reverse/flip all floats */
 #  define VREV_S(a)    _mm_shuffle_ps(a, a, _MM_SHUFFLE(0,1,2,3))
 /* reverse/flip complex floats */

@@ -80,21 +80,14 @@ typedef union v4sf_union {
 /* INTERLEAVE2 (in1, in2, out1, out2) pseudo code:
 out1 = [ in1[0], in2[0], in1[1], in2[1] ]
 out2 = [ in1[2], in2[2], in1[3], in2[3] ]
-*/
+Two shuffles within the 128-bit lanes and two across them. Spelled with
+extracts and inserts of the 128-bit halves it took eight, which GCC and MSVC
+emit as written (Clang merges some of them). */
 #  define INTERLEAVE2(in1, in2, out1, out2) {							\
-	__m128d low1__ = _mm256_castpd256_pd128(in1);						\
-	__m128d low2__ = _mm256_castpd256_pd128(in2);						\
-	__m128d high1__ = _mm256_extractf128_pd(in1, 1);					\
-	__m128d high2__ = _mm256_extractf128_pd(in2, 1);					\
-	__m256d tmp__ = _mm256_insertf128_pd(								\
-		_mm256_castpd128_pd256(_mm_shuffle_pd(low1__, low2__, 0)),		\
-		_mm_shuffle_pd(low1__, low2__, 3),								\
-		1);																\
-	out2 = _mm256_insertf128_pd(										\
-		_mm256_castpd128_pd256(_mm_shuffle_pd(high1__, high2__, 0)),	\
-		_mm_shuffle_pd(high1__, high2__, 3),							\
-		1);																\
-	out1 = tmp__;														\
+	__m256d lo__ = _mm256_unpacklo_pd(in1, in2); /* in1[0] in2[0] in1[2] in2[2] */	\
+	__m256d hi__ = _mm256_unpackhi_pd(in1, in2); /* in1[1] in2[1] in1[3] in2[3] */	\
+	out1 = _mm256_permute2f128_pd(lo__, hi__, 0x20);					\
+	out2 = _mm256_permute2f128_pd(lo__, hi__, 0x31);					\
 }
 
 /*UNINTERLEAVE2(in1, in2, out1, out2) pseudo code:
@@ -102,19 +95,10 @@ out1 = [ in1[0], in1[2], in2[0], in2[2] ]
 out2 = [ in1[1], in1[3], in2[1], in2[3] ]
 */
 #  define UNINTERLEAVE2(in1, in2, out1, out2) {							\
-	__m128d low1__ = _mm256_castpd256_pd128(in1);						\
-	__m128d low2__ = _mm256_castpd256_pd128(in2);						\
-	__m128d high1__ = _mm256_extractf128_pd(in1, 1);					\
-	__m128d high2__ = _mm256_extractf128_pd(in2, 1); 					\
-	__m256d tmp__ = _mm256_insertf128_pd(								\
-		_mm256_castpd128_pd256(_mm_shuffle_pd(low1__, high1__, 0)),		\
-		_mm_shuffle_pd(low2__, high2__, 0),								\
-		1);																\
-	out2 = _mm256_insertf128_pd(										\
-		_mm256_castpd128_pd256(_mm_shuffle_pd(low1__, high1__, 3)),		\
-		_mm_shuffle_pd(low2__, high2__, 3),								\
-		1);																\
-	out1 = tmp__;														\
+	__m256d lo__ = _mm256_permute2f128_pd(in1, in2, 0x20); /* in1[0] in1[1] in2[0] in2[1] */	\
+	__m256d hi__ = _mm256_permute2f128_pd(in1, in2, 0x31); /* in1[2] in1[3] in2[2] in2[3] */	\
+	out1 = _mm256_unpacklo_pd(lo__, hi__);								\
+	out2 = _mm256_unpackhi_pd(lo__, hi__);								\
 }
 
 #  define VTRANSPOSE4(row0, row1, row2, row3) {				\
@@ -133,9 +117,24 @@ out2 = [ in1[1], in1[3], in2[1], in2[3] ]
 
 /*VSWAPHL(a, b) pseudo code:
 return [ b[0], b[1], a[2], a[3] ]
+A blend, which is not a shuffle: on Intel it runs on more ports than port 5.
 */
-#  define VSWAPHL(a,b)	\
-   _mm256_insertf128_pd(_mm256_castpd128_pd256(_mm256_castpd256_pd128(b)), _mm256_extractf128_pd(a, 1), 1)
+#  define VSWAPHL(a,b) _mm256_blend_pd(a, b, 0x3)
+
+/* a with lane 0 replaced by the scalar f */
+#  define VSET_LANE0(a,f) _mm256_blend_pd(a, _mm256_castpd128_pd256(_mm_set_sd(f)), 0x1)
+
+/* The 128-bit halves of a v4sf as pairs of doubles, for the reorder kernels
+   (pffft_priv_impl.h): with them INTERLEAVE2 into memory and UNINTERLEAVE2
+   from memory need no shuffle across the halves, the work of port 5 on Intel.
+   VPAIRS(a, b, lo, hi)  lo = [a0 b0 a2 b2], hi = [a1 b1 a3 b3]
+   VSTORE_PAIR_LO(p, v)  [v0 v1] to p, a double pointer aligned to 16 bytes
+   VSTORE_PAIR_HI(p, v)  [v2 v3] to p
+   VLOAD_PAIRS(p, q)     [p[0] p[1] q[0] q[1]] */
+#  define VPAIRS(a, b, lo, hi) { lo = _mm256_unpacklo_pd(a, b); hi = _mm256_unpackhi_pd(a, b); }
+#  define VSTORE_PAIR_LO(p, v) _mm_store_pd(p, _mm256_castpd256_pd128(v))
+#  define VSTORE_PAIR_HI(p, v) _mm_store_pd(p, _mm256_extractf128_pd(v, 1))
+#  define VLOAD_PAIRS(p, q) _mm256_insertf128_pd(_mm256_castpd128_pd256(_mm_load_pd(p)), _mm_load_pd(q), 1)
 
 /* reverse/flip all floats */
 #  define VREV_S(a)    _mm256_insertf128_pd(_mm256_castpd128_pd256(_mm_permute_pd(_mm256_extractf128_pd(a, 1),1)), _mm_permute_pd(_mm256_castpd256_pd128(a), 1), 1)

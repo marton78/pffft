@@ -260,6 +260,13 @@ return [ b[0], b[1], a[2], a[3] ]
 #  define VSWAPHL(a,b)	\
    mm256_insertf128_pd_1(mm256_castpd128_pd256(mm256_castpd256_pd128(b)), mm256_extractf128_pd(a, 1))
 
+/* a with lane 0 replaced by the scalar f */
+static ALWAYS_INLINE(v4sf) mm256_set_lane0_pd(v4sf a, double f) {
+  a.d128[0] = _mm_move_sd(a.d128[0], _mm_set_sd(f));
+  return a;
+}
+#  define VSET_LANE0(a,f) mm256_set_lane0_pd(a, f)
+
 /* reverse/flip all floats */
 #  define VREV_S(a)   mm256_reverse(a)
 
