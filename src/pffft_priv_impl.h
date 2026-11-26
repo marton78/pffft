@@ -2749,22 +2749,28 @@ struct SETUP_STRUCT {
   size_t pf_min;  /* the prefetch threshold, for the blocks of split transforms */
 };
 
-/* The thresholds that depend on the CPU, in bytes per array. */
-typedef struct {
-  size_t split_max_real;    /* split the arrays larger than this (split_levels()) */
-  size_t split_max_complex;
-  size_t prefetch_min;      /* prefetch in passes from this size on (pf_flags()) */
-  size_t radix6_max;        /* a radix-6 instead of a radix-8 pass up to this (rffti1_ps) */
-} tuning_t;
-
-static void default_tuning(tuning_t *t) {
+/* The thresholds that depend on the CPU (pffft_tuning_t, in bytes per
+   array): split_max_* for split_levels(), prefetch_min for pf_flags(),
+   radix6_max for rffti1_ps. */
+static void default_tuning(pffft_tuning_t *t) {
+  t->size = sizeof *t;
   t->split_max_real = t->split_max_complex = PFFFT_SPLIT_MAX;
   t->prefetch_min = PFFFT_PREFETCH_MIN;
   t->radix6_max = RADIX6_MAX_BYTES;
 }
 
+void FUNC_DEFAULT_TUNING(pffft_tuning_t *tuning, size_t size) {
+  pffft_tuning_t t;
+  if (size < sizeof t.size) return;
+  default_tuning(&t);
+  /* the fields that the caller's struct has room for */
+  if (size > sizeof t) size = sizeof t;
+  memcpy(tuning, &t, size);
+  tuning->size = size;
+}
 
-static SETUP_STRUCT *new_setup_tuned(int N, pffft_transform_t transform, const tuning_t *t) {
+
+static SETUP_STRUCT *new_setup(int N, pffft_transform_t transform, const pffft_tuning_t *t) {
   SETUP_STRUCT *s = 0;
   int k, m;
   size_t array_bytes;
@@ -2832,9 +2838,26 @@ static SETUP_STRUCT *new_setup_tuned(int N, pffft_transform_t transform, const t
 }
 
 SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
-  tuning_t t;
+  pffft_tuning_t t;
   default_tuning(&t);
-  return new_setup_tuned(N, transform, &t);
+  return new_setup(N, transform, &t);
+}
+
+SETUP_STRUCT *FUNC_NEW_SETUP_TUNED(int N, pffft_transform_t transform, const pffft_tuning_t *tuning) {
+  pffft_tuning_t t;
+  default_tuning(&t);
+  if (tuning) {
+    if (!tuning->size) return 0;
+    /* the fields the caller knows */
+#define TUNING_FIELD(f) \
+    if (tuning->size >= offsetof(pffft_tuning_t, f) + sizeof t.f) t.f = tuning->f
+    TUNING_FIELD(split_max_real);
+    TUNING_FIELD(split_max_complex);
+    TUNING_FIELD(prefetch_min);
+    TUNING_FIELD(radix6_max);
+#undef TUNING_FIELD
+  }
+  return new_setup(N, transform, &t);
 }
 
 

@@ -44,6 +44,19 @@ typedef double pffft_scalar;
 #include <assert.h>
 #include <string.h>
 
+/* The tuning of every setup, set by the options --split and --prefetch=;
+   NULL: pffft_new_setup() with the default thresholds. */
+static const pffft_tuning_t *g_tuning = NULL;
+#ifdef PFFFT_ENABLE_FLOAT
+#  define TEST_NEW_SETUP(N, kind) \
+     (g_tuning ? pffft_new_setup_tuned(N, kind, g_tuning) : pffft_new_setup(N, kind))
+#  define TEST_DEFAULT_TUNING pffft_default_tuning
+#else
+#  define TEST_NEW_SETUP(N, kind) \
+     (g_tuning ? pffftd_new_setup_tuned(N, kind, g_tuning) : pffftd_new_setup(N, kind))
+#  define TEST_DEFAULT_TUNING pffftd_default_tuning
+#endif
+
 /* define own constants required to turn off g++ extensions .. */
 #ifndef M_PI
   #define M_PI    3.14159265358979323846  /* pi */
@@ -106,10 +119,10 @@ int test(int N, int cplx, int useOrdered) {
 
 #ifdef PFFFT_ENABLE_FLOAT
   assert( pffft_is_valid_size(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL) );
-  PFFFT_Setup *s = pffft_new_setup(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
+  PFFFT_Setup *s = TEST_NEW_SETUP(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
 #else
   assert( pffftd_is_valid_size(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL) );
-  PFFFTD_Setup *s = pffftd_new_setup(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
+  PFFFTD_Setup *s = TEST_NEW_SETUP(N, cplx ? PFFFT_COMPLEX : PFFFT_REAL);
 #endif
   assert(s);
   if (!s) {
@@ -333,7 +346,7 @@ static int test_zconvolve_unscaled(int N)
   int j, retError = 0;
 #ifdef PFFFT_ENABLE_FLOAT
   typedef PFFFT_Setup setup_t;
-#define ZT_NEW_SETUP     pffft_new_setup
+#define ZT_NEW_SETUP     TEST_NEW_SETUP
 #define ZT_DESTROY_SETUP pffft_destroy_setup
 #define ZT_TRANSFORM     pffft_transform
 #define ZT_ZCONV_SCALE   pffft_zconvolve_scale
@@ -342,7 +355,7 @@ static int test_zconvolve_unscaled(int N)
 #define ZT_FREE          pffft_aligned_free
 #else
   typedef PFFFTD_Setup setup_t;
-#define ZT_NEW_SETUP     pffftd_new_setup
+#define ZT_NEW_SETUP     TEST_NEW_SETUP
 #define ZT_DESTROY_SETUP pffftd_destroy_setup
 #define ZT_TRANSFORM     pffftd_transform
 #define ZT_ZCONV_SCALE   pffftd_zconvolve_scale
@@ -447,7 +460,7 @@ static int test_zconvolve_accumulate(int N, int cplx)
   const pffft_scalar scaling = (pffft_scalar)0.375;
 #ifdef PFFFT_ENABLE_FLOAT
   typedef PFFFT_Setup setup_t;
-#define ZT_NEW_SETUP     pffft_new_setup
+#define ZT_NEW_SETUP     TEST_NEW_SETUP
 #define ZT_DESTROY_SETUP pffft_destroy_setup
 #define ZT_TRANSFORM     pffft_transform
 #define ZT_ZCONV_SCALE   pffft_zconvolve_scale
@@ -456,7 +469,7 @@ static int test_zconvolve_accumulate(int N, int cplx)
 #define ZT_FREE          pffft_aligned_free
 #else
   typedef PFFFTD_Setup setup_t;
-#define ZT_NEW_SETUP     pffftd_new_setup
+#define ZT_NEW_SETUP     TEST_NEW_SETUP
 #define ZT_DESTROY_SETUP pffftd_destroy_setup
 #define ZT_TRANSFORM     pffftd_transform
 #define ZT_ZCONV_SCALE   pffftd_zconvolve_scale
@@ -546,7 +559,7 @@ static int test_zerophase(int N)
   int j, k, retError = 0;
 #ifdef PFFFT_ENABLE_FLOAT
   typedef PFFFT_Setup setup_t;
-#define ZT_NEW_SETUP     pffft_new_setup
+#define ZT_NEW_SETUP     TEST_NEW_SETUP
 #define ZT_DESTROY_SETUP pffft_destroy_setup
 #define ZT_TRANSFORM     pffft_transform
 #define ZT_ZCONVERT_ZP   pffft_zconvert_zp
@@ -556,7 +569,7 @@ static int test_zerophase(int N)
 #define ZT_FREE          pffft_aligned_free
 #else
   typedef PFFFTD_Setup setup_t;
-#define ZT_NEW_SETUP     pffftd_new_setup
+#define ZT_NEW_SETUP     TEST_NEW_SETUP
 #define ZT_DESTROY_SETUP pffftd_destroy_setup
 #define ZT_TRANSFORM     pffftd_transform
 #define ZT_ZCONVERT_ZP   pffftd_zconvert_zp
@@ -722,8 +735,69 @@ int  validate_pffftd_simd_ex(FILE * DbgOut);
 
 
 
+/* pffft_new_setup_tuned(): what it does with the size field. Returns 1 on
+   failure. */
+static int test_tuning(void)
+{
+  pffft_tuning_t t;
+  int ret = 0;
+#ifdef PFFFT_ENABLE_FLOAT
+  PFFFT_Setup *s;
+#  define TT_NEW pffft_new_setup_tuned
+#  define TT_DESTROY pffft_destroy_setup
+#else
+  PFFFTD_Setup *s;
+#  define TT_NEW pffftd_new_setup_tuned
+#  define TT_DESTROY pffftd_destroy_setup
+#endif
+  memset(&t, 0, sizeof t);
+  TEST_DEFAULT_TUNING(&t, sizeof t);
+  if (t.size != sizeof t) { printf("default_tuning: size %d, not %d\n", (int)t.size, (int)sizeof t); ret = 1; }
+  {
+    /* a caller with a larger struct (a newer header): the library fills
+       its own fields and says how far it got */
+    struct { pffft_tuning_t t; size_t more; } big;
+    big.more = 12345;
+    TEST_DEFAULT_TUNING(&big.t, sizeof big);
+    if (big.t.size != sizeof big.t || big.more != 12345) { printf("default_tuning wrote past its fields\n"); ret = 1; }
+    /* a caller with a smaller one (an older header): only its fields */
+    memset(&big, 0xAB, sizeof big);
+    TEST_DEFAULT_TUNING(&big.t, sizeof big.t.size + sizeof big.t.split_max_real);
+    if (big.t.size != sizeof big.t.size + sizeof big.t.split_max_real || big.t.split_max_real == (size_t)0xABABABABABABABABull ||
+        big.t.split_max_complex != (size_t)0xABABABABABABABABull) { printf("default_tuning ignored the size\n"); ret = 1; }
+  }
+  /* NULL: the default */
+  s = TT_NEW(64, PFFFT_REAL, NULL);
+  if (!s) { printf("new_setup_tuned(NULL) failed\n"); ret = 1; }
+  TT_DESTROY(s);
+  /* a size of 0 is a tuning that was not set */
+  t.size = 0;
+  s = TT_NEW(64, PFFFT_REAL, &t);
+  if (s) { printf("new_setup_tuned with size 0 did not fail\n"); ret = 1; }
+  TT_DESTROY(s);
+  /* a caller that knows only the first field */
+  t.size = sizeof t.size + sizeof t.split_max_real;
+  s = TT_NEW(64, PFFFT_COMPLEX, &t);
+  if (!s) { printf("new_setup_tuned with an old size failed\n"); ret = 1; }
+  TT_DESTROY(s);
+#undef TT_NEW
+#undef TT_DESTROY
+  if (!ret) printf("tests for pffft_new_setup_tuned() succeeded successfully.\n");
+  return ret;
+}
+
+/* Options:
+     --test-simd         only the tests of the SIMD macros
+     --split             every setup splits arrays of more than 1 KiB, so that
+                         the split transforms run at every size, as deep as
+                         they go
+     --prefetch=all      every pass prefetches (x86): the kernels with the
+                         prefetches run at every size
+     --prefetch=none     no pass prefetches */
 int main(int argc, char **argv)
 {
+  static pffft_tuning_t tuning;
+  int resTuning;
   int N, result, resN, resAll, i, k, resNextPw2, resIsPw2, resFFT;
   int resZconv;
   int resZacc;
@@ -743,7 +817,23 @@ int main(int argc, char **argv)
       fprintf( ( numErrs != 0 ? stderr : stdout ), "validate_pffft_simd_ex() returned %d errors!\n", numErrs);
       return ( numErrs > 0 ? 1 : 0 );
     }
+    if (!g_tuning) {
+      TEST_DEFAULT_TUNING(&tuning, sizeof tuning);
+    }
+    if (!strcmp(argv[i], "--split")) {
+      tuning.split_max_real = tuning.split_max_complex = 1024;
+    } else if (!strcmp(argv[i], "--prefetch=all")) {
+      tuning.prefetch_min = 0;
+    } else if (!strcmp(argv[i], "--prefetch=none")) {
+      tuning.prefetch_min = (size_t)-1;
+    } else {
+      fprintf(stderr, "unknown option %s\n", argv[i]);
+      return 1;
+    }
+    g_tuning = &tuning;
   }
+
+  resTuning = test_tuning();
 
   resNextPw2 = 0;
   resIsPw2 = 0;
@@ -905,7 +995,7 @@ int main(int argc, char **argv)
   if (!resZP)
     printf("zero-phase convolution tests succeeded successfully.\n");
 
-  resAll = resNextPw2 | resIsPw2 | resFFT | resZconv | resZacc | resZP;
+  resAll = resNextPw2 | resIsPw2 | resFFT | resZconv | resZacc | resZP | resTuning;
   if (!resAll)
     printf("all tests succeeded successfully.\n");
   else

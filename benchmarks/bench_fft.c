@@ -878,8 +878,10 @@ static int accuracy_main(options *o, const int *sizes, int nsizes, const char *d
   if (!o->have_seed) o->seed = 1; /* reproducible by default */
   libs[0].label = "pffft";
   libs[0].lib = NULL;
+  libs[0].tune = NULL;
   for (int i = 0; i < o->nlibs; i++) {
     libs[i].label = o->lib[i].label;
+    libs[i].tune = NULL;
     libs[i].lib = bench_dl_open(o->lib[i].path, err, sizeof err);
     if (!libs[i].lib) die("--lib %s=%s: %s", o->lib[i].label, o->lib[i].path, err);
   }

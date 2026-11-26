@@ -128,11 +128,35 @@ int bench_lib_engines_f64(const char *label, const char *path,
  * accuracy.c: bench_fft --accuracy
  * ---------------------------------------------------------------------- */
 
+/* pffft_tuning_t of pffft.h, spelled out: the harness calls libraries of
+ * any revision through pointers (engines.c, accuracy.c), and a library reads
+ * only the fields within size, which it sets in its default tuning. */
+typedef struct bench_tuning {
+  size_t size, split_max_real, split_max_complex, prefetch_min, radix6_max;
+} bench_tuning;
+
+/* Changes to the default tuning of a library: the fields whose BENCH_TUNE_
+ * bit is in set take the value in tuning. */
+typedef struct bench_tune {
+  unsigned set;
+  bench_tuning tuning;
+} bench_tune;
+#define BENCH_TUNE_SPLIT_REAL    1u
+#define BENCH_TUNE_SPLIT_COMPLEX 2u
+#define BENCH_TUNE_PREFETCH_MIN  4u
+#define BENCH_TUNE_RADIX6_MAX    8u
+
+/* t with the changes of tune (NULL: none) */
+void bench_tune_apply(const bench_tune *tune, bench_tuning *t);
+
 /* A pffft to check: lib is a library from bench_dl_open(), or NULL for the
- * pffft linked into this program. */
+ * pffft linked into this program. With tune, its setups are made by
+ * new_setup_tuned() from its default tuning with these changes; a library
+ * without new_setup_tuned() (from before it) ignores tune. */
 typedef struct bench_accuracy_lib {
   const char *label;
   void *lib;
+  const bench_tune *tune;
 } bench_accuracy_lib;
 
 /* The column line of the CSV that bench_accuracy() writes. */

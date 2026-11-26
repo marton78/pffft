@@ -96,6 +96,23 @@ extern "C" {
   */
   PFFFT_EXPORT PFFFT_Setup *pffft_new_setup(int N, pffft_transform_t transform);
   PFFFT_EXPORT void pffft_destroy_setup(PFFFT_Setup *);
+
+  /*
+    the tuning that pffft_new_setup() takes on this CPU: start from it
+    to change a field for pffft_new_setup_tuned(). size is sizeof of the
+    caller's struct: pffft_default_tuning(&t, sizeof t). Fields beyond
+    the library's struct are left as they are, and tuning->size tells how
+    far the library got.
+  */
+  PFFFT_EXPORT void pffft_default_tuning(pffft_tuning_t *tuning, size_t size);
+
+  /*
+    pffft_new_setup() with the thresholds of tuning, or the default ones
+    if tuning is NULL. Fields beyond tuning->size take their default.
+    Returns NULL also if tuning->size is 0 (not set).
+  */
+  PFFFT_EXPORT PFFFT_Setup *pffft_new_setup_tuned(int N, pffft_transform_t transform,
+                                                 const pffft_tuning_t *tuning);
   /* 
      Perform a Fourier transform , The z-domain data is stored in the
      most efficient order for transforming it back, or using it for

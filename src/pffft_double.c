@@ -112,6 +112,8 @@
 #define SETUP_STRUCT               PFFFTD_Setup
 #define FUNC_NEW_SETUP             pffftd_new_setup
 #define FUNC_DESTROY               pffftd_destroy_setup
+#define FUNC_NEW_SETUP_TUNED       pffftd_new_setup_tuned
+#define FUNC_DEFAULT_TUNING        pffftd_default_tuning
 #define FUNC_TRANSFORM_UNORDRD     pffftd_transform
 #define FUNC_TRANSFORM_ORDERED     pffftd_transform_ordered
 #define FUNC_ZREORDER              pffftd_zreorder

@@ -46,6 +46,38 @@ extern "C" {
   /* type of transform */
   typedef enum { PFFFT_REAL, PFFFT_COMPLEX } pffft_transform_t;
 
+  /*
+    The thresholds of a setup that depend on the CPU. pffft_new_setup()
+    takes those that pffft_default_tuning() / pffftd_default_tuning() give
+    for the CPU it runs on, pffft_new_setup_tuned() those of the caller.
+    Sizes are in bytes of one array of the transform: N values for a real
+    transform, 2N for a complex one, of float for pffft_, of double for
+    pffftd_. (size_t)-1 means never.
+  */
+  typedef struct pffft_tuning_t {
+    /* the bytes of the struct that both the caller and the library know:
+       the default functions set it to the smaller of the size they are
+       given and their own, and the setup reads only the fields within it,
+       so that a program and a library of different versions understand
+       each other */
+    size_t size;
+    /* real transforms of larger arrays are split into blocks that are
+       transformed one after the other while they are in the cache */
+    size_t split_max_real;
+    /* the same for complex transforms */
+    size_t split_max_complex;
+    /* x86: the passes over arrays of this size or more prefetch the lines
+       they write, the first pass of a backward real transform from half of
+       it on; without effect on other CPUs, and in builds with
+       PFFFT_PREFETCH_DIST=0 */
+    size_t prefetch_min;
+    /* real transforms of arrays up to this size, whose length has a factor
+       3, end with a radix-6 pass instead of a radix-8 one. The only field
+       that changes the results (in the last bits): all others choose
+       between ways that give the same bits. */
+    size_t radix6_max;
+  } pffft_tuning_t;
+
   /* simple helper to determine next power of 2
      - without inexact/rounding floating point operations
   */

@@ -89,6 +89,6 @@ forward results of all inputs.
 
 `ctest` runs `test_accuracy` and `test_accuracy_split` (tests/test_accuracy.c:
 the same measures with accuracy.c, built with the tests rather than the
-benchmarks, the second against the library that splits every array of more
-than 1 KiB) on lengths of every kind of pass up to 4096, in under a second.
+benchmarks, the second as `test_accuracy --split`, whose setups split every
+array of more than 1 KiB) on lengths of every kind of pass up to 4096, in under a second.
 CI runs them on every backend it builds, emulators included.

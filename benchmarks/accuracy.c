@@ -70,6 +70,8 @@
 #define MIN_POINTS 4096
 
 typedef void *(*new_setup_fn)(int n, int transform);
+typedef void *(*new_setup_tuned_fn)(int n, int transform, const bench_tuning *tuning);
+typedef void (*default_tuning_fn)(bench_tuning *tuning, size_t size);
 typedef int (*is_valid_size_fn)(int n, int transform);
 typedef void (*destroy_setup_fn)(void *setup);
 typedef void (*transform_fn)(const void *setup, const void *in, void *out, void *work, int direction);
@@ -83,12 +85,36 @@ typedef struct api {
   destroy_setup_fn destroy_setup;
   transform_fn transform, transform_ordered;
   zreorder_fn zreorder;
+  /* NULL in revisions from before the tuning */
+  new_setup_tuned_fn new_setup_tuned;
+  default_tuning_fn default_tuning;
+  const bench_tune *tune; /* of the bench_accuracy_lib */
 } api;
+
+void bench_tune_apply(const bench_tune *tune, bench_tuning *t) {
+  if (!tune) return;
+  if (tune->set & BENCH_TUNE_SPLIT_REAL) t->split_max_real = tune->tuning.split_max_real;
+  if (tune->set & BENCH_TUNE_SPLIT_COMPLEX) t->split_max_complex = tune->tuning.split_max_complex;
+  if (tune->set & BENCH_TUNE_PREFETCH_MIN) t->prefetch_min = tune->tuning.prefetch_min;
+  if (tune->set & BENCH_TUNE_RADIX6_MAX) t->radix6_max = tune->tuning.radix6_max;
+}
+
+/* a setup of the library f, with its tune if it has one and can */
+static void *make_setup(const api *f, int n, int cplx) {
+  bench_tuning t;
+  if (!f->tune || !f->new_setup_tuned || !f->default_tuning) return f->new_setup(n, cplx);
+  memset(&t, 0, sizeof t);
+  f->default_tuning(&t, sizeof t);
+  bench_tune_apply(f->tune, &t);
+  return f->new_setup_tuned(n, cplx, &t);
+}
 
 /* The pffft linked into bench_fft. Declared here rather than taken from
  * pffft.h, in the spelling of the pointers above. */
 #ifdef BENCH_HAVE_F32
 void *pffft_new_setup(int n, int transform);
+void *pffft_new_setup_tuned(int n, int transform, const bench_tuning *tuning);
+void pffft_default_tuning(bench_tuning *tuning, size_t size);
 int pffft_is_valid_size(int n, int transform);
 void pffft_destroy_setup(void *setup);
 void pffft_transform(const void *setup, const void *in, void *out, void *work, int direction);
@@ -97,6 +123,8 @@ void pffft_zreorder(const void *setup, const void *in, void *out, int direction)
 #endif
 #ifdef BENCH_HAVE_F64
 void *pffftd_new_setup(int n, int transform);
+void *pffftd_new_setup_tuned(int n, int transform, const bench_tuning *tuning);
+void pffftd_default_tuning(bench_tuning *tuning, size_t size);
 int pffftd_is_valid_size(int n, int transform);
 void pffftd_destroy_setup(void *setup);
 void pffftd_transform(const void *setup, const void *in, void *out, void *work, int direction);
@@ -109,6 +137,8 @@ static void builtin_api(int f64, api *a) {
 #ifdef BENCH_HAVE_F32
   if (!f64) {
     a->new_setup = pffft_new_setup;
+    a->new_setup_tuned = pffft_new_setup_tuned;
+    a->default_tuning = pffft_default_tuning;
     a->is_valid_size = pffft_is_valid_size;
     a->destroy_setup = pffft_destroy_setup;
     a->transform = pffft_transform;
@@ -119,6 +149,8 @@ static void builtin_api(int f64, api *a) {
 #ifdef BENCH_HAVE_F64
   if (f64) {
     a->new_setup = pffftd_new_setup;
+    a->new_setup_tuned = pffftd_new_setup_tuned;
+    a->default_tuning = pffftd_default_tuning;
     a->is_valid_size = pffftd_is_valid_size;
     a->destroy_setup = pffftd_destroy_setup;
     a->transform = pffftd_transform;
@@ -148,6 +180,8 @@ static void lib_api(void *lib, int f64, api *a) {
   lib_function(lib, prefix, "transform", &a->transform);
   lib_function(lib, prefix, "transform_ordered", &a->transform_ordered);
   lib_function(lib, prefix, "zreorder", &a->zreorder);
+  lib_function(lib, prefix, "new_setup_tuned", &a->new_setup_tuned);
+  lib_function(lib, prefix, "default_tuning", &a->default_tuning);
   if (!a->destroy_setup || !a->transform || !a->transform_ordered || !a->zreorder) a->new_setup = NULL;
 }
 
@@ -535,7 +569,7 @@ static void measure_forward(tally *t, const api *f, const arrays *a, int n, int 
   const int fwd = 0, bwd = 1; /* PFFFT_FORWARD, PFFFT_BACKWARD */
   size_t len = (size_t)(cplx ? 2 * n : n), bytes = len * (f64 ? sizeof(double) : sizeof(float)), i;
   double limit = f64 ? LIMIT_F64 : LIMIT_F32;
-  void *s = f->new_setup(n, cplx);
+  void *s = make_setup(f, n, cplx);
   if (!s) return;
   for (i = 0; i < len; i++) put(a->in, i, a->x[i], f64);
 
@@ -579,7 +613,7 @@ static void measure_backward(tally *t, const api *f, const arrays *a, int n, int
   const int bwd = 1;
   size_t len = (size_t)(cplx ? 2 * n : n), bytes = len * (f64 ? sizeof(double) : sizeof(float)), i;
   double limit = f64 ? LIMIT_F64 : LIMIT_F32;
-  void *s = f->new_setup(n, cplx);
+  void *s = make_setup(f, n, cplx);
   if (!s) return;
   for (i = 0; i < len; i++) put(a->in, i, a->spec[i], f64);
 
@@ -641,6 +675,7 @@ int bench_accuracy(FILE *csv, const bench_accuracy_lib *libs, int nlibs, const i
     for (int l = 0; l < nlibs && l < BENCH_MAX_ENGINES; l++) {
       if (libs[l].lib) lib_api(libs[l].lib, f64, &apis[l]);
       else builtin_api(f64, &apis[l]);
+      apis[l].tune = libs[l].tune;
     }
     for (int cplx = 0; cplx < 2; cplx++) {
       if (!xform[cplx]) continue;
