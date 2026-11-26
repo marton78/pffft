@@ -82,6 +82,7 @@ typedef struct options {
   int nlibs;
   int prec[NPREC], xform[2];
   int min_n, max_n, trials, rounds, pin, quiet, list;
+  int accuracy, seeds, bits_only; /* --accuracy, --seeds, --bits-only */
   double batch_us, case_seconds;
   unsigned long seed;
   int have_seed;
@@ -696,6 +697,14 @@ static void usage(FILE *f) {
           "  --cpu N | --no-pin  core selection where pinning exists (Linux, Android)\n"
           "  --fftw-measure-max N  default 65536\n"
           "  --list              print the engines of each precision and exit\n"
+          "  --accuracy          instead of timing: the error of pffft (the --lib ones, or\n"
+          "                      the one built in) against an exact FFT, and the bitwise\n"
+          "                      equivalences of one build (see accuracy.c); exits 1 if\n"
+          "                      a check fails\n"
+          "  --seeds K           with --accuracy: inputs for at least K * 4096 points per\n"
+          "                      case, at least one (default 4)\n"
+          "  --bits-only         with --accuracy: only the checks and the hashes of the\n"
+          "                      results, not the errors (no exact transform; fast)\n"
           "  --help\n");
 }
 
@@ -789,6 +798,7 @@ static void parse_options(int argc, char **argv, options *o) {
   o->min_n = 32;
   o->max_n = 1048576;
   o->trials = 1;
+  o->seeds = 4;
   o->rounds = 100;
   o->batch_us = 300;
   o->case_seconds = 1.0;
@@ -807,6 +817,8 @@ static void parse_options(int argc, char **argv, options *o) {
       exit(0);
     }
     if (!strcmp(a, "--list")) { o->list = 1; continue; }
+    if (!strcmp(a, "--accuracy")) { o->accuracy = 1; continue; }
+    if (!strcmp(a, "--bits-only")) { o->bits_only = 1; continue; }
     if (!strcmp(a, "--quiet")) { o->quiet = 1; continue; }
     if (!strcmp(a, "--no-pin")) { o->pin = BENCH_PIN_NONE; continue; }
     if (i + 1 >= argc) die("%s: unknown option, or its value is missing (see --help)", a);
@@ -835,6 +847,7 @@ static void parse_options(int argc, char **argv, options *o) {
       }
       o->lib[o->nlibs++].path = eq + 1;
     } else if (!strcmp(a, "--trials")) o->trials = int_arg(a, v, 1);
+    else if (!strcmp(a, "--seeds")) o->seeds = int_arg(a, v, 1);
     else if (!strcmp(a, "--rounds")) o->rounds = int_arg(a, v, 1);
     else if (!strcmp(a, "--batch-us")) o->batch_us = real_arg(a, v);
     else if (!strcmp(a, "--case-seconds")) o->case_seconds = real_arg(a, v);
@@ -854,6 +867,45 @@ static void parse_options(int argc, char **argv, options *o) {
   }
 }
 
+/* bench_fft --accuracy: no timing. The libraries are loaded here, not as
+ * engines, as all their functions are needed. */
+static int accuracy_main(options *o, const int *sizes, int nsizes, const char *date) {
+  bench_accuracy_lib libs[MAX_LIBS];
+  char err[256];
+  FILE *csv = NULL;
+  int nlibs = o->nlibs ? o->nlibs : 1, failed;
+  if (nsizes == 0) die("no sizes to run: the keyword lists are limited to --min %d .. --max %d", o->min_n, o->max_n);
+  if (!o->have_seed) o->seed = 1; /* reproducible by default */
+  libs[0].label = "pffft";
+  libs[0].lib = NULL;
+  for (int i = 0; i < o->nlibs; i++) {
+    libs[i].label = o->lib[i].label;
+    libs[i].lib = bench_dl_open(o->lib[i].path, err, sizeof err);
+    if (!libs[i].lib) die("--lib %s=%s: %s", o->lib[i].label, o->lib[i].path, err);
+  }
+  if (o->csv && strcmp(o->csv, "-") != 0) {
+    csv = fopen(o->csv, "w");
+    if (!csv) die("cannot write %s", o->csv);
+  } else if (o->csv) {
+    csv = stdout;
+    printf("#BEGIN-CSV\n");
+  }
+  if (csv) {
+    fprintf(csv, "# pffft-accuracy 1\n# date: %s\n", date);
+    bench_platform_describe(csv, "# ");
+    fprintf(csv, "# compiler: %s\n# pffft_simd: %s\n", BENCH_COMPILER, simd_name());
+    fprintf(csv, "# target_arch: %s\n", BENCH_TARGET_ARCH[0] ? BENCH_TARGET_ARCH : "none");
+    fprintf(csv, "# seed: %lu\n# seeds: %d\n# bits_only: %d\n", o->seed, o->seeds, o->bits_only);
+    bench_accuracy_columns(csv);
+  }
+  failed = bench_accuracy(csv, libs, nlibs, sizes, nsizes, o->prec, o->xform, o->seeds, o->seed, o->bits_only);
+  if (csv == stdout) printf("#END-CSV\n");
+  else if (csv && fclose(csv) != 0) die("cannot write %s", o->csv);
+  fflush(stdout);
+  fprintf(stderr, "bench_fft --accuracy: %s\n", failed ? "FAILED" : "all checks passed");
+  return failed ? 1 : 0;
+}
+
 int main(int argc, char **argv) {
   static int sizes[MAX_SIZES];
   options o;
@@ -867,6 +919,8 @@ int main(int argc, char **argv) {
 
   parse_options(argc, argv, &o);
   nsizes = expand_sizes(&o, sizes);
+  if (utc) strftime(date, sizeof date, "%Y-%m-%dT%H:%M:%SZ", utc);
+  if (o.accuracy) return accuracy_main(&o, sizes, nsizes, date);
   load_engines(&o);
   for (int p = 0; p < NPREC; p++) engines += g_reg[p].nsel;
   if (o.list) {
@@ -883,7 +937,6 @@ int main(int argc, char **argv) {
 
   g_counted = bench_platform_init(o.pin);
   for (int i = 0; i < 1000; i++) sample_overhead();
-  if (utc) strftime(date, sizeof date, "%Y-%m-%dT%H:%M:%SZ", utc);
   if (!o.have_seed) {
     bench_snap_begin(&clock_now);
     o.seed = (unsigned long)((clock_now.ns ^ (clock_now.ns >> 32) ^ ((uint64_t)now << 20)) & 0xFFFFFFFFu);

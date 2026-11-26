@@ -1,6 +1,7 @@
 """Build bench_fft and pffft shared libraries for a machine, and run them there.
 
-A target is a machine that runs bench_fft: this computer (LocalTarget), an
+A target is a machine that runs bench_fft: this computer (LocalTarget), this
+Mac running x86-64 code under Rosetta (RosettaTarget, for results only), an
 Android phone (target_android.py) or an iPhone (target_ios.py). Everything is
 built on this computer, in <repo>/build_bench_cache/ (ignored by git):
 
@@ -9,6 +10,8 @@ built on this computer, in <repo>/build_bench_cache/ (ignored by git):
     <target>/harness-fftw-worktree/  the same, with FFTW (fftw=True)
     <target>/lib-<commit>/           pffft of a revision as a shared library
     <target>/lib-worktree/           the same, from the working tree
+    <target>/lib-split-<commit>/     the same, splitting every array of more
+                                     than 1 KiB (accuracy.py)
     fftw-<target>/                   FFTW built by build_fftw.py for the target
 
 A revision's export and build are kept by commit hash; the working tree ('.')
@@ -87,14 +90,16 @@ class Target:
         cmake_build(src, build, args, "bench_fft")
         return find_file(build, ("bench_fft", "bench_fft.exe"))
 
-    def build_lib(self, src: Path, label: str) -> Path:
+    def build_lib(self, src: Path, label: str, cmake_args=(), variant: str = "") -> Path:
         """Build pffft from source tree src as a shared library for this target,
         with that tree's own CMake; return the library file on this computer.
         label is a short name, unique within one run and safe in file names: a
-        remote target can use it to name the copy on the device."""
-        build = build_dir(self.name, "lib", src)
+        remote target can use it to name the copy on the device. A variant
+        (e.g. "split") is built with cmake_args added, in a directory of its
+        own."""
+        build = build_dir(self.name, f"lib{'-' + variant if variant else ''}", src)
         try:
-            cmake_build(src, build, LIB_ARGS + self.cmake_args, "PFFFT")
+            cmake_build(src, build, LIB_ARGS + self.cmake_args + list(cmake_args), "PFFFT")
             return find_file(build, LIB_NAMES)
         except Error as e:
             if src == REPO:
@@ -111,17 +116,19 @@ class Target:
 
 
 def make_target(spec: str) -> Target:
-    """'local', 'android[:serial]' or 'ios[:udid]'."""
+    """'local', 'rosetta[:arch]', 'android[:serial]' or 'ios[:udid]'."""
     kind, _, device = spec.partition(":")
     if kind == "local" and not device:
         return LocalTarget()
+    if kind == "rosetta":
+        return RosettaTarget(device or "haswell")
     if kind == "android":
         import target_android
         return target_android.AndroidTarget(device or None)
     if kind == "ios":
         import target_ios
         return target_ios.IosTarget(device or None)
-    raise Error(f"unknown target '{spec}': expected local, android[:serial] or ios[:udid]")
+    raise Error(f"unknown target '{spec}': expected local, rosetta[:arch], android[:serial] or ios[:udid]")
 
 
 def call(*cmd, check: bool = True) -> str:
@@ -236,6 +243,32 @@ class LocalTarget(Target):
     def run(self, harness, bench_args, libs=None):
         cmd = [str(harness), *bench_args, *lib_options(libs), "--csv", "-"]
         p = subprocess.run(cmd, stdout=subprocess.PIPE, text=True)
+        return console_csv(p.stdout, p.returncode, cmd)
+
+
+class RosettaTarget(Target):
+    """x86-64 code on an Apple arm64 Mac, run by Rosetta 2 with AVX, AVX2 and
+    FMA advertised (ROSETTA_ADVERTISE_AVX=1, macOS 15 on), built for -march=arch
+    (default haswell: AVX2 and FMA). For checking results, as accuracy.py does
+    for the x86 SIMD code: timings under translation say nothing about an x86
+    CPU."""
+
+    def __init__(self, arch: str):
+        import platform
+        if sys.platform != "darwin" or platform.machine() != "arm64":
+            raise Error("the rosetta target needs an Apple arm64 Mac")
+        self.name = f"rosetta-{arch}"
+        self.cmake_args = ["-DCMAKE_OSX_ARCHITECTURES=x86_64", "-DCMAKE_SYSTEM_NAME=Darwin",
+                           "-DCMAKE_SYSTEM_PROCESSOR=x86_64",  # older revisions enable SSE only if it is set
+                           f"-DTARGET_C_ARCH={arch}"]
+
+    def fftw_build_args(self):
+        raise Error("no FFTW for the rosetta target")
+
+    def run(self, harness, bench_args, libs=None):
+        cmd = [str(harness), *bench_args, *lib_options(libs), "--csv", "-"]
+        env = dict(os.environ, ROSETTA_ADVERTISE_AVX="1")
+        p = subprocess.run(cmd, stdout=subprocess.PIPE, text=True, env=env)
         return console_csv(p.stdout, p.returncode, cmd)
 
 
