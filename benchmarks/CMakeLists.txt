@@ -162,7 +162,7 @@ foreach (prec ${bench_precisions})
   list(APPEND bench_objects $<TARGET_OBJECTS:bench_engines_${prec}>)
 endforeach()
 
-add_executable(bench_fft bench_fft.c platform.c bench.h ${bench_objects})
+add_executable(bench_fft bench_fft.c platform.c accuracy.c bench.h ${bench_objects})
 bench_target_setup(bench_fft)
 foreach (prec ${bench_precisions})
   target_compile_definitions(bench_fft PRIVATE BENCH_HAVE_${prec})

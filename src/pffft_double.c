@@ -139,8 +139,6 @@
 #define FUNC_REAL_FINALIZE         pffftd_real_finalize
 #define FUNC_TRANSFORM_INTERNAL    pffftd_transform_internal
 
-#define FUNC_COS  cos
-#define FUNC_SIN  sin
 
 
 #include "pffft_priv_impl.h"

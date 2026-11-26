@@ -1951,6 +1951,42 @@ static int decompose(int n, int *ifac, const int *ntryh) {
 
 
 
+/*
+  cos and sin of 2*pi*m/n, for every twiddle table of the setup.
+
+  m is reduced exactly, in integers, to the first quadrant and then to an
+  angle of at most pi/4, and only that angle is rounded, once, in double
+  precision: the twiddles are within about an ulp of double precision (and
+  as good as rounded in single). Computing cos(fi*(ld*(2*pi/n))) instead
+  rounds the angle three times and leaves an error proportional to it, up
+  to several ulps near 2*pi; that error is the same in every transform of
+  the setup, so it adds up over the passes rather than averaging out, and
+  it was most of the error of the f64 transforms (complex 98304: 7.0e-16
+  against an exact transform, 2.7e-16 with these twiddles).
+  0 <= m, 0 < n, and 4*m must not overflow (n <= 2^26 in FUNC_NEW_SETUP).
+*/
+static void cos_sin_2pi_ps(int m, int n, float *c, float *s) {
+  int q, r, swap = 0;
+  double x, cx, sx, t;
+  m %= n;
+  q = (4*m) / n;               /* the angle is (q + r/n)*pi/2, 0 <= r < n */
+  r = 4*m - q*n;
+  if (2*r > n) {               /* pi/2*r/n = pi/2 - pi/2*(n - r)/n */
+    r = n - r;
+    swap = 1;
+  }
+  x = (0.5*M_PI*r) / n;        /* 0 <= x <= pi/4 */
+  cx = cos(x);
+  sx = sin(x);
+  if (swap) { t = cx; cx = sx; sx = t; }
+  switch (q) {
+    case 0:  *c = (float)cx;  *s = (float)sx;  break;
+    case 1:  *c = (float)-sx; *s = (float)cx;  break;
+    case 2:  *c = (float)-cx; *s = (float)-sx; break;
+    default: *c = (float)sx;  *s = (float)-cx; break;
+  }
+}
+
 /* the largest transform, in bytes per array of n vectors, that takes a
    radix-6 instead of a radix-8 pass where it can (see rffti1_ps) */
 #define RADIX6_MAX_BYTES 32768
@@ -1992,7 +2028,6 @@ static void rffti1_ps(int n, float *wa, int *ifac)
     ifac[1] = --nf;
   }
 
-  float argh = (2*(float)M_PI) / n;
   int is = 0;
   int nfm1 = nf - 1;
   int l1 = 1;
@@ -2003,15 +2038,12 @@ static void rffti1_ps(int n, float *wa, int *ifac)
     int ido = n / l2;
     int ipm = ip - 1;
     for (j = 1; j <= ipm; ++j) {
-      float argld;
       int i = is, fi=0;
       ld += l1;
-      argld = ld*argh;
       for (ii = 3; ii <= ido; ii += 2) {
         i += 2;
         fi += 1;
-        wa[i - 2] = FUNC_COS(fi*argld);
-        wa[i - 1] = FUNC_SIN(fi*argld);
+        cos_sin_2pi_ps(fi*ld, n, &wa[i - 2], &wa[i - 1]);
       }
       is += ido;
     }
@@ -2062,7 +2094,6 @@ static void cffti1_ps(int n, float *wa, int *ifac)
     }
   }
 
-  float argh = (2*(float)M_PI) / n;
   int i = 1;
   int l1 = 1;
   for (k1=1; k1<=nf; k1++) {
@@ -2073,17 +2104,14 @@ static void cffti1_ps(int n, float *wa, int *ifac)
     int idot = ido + ido + 2;
     int ipm = ip - 1;
     for (j=1; j<=ipm; j++) {
-      float argld;
       int i1 = i, fi = 0;
       wa[i-1] = 1;
       wa[i] = 0;
       ld += l1;
-      argld = ld*argh;
       for (ii = 4; ii <= idot; ii += 2) {
         i += 2;
         fi += 1;
-        wa[i-1] = FUNC_COS(fi*argld);
-        wa[i] = FUNC_SIN(fi*argld);
+        cos_sin_2pi_ps(fi*ld, n, &wa[i-1], &wa[i]);
       }
       if (ip > 16) {
         wa[i1-1] = wa[i-1];
@@ -2719,9 +2747,10 @@ SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
     int i = k/SIMD_SZ;
     int j = k%SIMD_SZ;
     for (m=0; m < SIMD_SZ-1; ++m) {
-      float A = -2*(float)M_PI*(m+1)*k / N;
-      s->e[(2*(i*3 + m) + 0) * SIMD_SZ + j] = FUNC_COS(A);
-      s->e[(2*(i*3 + m) + 1) * SIMD_SZ + j] = FUNC_SIN(A);
+      /* cos and sin of -2*pi*(m+1)*k/N */
+      float *c = &s->e[(2*(i*3 + m) + 0) * SIMD_SZ + j], *sn = &s->e[(2*(i*3 + m) + 1) * SIMD_SZ + j];
+      cos_sin_2pi_ps((m+1)*k, N, c, sn);
+      *sn = -*sn;
     }
   }
 

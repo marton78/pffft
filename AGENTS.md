@@ -56,11 +56,52 @@ ctest -R bench_fft                                      # its smoke tests
 # Measure a change against master (from the repository root)
 python3 benchmarks/compare.py master .
 
+# Check its accuracy against master (see "Accuracy checks" below)
+python3 benchmarks/accuracy.py master . --bits    # must give master's bits
+python3 benchmarks/accuracy.py master .           # may differ, must not be less accurate
+
 # Debug with AddressSanitizer (must rebuild)
 cmake -DPFFFT_USE_DEBUG_ASAN=ON ..
 cmake --build .
 ctest
 ```
+
+## Accuracy checks
+
+`benchmarks/accuracy.py REV_A REV_B` builds both revisions and measures their
+error against an exact (double-double) FFT on the same random inputs, forward
+and backward, and checks bit for bit that split and unsplit builds, in-place
+and out-of-place, ordered and transform + reorder agree; docs/accuracy.md
+describes it. Accuracy depends on the instruction set and the compiler, not
+on the CPU model, so unlike timing it needs neither the phones nor the GitHub
+runners for most changes. Which check a change needs:
+
+- **Every change:** `ctest` runs `test_accuracy` and `test_accuracy_split`
+  (under a second): the bitwise equivalences and absolute error limits of the
+  build at hand. CI runs them on every backend it builds, emulators included.
+- **Changes that move data but compute nothing new** (reordering, loads and
+  stores, prefetch, loop structure, unrolling, thresholds that choose between
+  paths that give the same bits): `accuracy.py master . --bits`. B must give
+  master's bits in every case. No exact transform is computed: seconds.
+- **Changes to the arithmetic** (FMA placement, another radix or factor
+  order, twiddles, scaling): while iterating, `accuracy.py master . --sizes
+  LIST --max 65536` with the lengths the change touches (seconds); before the
+  PR, the full default run (all lengths to 2^22, a few minutes on an M2),
+  once per instruction set whose code changed: NEON natively on an Apple
+  Mac, SSE/AVX/FMA on the same Mac under Rosetta (configure with
+  `-DCMAKE_OSX_ARCHITECTURES=x86_64` and run with `ROSETTA_ADVERTISE_AVX=1`;
+  accuracy needs no timing). Add one gcc run (an x86 or Arm Linux runner),
+  as gcc contracts `a*b+c` into FMA by default where clang and MSVC do not.
+  The phones run the same NEON code with the same compiler: not needed.
+- **Twiddles or anything in the setup:** the full run in both precisions;
+  they affect every length.
+
+Judge the forward and backward errors only. The round trip is shown, not
+judged: the backward pass uses the forward pass's twiddles conjugated, so
+their errors largely cancel in it. Do not compare double precision against
+another FFT library in double (PocketFFT, FFTW): their error is the size of
+pffft's and correlated with it, which rewards resembling them rather than
+being accurate.
 
 ## Code Style Guidelines
 

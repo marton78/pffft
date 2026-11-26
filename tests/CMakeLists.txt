@@ -63,6 +63,27 @@ endforeach()
 
 ######################################################
 
+# The accuracy against an exact FFT and the bitwise equivalences of this
+# build (benchmarks/accuracy.c, docs/accuracy.md), also of the split
+# transforms: a program of its own, so that it runs without the benchmarks
+foreach( variant "" _split )
+  add_executable( test_accuracy${variant} test_accuracy.c ${PFFFT_SOURCE_DIR}/benchmarks/accuracy.c )
+  target_include_directories( test_accuracy${variant} PRIVATE ${PFFFT_SOURCE_DIR}/benchmarks )
+  if (PFFFT_USE_TYPE_FLOAT)
+    target_compile_definitions( test_accuracy${variant} PRIVATE BENCH_HAVE_F32 )
+  endif()
+  if (PFFFT_USE_TYPE_DOUBLE)
+    target_compile_definitions( test_accuracy${variant} PRIVATE BENCH_HAVE_F64 )
+  endif()
+  if (EMSCRIPTEN)
+    target_link_options( test_accuracy${variant} PRIVATE "-sALLOW_MEMORY_GROWTH=1" )
+  endif()
+endforeach()
+target_link_libraries( test_accuracy  PFFFT ${ASANLIB} ${MATHLIB} )
+target_link_libraries( test_accuracy_split  PFFFT_SPLIT_TEST ${ASANLIB} ${MATHLIB} )
+
+######################################################
+
 add_executable( test_fft_factors  test_fft_factors.c )
 if (PFFFT_USE_TYPE_FLOAT)
   target_compile_definitions(test_fft_factors PRIVATE PFFFT_ENABLE_FLOAT)
@@ -176,6 +197,13 @@ add_test(NAME test_fft_factors
   COMMAND test_fft_factors
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
+
+foreach( variant "" _split )
+  add_test(NAME test_accuracy${variant}
+    COMMAND test_accuracy${variant}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )
+endforeach()
 
 if (PFFFT_USE_FFTPACK)
   add_test(NAME test_fftpack_float

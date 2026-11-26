@@ -128,8 +128,6 @@
 #define FUNC_REAL_FINALIZE         pffft_real_finalize
 #define FUNC_TRANSFORM_INTERNAL    pffft_transform_internal
 
-#define FUNC_COS  cosf
-#define FUNC_SIN  sinf
 
 
 #include "pffft_priv_impl.h"

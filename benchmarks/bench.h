@@ -124,6 +124,30 @@ int bench_lib_engines_f32(const char *label, const char *path,
 int bench_lib_engines_f64(const char *label, const char *path,
                           bench_engine *list, int max, char *err, size_t errlen);
 
+/* ------------------------------------------------------------------------
+ * accuracy.c: bench_fft --accuracy
+ * ---------------------------------------------------------------------- */
+
+/* A pffft to check: lib is a library from bench_dl_open(), or NULL for the
+ * pffft linked into this program. */
+typedef struct bench_accuracy_lib {
+  const char *label;
+  void *lib;
+} bench_accuracy_lib;
+
+/* The column line of the CSV that bench_accuracy() writes. */
+void bench_accuracy_columns(FILE *csv);
+
+/* Measures every library at every case selected by prec[2] (f32, f64),
+ * xform[2] (real, cplx) and sizes, with inputs derived from seed that make
+ * at least seeds * 4096 points per case; writes a CSV row per library and
+ * case to csv (if not NULL) and the failures to stderr. With bits_only, no
+ * errors against the exact transform: only the checks and the hashes.
+ * Returns the number of failed checks, or nonzero if nothing could be
+ * measured. accuracy.c describes the measures. */
+int bench_accuracy(FILE *csv, const bench_accuracy_lib *libs, int nlibs, const int *sizes, int nsizes,
+                   const int *prec, const int *xform, int seeds, unsigned long seed, int bits_only);
+
 /* Set by --fftw-measure-max: the largest size that the "fftw-meas" engine
  * plans with FFTW_MEASURE; above it the engine reports the case as
  * unsupported. Defined in bench_fft.c. */
