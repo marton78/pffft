@@ -173,7 +173,8 @@ void bench_tune_apply(const bench_tune *tune, bench_tuning *t) {
   if (!tune) return;
   if (tune->set & BENCH_TUNE_SPLIT_REAL) t->split_max_real = tune->tuning.split_max_real;
   if (tune->set & BENCH_TUNE_SPLIT_COMPLEX) t->split_max_complex = tune->tuning.split_max_complex;
-  if (tune->set & BENCH_TUNE_PREFETCH_MIN) t->prefetch_min = tune->tuning.prefetch_min;
+  if (tune->set & BENCH_TUNE_PREFETCH_REAL) t->prefetch_min_real = tune->tuning.prefetch_min_real;
+  if (tune->set & BENCH_TUNE_PREFETCH_COMPLEX) t->prefetch_min_complex = tune->tuning.prefetch_min_complex;
   if (tune->set & BENCH_TUNE_RADIX6_MAX) t->radix6_max = tune->tuning.radix6_max;
 }
 
@@ -182,7 +183,9 @@ int bench_tune_parse(const char *spec, bench_tune *tune, char *err, size_t errle
     {"split", BENCH_TUNE_SPLIT_REAL | BENCH_TUNE_SPLIT_COMPLEX},
     {"split_real", BENCH_TUNE_SPLIT_REAL},
     {"split_complex", BENCH_TUNE_SPLIT_COMPLEX},
-    {"prefetch", BENCH_TUNE_PREFETCH_MIN},
+    {"prefetch", BENCH_TUNE_PREFETCH_REAL | BENCH_TUNE_PREFETCH_COMPLEX},
+    {"prefetch_real", BENCH_TUNE_PREFETCH_REAL},
+    {"prefetch_complex", BENCH_TUNE_PREFETCH_COMPLEX},
     {"radix6", BENCH_TUNE_RADIX6_MAX},
   };
   const char *p = spec;
@@ -201,7 +204,7 @@ int bench_tune_parse(const char *spec, bench_tune *tune, char *err, size_t errle
     for (k = 0; k < sizeof keys / sizeof keys[0]; k++)
       if (!strcmp(key, keys[k].key)) set = keys[k].set;
     if (!set) {
-      snprintf(err, errlen, "unknown key '%s' (split, split_real, split_complex, prefetch, radix6)", key);
+      snprintf(err, errlen, "unknown key '%s' (split, split_real, split_complex, prefetch, prefetch_real, prefetch_complex, radix6)", key);
       return -1;
     }
     p += len + 1;
@@ -232,7 +235,8 @@ int bench_tune_parse(const char *spec, bench_tune *tune, char *err, size_t errle
     tune->set |= set;
     if (set & BENCH_TUNE_SPLIT_REAL) tune->tuning.split_max_real = (size_t)v;
     if (set & BENCH_TUNE_SPLIT_COMPLEX) tune->tuning.split_max_complex = (size_t)v;
-    if (set & BENCH_TUNE_PREFETCH_MIN) tune->tuning.prefetch_min = (size_t)v;
+    if (set & BENCH_TUNE_PREFETCH_REAL) tune->tuning.prefetch_min_real = (size_t)v;
+    if (set & BENCH_TUNE_PREFETCH_COMPLEX) tune->tuning.prefetch_min_complex = (size_t)v;
     if (set & BENCH_TUNE_RADIX6_MAX) tune->tuning.radix6_max = (size_t)v;
     p = *end ? end + 1 : end;
   }
@@ -240,11 +244,12 @@ int bench_tune_parse(const char *spec, bench_tune *tune, char *err, size_t errle
 }
 
 void bench_tuning_format(const bench_tuning *t, char *buf, size_t n) {
-  static const char *const names[4] = {"split_real", "split_complex", "prefetch", "radix6"};
-  const size_t values[4] = {t->split_max_real, t->split_max_complex, t->prefetch_min, t->radix6_max};
+  static const char *const names[5] = {"split_real", "split_complex", "prefetch_real", "prefetch_complex", "radix6"};
+  const size_t values[5] = {t->split_max_real, t->split_max_complex, t->prefetch_min_real, t->prefetch_min_complex,
+                            t->radix6_max};
   size_t used = 0;
   buf[0] = 0;
-  for (int k = 0; k < 4 && used < n; k++) {
+  for (int k = 0; k < 5 && used < n; k++) {
     if (t->size < (size_t)(k + 2) * sizeof(size_t)) break; /* beyond what the library knows */
     if (values[k] == BENCH_TUNE_NEVER)
       used += (size_t)snprintf(buf + used, n - used, "%s%s=never", k ? "," : "", names[k]);

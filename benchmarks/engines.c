@@ -100,12 +100,14 @@ static pffft_tuning_t tuned(const bench_tune *tune)
   b.size = t.size;
   b.split_max_real = t.split_max_real;
   b.split_max_complex = t.split_max_complex;
-  b.prefetch_min = t.prefetch_min;
+  b.prefetch_min_real = t.prefetch_min_real;
+  b.prefetch_min_complex = t.prefetch_min_complex;
   b.radix6_max = t.radix6_max;
   bench_tune_apply(tune, &b);
   t.split_max_real = b.split_max_real;
   t.split_max_complex = b.split_max_complex;
-  t.prefetch_min = b.prefetch_min;
+  t.prefetch_min_real = b.prefetch_min_real;
+  t.prefetch_min_complex = b.prefetch_min_complex;
   t.radix6_max = b.radix6_max;
   return t;
 }

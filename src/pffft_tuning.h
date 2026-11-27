@@ -63,13 +63,14 @@ typedef struct tuning_row {
   const char *name;
   int arch;
   unsigned vendor, id_min, id_max;
-  tuning_rule split_max_real, split_max_complex, prefetch_min, radix6_max;
+  tuning_rule split_max_real, split_max_complex, prefetch_min_real, prefetch_min_complex, radix6_max;
 } tuning_row;
 
 /* The columns (tuning_row):
    name, arch, vendor (0: any), first and last id, then the thresholds
    (bytes per array of the transform):
-   split_max_real, split_max_complex, prefetch_min, radix6_max.
+   split_max_real, split_max_complex, prefetch_min_real, prefetch_min_complex,
+   radix6_max.
    radix6_max is 32 KiB everywhere: 0, 8, 16 or 64 KiB were not faster on any
    machine measured (Xeon 6975P-C, Core i7-8700B, EPYC 7763, 9V45, Neoverse
    N2, Apple M2: within -1.4 and +0.4% at the real lengths with a factor 3
@@ -82,9 +83,17 @@ static const tuning_row tuning_rows[] = {
      Zen 5: +7.0, +10.3, +7.9%; 1 MiB +2.8, +8.4, +3.0%). No prefetches: they cost
      the 7763 4 to 9% from 4K to 64K points (#129, 2026 sweep). */
   {"AMD Zen", PFFFT_CPU_X86, X86_AMD, 0x1700, 0x1FFF,
-   BYTES(8 * MIB), BYTES(8 * MIB), NEVER, BYTES(32 * KIB)},
+   BYTES(8 * MIB), BYTES(8 * MIB), NEVER, NEVER, BYTES(32 * KIB)},
   {"Hygon Dhyana", PFFFT_CPU_X86, X86_HYGON, 0x1800, 0x18FF,
-   BYTES(8 * MIB), BYTES(8 * MIB), NEVER, BYTES(32 * KIB)},
+   BYTES(8 * MIB), BYTES(8 * MIB), NEVER, NEVER, BYTES(32 * KIB)},
+  /* Intel Ice Lake server cores (Xeon 8370C, model 0x6a; and 0x6c): complex
+     transforms prefetch only from 1 MiB on. Prefetching them from 24 KiB on cost
+     f32 complex 2.4% (MSVC; up to 6% at 4K-64K), and never prefetching them cost
+     f64 complex up to 3% above 1 MiB; 1 MiB keeps f32 and f64 at their best
+     (+0.1 and +0.7% against never). The Xeon 6975P-C, 8573C and Core i7-8700B
+     gain from complex prefetches at half their L1 data cache, as for real ones. */
+  {"Intel Ice Lake server", PFFFT_CPU_X86, X86_INTEL, 0x066a, 0x066c,
+   BYTES(1 * MIB), BYTES(1 * MIB), CACHE(1, 1, 2, 24 * KIB), BYTES(1 * MIB), BYTES(32 * KIB)},
   /* Intel, and every other x86: splitting from 1 MiB (against never splitting,
      n = 65536 to 4194304: Xeon 6975P-C +31.1%, Platinum 8573C +19.5%, 8370C
      +17.3%, Core i7-8700B +14.0%). 512 KiB did as well on average at those
@@ -94,33 +103,33 @@ static const tuning_row tuning_rows[] = {
      (48 KiB L1d), 16 KiB on the Core i7 (32 KiB, +0.6% from 1024 to 8192 points
      against 24 KiB, f64 real +1.6%). */
   {"x86", PFFFT_CPU_X86, 0, 0, 0xFFFFFFFF,
-   BYTES(1 * MIB), BYTES(1 * MIB), CACHE(1, 1, 2, 24 * KIB), BYTES(32 * KIB)},
+   BYTES(1 * MIB), BYTES(1 * MIB), CACHE(1, 1, 2, 24 * KIB), CACHE(1, 1, 2, 24 * KIB), BYTES(32 * KIB)},
 
   /* ---- Arm ----
-     Apple: from 8 MiB (M2: real +10.7%, complex +17.8% against never splitting;
+     Apple: from 8 MiB (M2: real +10.7%, complex +17.0% against never splitting;
      A13 alike). Complex transforms split from 4 MiB gained 1% at 65536 to 10^6
      points and lost 1 to 5% above, where they split once more (M2 and A13). */
   {"Apple", PFFFT_CPU_ARM, 0x61, 0, 0xFFFFFFFF,
-   BYTES(8 * MIB), BYTES(8 * MIB), NEVER, BYTES(32 * KIB)},
+   BYTES(8 * MIB), BYTES(8 * MIB), NEVER, NEVER, BYTES(32 * KIB)},
   /* Arm Neoverse servers (N1 0xd0c, V1 0xd40, N2 0xd49, V2 0xd4f, V3AE and V3
      0xd83-0xd84, N3 0xd8e; the Cobalt 100 is an N2 by Microsoft): a large, fast
      system cache. Real transforms never split (Neoverse N2, Cobalt 100: no
      threshold of 256 KiB to 16 MiB gained), complex ones from 8 MiB (+2.2 and
-     +4.3% against never splitting; 2026: +2.7 and +2.2%). */
+     +4.3% against never splitting; in a later sweep +1.9 and +1.3%). */
   {"Arm Neoverse N1", PFFFT_CPU_ARM, 0x41, 0xd0c, 0xd0c,
-   NEVER, BYTES(8 * MIB), NEVER, BYTES(32 * KIB)},
+   NEVER, BYTES(8 * MIB), NEVER, NEVER, BYTES(32 * KIB)},
   {"Arm Neoverse", PFFFT_CPU_ARM, 0x41, 0xd40, 0xd40,
-   NEVER, BYTES(8 * MIB), NEVER, BYTES(32 * KIB)},
+   NEVER, BYTES(8 * MIB), NEVER, NEVER, BYTES(32 * KIB)},
   {"Arm Neoverse", PFFFT_CPU_ARM, 0x41, 0xd49, 0xd49,
-   NEVER, BYTES(8 * MIB), NEVER, BYTES(32 * KIB)},
+   NEVER, BYTES(8 * MIB), NEVER, NEVER, BYTES(32 * KIB)},
   {"Arm Neoverse", PFFFT_CPU_ARM, 0x41, 0xd4f, 0xd4f,
-   NEVER, BYTES(8 * MIB), NEVER, BYTES(32 * KIB)},
+   NEVER, BYTES(8 * MIB), NEVER, NEVER, BYTES(32 * KIB)},
   {"Arm Neoverse", PFFFT_CPU_ARM, 0x41, 0xd83, 0xd84,
-   NEVER, BYTES(8 * MIB), NEVER, BYTES(32 * KIB)},
+   NEVER, BYTES(8 * MIB), NEVER, NEVER, BYTES(32 * KIB)},
   {"Arm Neoverse", PFFFT_CPU_ARM, 0x41, 0xd8e, 0xd8e,
-   NEVER, BYTES(8 * MIB), NEVER, BYTES(32 * KIB)},
+   NEVER, BYTES(8 * MIB), NEVER, NEVER, BYTES(32 * KIB)},
   {"Microsoft Cobalt 100", PFFFT_CPU_ARM, 0x6d, 0xd49, 0xd49,
-   NEVER, BYTES(8 * MIB), NEVER, BYTES(32 * KIB)},
+   NEVER, BYTES(8 * MIB), NEVER, NEVER, BYTES(32 * KIB)},
   /* Arm's Cortex-A, Cortex-X and C1 cores (part numbers from Linux's cputype.h),
      as in phones: from 256 KiB (MediaTek MT6878, Cortex-A78: real +22.6%,
      complex +21.1% against never splitting, the best of 128 KiB to 16 MiB; at the
@@ -129,31 +138,31 @@ static const tuning_row tuning_rows[] = {
      (complex) at 256 KiB, and 1.3% more at 128 KiB: small in-order cores may
      deserve a row of their own once more of them are measured. */
   {"Arm Cortex", PFFFT_CPU_ARM, 0x41, 0xc00, 0xd0b,
-   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, BYTES(32 * KIB)},
+   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, NEVER, BYTES(32 * KIB)},
   {"Arm Cortex", PFFFT_CPU_ARM, 0x41, 0xd0d, 0xd3f,
-   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, BYTES(32 * KIB)},
+   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, NEVER, BYTES(32 * KIB)},
   {"Arm Cortex", PFFFT_CPU_ARM, 0x41, 0xd41, 0xd48,
-   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, BYTES(32 * KIB)},
+   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, NEVER, BYTES(32 * KIB)},
   {"Arm Cortex", PFFFT_CPU_ARM, 0x41, 0xd4a, 0xd4e,
-   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, BYTES(32 * KIB)},
+   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, NEVER, BYTES(32 * KIB)},
   {"Arm Cortex", PFFFT_CPU_ARM, 0x41, 0xd80, 0xd82,
-   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, BYTES(32 * KIB)},
+   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, NEVER, BYTES(32 * KIB)},
   {"Arm Cortex", PFFFT_CPU_ARM, 0x41, 0xd85, 0xd8d,
-   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, BYTES(32 * KIB)},
+   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, NEVER, BYTES(32 * KIB)},
   {"Arm C1", PFFFT_CPU_ARM, 0x41, 0xd90, 0xd90,
-   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, BYTES(32 * KIB)},
+   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, NEVER, BYTES(32 * KIB)},
   /* other Arm CPUs: on Android as the phones, elsewhere as the servers */
 #if defined(__ANDROID__)
   {"Arm, other (Android)", PFFFT_CPU_ARM, 0, 0, 0xFFFFFFFF,
-   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, BYTES(32 * KIB)},
+   BYTES(256 * KIB), BYTES(256 * KIB), NEVER, NEVER, BYTES(32 * KIB)},
 #else
   {"Arm, other", PFFFT_CPU_ARM, 0, 0, 0xFFFFFFFF,
-   NEVER, BYTES(8 * MIB), NEVER, BYTES(32 * KIB)},
+   NEVER, BYTES(8 * MIB), NEVER, NEVER, BYTES(32 * KIB)},
 #endif
 
   /* ---- anything else ---- */
   {"other", PFFFT_CPU_OTHER, 0, 0, 0xFFFFFFFF,
-   BYTES(8 * MIB), BYTES(8 * MIB), NEVER, BYTES(32 * KIB)},
+   BYTES(8 * MIB), BYTES(8 * MIB), NEVER, NEVER, BYTES(32 * KIB)},
 };
 
 #endif /* PFFFT_TUNING_H */

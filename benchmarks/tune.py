@@ -12,7 +12,8 @@ the same code side by side in one process:
 
   split     split_max_real and split_max_complex: 128 KiB to 16 MiB and never,
             at the lengths from 65536 to 4194304 points;
-  prefetch  prefetch_min (x86 only): 8 to 48 KiB and never, at 1024 to 262144;
+  prefetch  prefetch_min_real and prefetch_min_complex (x86 only): 8 to 64 KiB
+            and never, at 1024 to 262144;
   radix6    radix6_max: never (0) to 64 KiB, at the real lengths with a
             factor 3 from 1536 to 98304.
 
@@ -23,17 +24,26 @@ value within half a point of the default is not better: the row keeps the
 default where nothing beats it clearly. Run it twice; a row should rest on
 both runs. -o DIR keeps the CSVs.
 
+The prefetch thresholds are swept on x86 only, in a build for generic
+x86-64 (x86-64-v3, or -v2 without AVX2; MSVC: as for this CPU): a build for
+an AMD Zen CPU, as -march=native gives with gcc and clang, leaves the
+prefetching code out, and the row must also serve builds that have it.
+
 --quick: one launch, one trial, every other length (a few minutes).
---cmake ARGS: CMake arguments for the builds, e.g. "-DTARGET_C_ARCH=armv7-a
--DTARGET_C_EXTRA=neon_vfpv4" for NEON on a 32-bit Raspberry Pi, whose gcc
-does not enable it with the default (native). --max N: no lengths above N
-(for a machine with little memory: the 4194304-point complex transforms of
-all the values take about 1.5 GB in double precision).
+--cmake="ARGS": CMake arguments for the library, e.g.
+--cmake="-DTARGET_C_ARCH=armv7-a -DTARGET_C_EXTRA=neon_vfpv4" for NEON on a
+32-bit Raspberry Pi, whose gcc does not enable it with the default (native).
+--max N: no lengths above N (for a machine with little memory: the
+4194304-point complex transforms of all the values take about 1.5 GB in
+double precision).
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import math
+import os
+import platform
 import re
 import shlex
 import statistics
@@ -48,7 +58,7 @@ KIB, MIB = 1 << 10, 1 << 20
 
 # knob -> (tuning keys, values, kinds, sizes); 0 for radix6 is "no radix-6 pass"
 SPLIT_VALUES = [128 * KIB, 256 * KIB, 512 * KIB, MIB, 2 * MIB, 4 * MIB, 8 * MIB, 16 * MIB, NEVER]
-PREFETCH_VALUES = [8 * KIB, 12 * KIB, 16 * KIB, 24 * KIB, 32 * KIB, 48 * KIB, NEVER]
+PREFETCH_VALUES = [8 * KIB, 12 * KIB, 16 * KIB, 24 * KIB, 32 * KIB, 48 * KIB, 64 * KIB, NEVER]
 RADIX6_VALUES = [0, 8 * KIB, 16 * KIB, 32 * KIB, 64 * KIB]
 
 
@@ -93,7 +103,8 @@ def main() -> None:
     ap.add_argument("--trials", type=int, default=2)
     ap.add_argument("--prec", help="f32, f64 or f32,f64 (default: all built)")
     ap.add_argument("--quick", action="store_true", help="one launch, one trial, every other length")
-    ap.add_argument("--cmake", default="", help="CMake arguments for the builds (e.g. -DTARGET_C_ARCH=...)")
+    ap.add_argument("--cmake", default="", metavar='"ARGS"',
+                    help='CMake arguments for the library, as one value: --cmake="-DTARGET_C_ARCH=..."')
     ap.add_argument("--max", type=int, default=0, help="no lengths above this")
     ap.add_argument("-o", metavar="DIR", type=Path, help="write the CSV of each sweep to DIR")
     args = ap.parse_args()
@@ -107,8 +118,17 @@ def main() -> None:
     target = targets.make_target(args.target)
     commit, src = targets.export_rev(args.rev)
     extra = shlex.split(args.cmake)
-    harness = target.build_harness(targets.REPO, extra)
-    lib = target.build_lib(src, "tune", extra, "tune" if extra else "")
+    # the harness as always: the CMake cache of its shared build directory
+    # would keep the arguments for later runs of the other scripts
+    harness = target.build_harness(targets.REPO)
+    lib = build(target, src, extra)
+    if "prefetch" in knobs and not (args.target == "local" and x86_host()):
+        print("prefetch: not an x86 CPU, which has no prefetching code: skipped\n")
+        knobs.remove("prefetch")
+    if "prefetch" in knobs and any(re.match(r"-DPFFFT_(DISABLE_PREFETCH=(ON|1|TRUE)|USE_SIMD=(OFF|0|FALSE))", a, re.I)
+                                   for a in extra):
+        print("prefetch: --cmake leaves the prefetching code out: skipped\n")
+        knobs.remove("prefetch")
     if args.o:
         args.o.mkdir(parents=True, exist_ok=True)
 
@@ -118,22 +138,49 @@ def main() -> None:
             sweep = dict(keys=("split_real", "split_complex"), values=SPLIT_VALUES,
                          sizes=lengths(65536, 4194304), xforms="real,cplx")
         elif knob == "prefetch":
-            sweep = dict(keys=("prefetch",), values=PREFETCH_VALUES, sizes=lengths(1024, 262144),
+            sweep = dict(keys=("prefetch_real", "prefetch_complex"), values=PREFETCH_VALUES,
+                         sizes=lengths(1024, 262144),
                          xforms="real,cplx")
         else:
             sweep = dict(keys=("radix6",), values=RADIX6_VALUES, sizes=lengths(1536, 98304, odd=(3, 9, 15)),
                          xforms="real")
         sizes = [n for n in sweep["sizes"] if not args.max or n <= args.max]
         sizes = sizes[::2] if args.quick else sizes
-        meta, rows = run_sweep(target, harness, lib, knob, sweep, sizes, args)
-        if knob == "prefetch" and not meta.get("pffft_cpu", "").startswith("x86"):
-            print("prefetch: not an x86 CPU, the prefetches are compiled out: skipped\n")
-            continue
+        knob_lib = build(target, src, extra + generic_x86_args()) if knob == "prefetch" else lib
+        meta, rows = run_sweep(target, harness, knob_lib, knob, sweep, sizes, args)
         if args.o:
             results.write_csv(args.o / f"tune-{knob}.csv", meta, rows)
         best[knob] = report(knob, sweep, meta, rows)
 
     print_row(meta, best)
+
+
+def build(target, src, extra):
+    """The library of src with the CMake arguments extra, in a directory of its own per set of arguments."""
+    variant = "tune-" + hashlib.sha1(" ".join(extra).encode()).hexdigest()[:10] if extra else ""
+    return target.build_lib(src, "tune", extra, variant)
+
+
+def x86_host() -> bool:
+    return platform.machine().lower() in ("x86_64", "amd64", "i386", "i686", "x86")
+
+
+def generic_x86_args() -> list:
+    """TARGET_C_ARCH for a build with the prefetching code on this x86 CPU: x86-64-v3 where it has AVX2,
+    else -v2; nothing with MSVC, which never targets a CPU model."""
+    if os.name == "nt":
+        return []
+    flags = ""
+    try:
+        if sys.platform == "darwin":
+            import subprocess
+            flags = subprocess.run(["sysctl", "-n", "machdep.cpu.leaf7_features"], capture_output=True,
+                                   text=True).stdout.lower()
+        else:
+            flags = Path("/proc/cpuinfo").read_text().lower()
+    except OSError:
+        pass
+    return [f"-DTARGET_C_ARCH={'x86-64-v3' if 'avx2' in flags else 'x86-64-v2'}"]
 
 
 def run_sweep(target, harness, lib, knob, sweep, sizes, args):
@@ -160,8 +207,8 @@ def run_sweep(target, harness, lib, knob, sweep, sizes, args):
 def default_value(meta, knob, xform) -> int | None:
     """The default this CPU gets now, from the CSV header's "tuning default"."""
     text = meta.get("tuning default", "")
-    key = {"split": f"split_{'real' if xform == 'real' else 'complex'}", "prefetch": "prefetch",
-           "radix6": "radix6"}[knob]
+    kind = "real" if xform == "real" else "complex"
+    key = {"split": f"split_{kind}", "prefetch": f"prefetch_{kind}", "radix6": "radix6"}[knob]
     m = re.search(rf"\b{key}=(\w+)", text)
     if not m:
         return None
@@ -206,16 +253,6 @@ def report(knob, sweep, meta, rows) -> dict:
             mark = "  (default)" if v == default else ""
             print(spec_value(v).rjust(10) + "".join(f"{geomean_pct(g):+10.2f}" for g in per) + f"{pooled:+10.2f}{mark}")
         best[xform] = choose(scores, default)
-    if knob != "split" and len(best) > 1:
-        # one threshold for both kinds: pooled over them
-        default = default_value(meta, knob, "real")
-        scores = {}
-        for v in sweep["values"]:
-            engine = f"pffft@{knob}-{spec_value(v)}"
-            scores[v] = geomean_pct([g for xform in best for p in sorted({r["prec"] for r in rows})
-                                     for g in gains(rows, base, engine, p, xform)])
-        print(f"\n{knob}, both kinds:")
-        best["real"] = choose(scores, default)
     return best
 
 
@@ -230,11 +267,11 @@ def choose(scores: dict, default) -> int:
 def print_row(meta, best) -> None:
     cpu = meta.get("pffft_cpu", "")
     print(f"\npffft sees: {cpu or 'nothing (a revision from before the tuning?)'}")
-    m_x86 = re.match(r"x86 (\w+) family 0x([0-9a-f]+) model 0x([0-9a-f]+)", cpu)
+    m_x86 = re.match(r"x86 (.+?) family 0x([0-9a-f]+) model 0x([0-9a-f]+)", cpu)
     m_arm = re.match(r"Arm implementer 0x([0-9a-f]+) part 0x([0-9a-f]+)", cpu)
     if m_x86:
         vendor = {"GenuineIntel": "X86_INTEL", "AuthenticAMD": "X86_AMD", "HygonGenuine": "X86_HYGON"}.get(
-            m_x86.group(1), "0")
+            m_x86.group(1).strip(), "0")
         ident = f"0x{int(m_x86.group(2), 16):02x}{int(m_x86.group(3), 16):02x}"
         head = f'PFFFT_CPU_X86, {vendor}, {ident}, {ident}'
     elif m_arm:
@@ -243,12 +280,13 @@ def print_row(meta, best) -> None:
     else:
         head = "PFFFT_CPU_OTHER, 0, 0, 0xFFFFFFFF"
     dflt = {}
-    for key, knob, xform in (("split_real", "split", "real"), ("split_complex", "split", "cplx"),
-                             ("prefetch", "prefetch", "real"), ("radix6", "radix6", "real")):
+    keys = (("split_real", "split", "real"), ("split_complex", "split", "cplx"),
+            ("prefetch_real", "prefetch", "real"), ("prefetch_complex", "prefetch", "cplx"),
+            ("radix6", "radix6", "real"))
+    for key, knob, xform in keys:
         v = best.get(knob, {}).get(xform)
         dflt[key] = v if v is not None else default_value(meta, knob, xform)
-    vals = ", ".join(c_value(dflt[k]) if dflt[k] is not None else "?" for k in
-                     ("split_real", "split_complex", "prefetch", "radix6"))
+    vals = ", ".join(c_value(dflt[k]) if dflt[k] is not None else "?" for k, _, _ in keys)
     print(f"machine: {meta.get('cpu')}, {meta.get('os')}, {meta.get('compiler')}")
     print("row for src/pffft_tuning.h (above the row that matches now; ids as found, widen them\n"
           "to the family or the core type if you know it):\n")

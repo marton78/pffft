@@ -91,8 +91,9 @@ uv run --with matplotlib python3 benchmarks/plot.py mac-cmp.csv ios-cmp.csv --na
   of one commit run the same code. `--cmake LABEL="ARGS"` builds a label's
   library with more CMake arguments (`*` for every label), e.g. a generic
   x86 build or `-DPFFFT_PREFETCH_DIST=0`.
-- **tune.py** sweeps each threshold of pffft's tuning (split, prefetch on
-  x86, radix-6) over its range in one build, every value a `--tune` of the
+- **tune.py** sweeps each threshold of pffft's tuning (split and prefetch,
+  for real and complex transforms each, the prefetch on x86 only; radix-6)
+  over its range in one build, every value a `--tune` of the
   same library, and prints per kind and precision the speed of each value
   against the CPU's default, the best one, and the row for
   `src/pffft_tuning.h` (README: "Thresholds chosen for the CPU").

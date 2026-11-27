@@ -138,8 +138,9 @@ const char * FUNC_SIMD_ARCH(void) { return VARCH; }
   docs/benchmarks.md has the numbers. A read prefetch measured as good as one
   for writing (PREFETCHW), and every x86 with SSE has it.
 
-  - Passes over arrays of less than the setup's prefetch_min bytes
-    (pffft_tuning_t, 24 KiB by default) mostly stay in L1, where the
+  - Passes over arrays of less than the setup's prefetch_min_real or
+    prefetch_min_complex bytes (pffft_tuning_t, half the L1 data cache on
+    Intel, 24 KiB on its Xeons) mostly stay in L1, where the
     prefetches cost 0.5-5%. All passes of a transform write the same
     number of vectors, so the transform picks the kernels once (PF_CALL):
     f_pf_ps with the prefetches or f_ps without, both from one f_loop_ps
@@ -147,7 +148,7 @@ const char * FUNC_SIMD_ARCH(void) { return VARCH; }
     4% at small n.
   - Not in passf5_ps, where they cost more than they gave (see there).
   - AMD Zen cores did not gain (up to 6% slower with gcc and 14% with MSVC
-    at single lengths), so their prefetch_min is "never"
+    at single lengths), so their prefetch thresholds are "never"
     (pffft_tuning.h). A build whose compiler targets Zen
     (-march=znverN, which -march=native picks on compilers that know the
     CPU) leaves the prefetches out altogether, as PFFFT_PREFETCH_DIST=0
@@ -2715,7 +2716,7 @@ struct SETUP_STRUCT {
 };
 
 /* The thresholds that depend on the CPU (pffft_tuning_t, in bytes per
-   array): split_max_* for split_levels(), prefetch_min for pf_flags(),
+   array): split_max_* for split_levels(), prefetch_min_* for pf_flags(),
    radix6_max for rffti1_ps. */
 void pffft_priv_cpu_tuning(pffft_tuning_t *t); /* pffft_common.c */
 
@@ -2779,7 +2780,7 @@ static SETUP_STRUCT *new_setup(int N, pffft_transform_t transform, const pffft_t
     cffti1_ps(N/SIMD_SZ, s->twiddle, s->ifac);
   }
   array_bytes = 2*(size_t)s->Ncvec*sizeof(v4sf);
-  s->pf_min = t->prefetch_min;
+  s->pf_min = transform == PFFFT_REAL ? t->prefetch_min_real : t->prefetch_min_complex;
   s->pf = pf_flags(array_bytes, s->pf_min);
   s->split = 0;
   s->nf_odd = s->ifac[1] & 1;
@@ -2817,7 +2818,8 @@ SETUP_STRUCT *FUNC_NEW_SETUP_TUNED(int N, pffft_transform_t transform, const pff
     if (tuning->size >= offsetof(pffft_tuning_t, f) + sizeof t.f) t.f = tuning->f
     TUNING_FIELD(split_max_real);
     TUNING_FIELD(split_max_complex);
-    TUNING_FIELD(prefetch_min);
+    TUNING_FIELD(prefetch_min_real);
+    TUNING_FIELD(prefetch_min_complex);
     TUNING_FIELD(radix6_max);
 #undef TUNING_FIELD
   }

@@ -66,11 +66,13 @@ extern "C" {
     size_t split_max_real;
     /* the same for complex transforms */
     size_t split_max_complex;
-    /* x86: the passes over arrays of this size or more prefetch the lines
-       they write, the first pass of a backward real transform from half of
-       it on; without effect on other CPUs, and in builds with
-       PFFFT_PREFETCH_DIST=0 */
-    size_t prefetch_min;
+    /* x86: the passes of a real transform over arrays of this size or more
+       prefetch the lines they write, the first pass of a backward real
+       transform from half of it on; without effect on other CPUs, and in
+       builds with PFFFT_DISABLE_PREFETCH */
+    size_t prefetch_min_real;
+    /* the same for complex transforms */
+    size_t prefetch_min_complex;
     /* real transforms of arrays up to this size, whose length has a factor
        3, end with a radix-6 pass instead of a radix-8 one. The only field
        that changes the results (in the last bits): all others choose

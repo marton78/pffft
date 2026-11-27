@@ -135,7 +135,7 @@ int bench_lib_engines_f64(const char *label, const char *path,
  * any revision through pointers (engines.c, accuracy.c), and a library reads
  * only the fields within size, which it sets in its default tuning. */
 typedef struct bench_tuning {
-  size_t size, split_max_real, split_max_complex, prefetch_min, radix6_max;
+  size_t size, split_max_real, split_max_complex, prefetch_min_real, prefetch_min_complex, radix6_max;
 } bench_tuning;
 
 /* Changes to the default tuning of a library: the fields whose BENCH_TUNE_
@@ -147,19 +147,21 @@ typedef struct bench_tune {
 #define BENCH_TUNE_NEVER ((size_t)-1)
 #define BENCH_TUNE_SPLIT_REAL    1u
 #define BENCH_TUNE_SPLIT_COMPLEX 2u
-#define BENCH_TUNE_PREFETCH_MIN  4u
-#define BENCH_TUNE_RADIX6_MAX    8u
+#define BENCH_TUNE_PREFETCH_REAL    4u
+#define BENCH_TUNE_RADIX6_MAX       8u
+#define BENCH_TUNE_PREFETCH_COMPLEX 16u
 
 /* t with the changes of tune (NULL: none) */
 void bench_tune_apply(const bench_tune *tune, bench_tuning *t);
 
 /* Parses a --tune spec into tune: comma-separated KEY=VALUE, KEY one of
- * split (both kinds), split_real, split_complex, prefetch (prefetch_min) and
+ * split (both kinds), split_real, split_complex, prefetch (both kinds),
+ * prefetch_real, prefetch_complex and
  * radix6 (radix6_max), VALUE bytes with an optional suffix k or m (KiB,
  * MiB), or never. Returns 0, or -1 with the reason in err. */
 int bench_tune_parse(const char *spec, bench_tune *tune, char *err, size_t errlen);
 
-/* "split_real=...,split_complex=...,prefetch=...,radix6=..." of t, the
+/* "split_real=...,split_complex=...,prefetch_real=...,prefetch_complex=...,radix6=..." of t, the
  * fields within t->size; values in bytes, or never */
 void bench_tuning_format(const bench_tuning *t, char *buf, size_t n);
 

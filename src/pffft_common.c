@@ -365,7 +365,8 @@ void pffft_priv_cpu_tuning(pffft_tuning_t *t) {
   t->size = sizeof *t;
   t->split_max_real = rule_value(&r->split_max_real, &c);
   t->split_max_complex = rule_value(&r->split_max_complex, &c);
-  t->prefetch_min = rule_value(&r->prefetch_min, &c);
+  t->prefetch_min_real = rule_value(&r->prefetch_min_real, &c);
+  t->prefetch_min_complex = rule_value(&r->prefetch_min_complex, &c);
   t->radix6_max = rule_value(&r->radix6_max, &c);
 }
 

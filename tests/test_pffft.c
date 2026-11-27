@@ -823,9 +823,9 @@ int main(int argc, char **argv)
     if (!strcmp(argv[i], "--split")) {
       tuning.split_max_real = tuning.split_max_complex = 1024;
     } else if (!strcmp(argv[i], "--prefetch=all")) {
-      tuning.prefetch_min = 0;
+      tuning.prefetch_min_real = tuning.prefetch_min_complex = 0;
     } else if (!strcmp(argv[i], "--prefetch=none")) {
-      tuning.prefetch_min = (size_t)-1;
+      tuning.prefetch_min_real = tuning.prefetch_min_complex = (size_t)-1;
     } else {
       fprintf(stderr, "unknown option %s\n", argv[i]);
       return 1;
