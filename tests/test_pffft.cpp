@@ -501,6 +501,51 @@ MoveTest(int N)
 }
 #endif
 
+// Fft with a Tuning: the constructor and prepareLength() take it, and a
+// setup split into blocks of 1 KiB gives the bits of the default one (the
+// split transforms compute the same). Whether the tuning reached the setup
+// does not show in the results: test_pffft --split and test_accuracy --split
+// test the split transforms themselves.
+template<typename T>
+bool
+TuningTest(int N)
+{
+  typedef pffft::Fft<T> Fft;
+  typedef typename Fft::Complex FftComplex;
+
+  pffft::Tuning tuning = Fft::defaultTuning();
+  if (tuning.size != sizeof(pffft::Tuning)) {
+    printf("tuning: defaultTuning() has size %d\n", int(tuning.size));
+    return true;
+  }
+  tuning.split_max_real = tuning.split_max_complex = 1024;
+
+  Fft ref(N), split(N, tuning), again(N);
+  pffft::AlignedVector<T> X = ref.valueVector();
+  pffft::AlignedVector<FftComplex> Yref = ref.spectrumVector();
+  pffft::AlignedVector<FftComplex> Y = ref.spectrumVector();
+  for (int j = 0; j < N; ++j)
+    X[j] = T(0.5 * sin(0.37 * j) + 0.25 * cos(1.71 * j + 0.3));
+  ref.forward(X, Yref);
+
+  bool retError = false;
+  if (!split.isValid() || !again.prepareLength(N, tuning) || !again.isValid()) {
+    printf("tuning: no valid Fft with a tuning\n");
+    return true;
+  }
+  split.forward(X, Y);
+  if (memcmp(Y.data(), Yref.data(), Y.size() * sizeof(FftComplex))) {
+    printf("tuning: the split Fft transforms differently\n");
+    retError = true;
+  }
+  again.forward(X, Y);
+  if (memcmp(Y.data(), Yref.data(), Y.size() * sizeof(FftComplex))) {
+    printf("tuning: the re-prepared Fft transforms differently\n");
+    retError = true;
+  }
+  return retError;
+}
+
 bool
 test(int N, bool useComplex, bool useOrdered)
 {
@@ -656,7 +701,19 @@ main(int argc, char** argv)
     printf("Fft move semantics tests succeeded successfully.\n");
 #endif
 
-  resAll = resNextPw2 | resIsPw2 | resFFT | resZP | resAcc | resMove;
+  int resTuning = 0;
+#ifdef PFFFT_ENABLE_FLOAT
+  resTuning |= TuningTest<float>(4096);
+  resTuning |= TuningTest< ::std::complex<float> >(4096);
+#endif
+#ifdef PFFFT_ENABLE_DOUBLE
+  resTuning |= TuningTest<double>(4096);
+  resTuning |= TuningTest< ::std::complex<double> >(4096);
+#endif
+  if (!resTuning)
+    printf("Fft tuning tests succeeded successfully.\n");
+
+  resAll = resNextPw2 | resIsPw2 | resFFT | resZP | resAcc | resMove | resTuning;
   if (!resAll)
     printf("all tests succeeded successfully.\n");
   else

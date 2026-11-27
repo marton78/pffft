@@ -175,6 +175,26 @@ endif()
 
 ######################################################
 
+# split_depth (split_sim.py): the split depth that pffft's setup chooses per
+# length and threshold, from the library's sources (split_depth_prec.c
+# includes them, once per precision, to see the setup's fields)
+if (PFFFT_USE_TYPE_FLOAT AND PFFFT_USE_TYPE_DOUBLE)
+  add_library(split_depth_f32 OBJECT split_depth_prec.c)
+  add_library(split_depth_f64 OBJECT split_depth_prec.c)
+  target_compile_definitions(split_depth_f64 PRIVATE SPLIT_DEPTH_F64)
+  foreach (obj split_depth_f32 split_depth_f64)
+    target_include_directories(${obj} PRIVATE ${PFFFT_SOURCE_DIR}/include/pffft ${PFFFT_SOURCE_DIR}/src)
+    target_compile_definitions(${obj} PRIVATE PFFFT_STATIC_DEFINE)
+  endforeach()
+  add_executable(split_depth split_depth.c ${PFFFT_SOURCE_DIR}/src/pffft_common.c
+                 $<TARGET_OBJECTS:split_depth_f32> $<TARGET_OBJECTS:split_depth_f64>)
+  target_include_directories(split_depth PRIVATE ${PFFFT_SOURCE_DIR}/include/pffft)
+  target_compile_definitions(split_depth PRIVATE PFFFT_STATIC_DEFINE)
+  target_link_libraries(split_depth ${MATHLIB})
+endif()
+
+######################################################
+
 # bench_pf_mixer and bench_pf_conv: the benchmarks of the mixers (PFDSP) and
 # of the fast convolution (PFFASTCONV)
 

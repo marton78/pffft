@@ -103,6 +103,86 @@ another FFT library in double (PocketFFT, FFTW): their error is the size of
 pffft's and correlated with it, which rewards resembling them rather than
 being accurate.
 
+## Thresholds that depend on the CPU
+
+Some choices pay on one CPU and cost on another: from which array size a
+transform is split into blocks that fit the cache, from which size the
+passes prefetch what they write (x86), and up to which size a real
+transform ends with a radix-6 pass. They are not compile-time constants:
+`pffft_new_setup()` takes them from `pffft_default_tuning()`, which
+identifies the CPU (x86: `cpuid`; Arm: the MIDR of the fastest core; Apple:
+`sysctl`) and takes the first matching row of `src/pffft_tuning.h`
+(`pffft_tuning_t` in `pffft_types.h`; `pffft_cpu_describe()` says which row). A
+program can pass its own to `pffft_new_setup_tuned()`. Only one build option
+is left: `PFFFT_DISABLE_PREFETCH`, which leaves the prefetching code out.
+
+- **Measure thresholds in one build.** Every value of a threshold is a
+  `--tune` of the same library (`bench_fft --tune LABEL=SPEC`,
+  `compare_many.py base=HEAD x=HEAD --tune x=split=8m`), so that all values
+  run the same code side by side; never one build per value, which mixes
+  the threshold with code layout. `benchmarks/tune.py` sweeps all of them on
+  one machine and prints the table row they make.
+- **Values that were not measured:** a transform depends on the split
+  threshold only through its split depth, so `benchmarks/split_sim.py`
+  gives any split threshold from a sweep of others, exactly, without a new
+  run (`--candidate NAME=SPEC`, `--cases REF` for the lengths that change).
+- **Choosing a default:** every machine weighs the same; change a row only
+  where a value beats the current one clearly (tune.py: by more than half a
+  point of the geometric mean), and then compare it with master at the
+  docs' lengths (the powers of two and mixed ones such as 96000, 192000,
+  209952, 1500000) before deciding: a sweep's lengths (1, 3, 5, 9, 15 times
+  2^k) once hid losses of 5 to 15% at mixed-radix lengths. Say in the table's
+  comment which machines a row rests on, with the numbers.
+- **Bits:** the split and prefetch thresholds choose between ways that give
+  the same results (`accuracy.py master . --bits`); `radix6_max` changes the
+  arithmetic, so a change to it needs the full accuracy run.
+- **Code layout:** the same code at another address can move a short
+  length by 5 to 15% on some machines (EPYC 7763 with MSVC, Core i7-8700B).
+  Call a loss layout only with evidence: the same instruction count with
+  different cycles (the runners that count instructions: Xeon 6975P-C,
+  Neoverse N2), or a matched-layout control.
+
+## Benchmarking on GitHub's runners
+
+`.github/workflows/bench.yml` measures CPUs we do not own. It runs only when
+started by hand, from the default branch's copy of the workflow, with
+`--ref` picking the code (`benchmarks/README.md`, "Other CPUs"). Each label
+lands on one of several CPUs:
+
+| Label | CPUs (how often) |
+|---|---|
+| ubuntu-26.04 | Xeon 6975P-C (about 1 run in 30), Xeon Platinum 8573C, EPYC 9V45, 9V74, 7763 |
+| windows-2025 | EPYC 7763, 9V74, Xeon Platinum 8573C, 8370C, 6973P-C (MSVC) |
+| macos-26-intel | Core i7-8700B |
+| ubuntu-26.04-arm | Neoverse N2 |
+| windows-11-arm | Cobalt 100 (MSVC) |
+
+Only the Linux runners count cycles (perf); the others are timed in ns, and
+the VMs are shared, so expect noise and repeat a loss before working on it.
+
+- **Use every landing once.** `benchmarks/ci_dispatch.py TABLE.json OUT`
+  dispatches the workflow until every CPU of the table has done its entry:
+  the sweep (`run.py --fftw`, for the docs), compares (`compare.py`, e.g.
+  `origin/master HEAD` and `c14802c HEAD` for 1.1.0) and "rounds" (more
+  `compare_many.py` runs). A run that lands on a CPU without an entry ends
+  in seconds; a later run of an entry does only its missing parts. Plan
+  everything a CPU must measure for the round before launching: a rare CPU
+  may not come back for hours.
+- **Deciding and measuring in one run:** if a run is to choose a default
+  and also give the PR's numbers, put the candidates as `--tune` variants
+  of one library next to `origin/master` in a round. Changing the table
+  afterwards is then a change of data, not of the measured code. A default
+  changed after the final compares otherwise needs those compares again.
+- **On the runner,** `master` is `origin/master`.
+- **Scratch branches:** push the code to measure as `scratch/<topic>`, with
+  a commit on top for anything only the measurement needs, and delete the
+  branch when the data is in. Keep the CSVs and the dispatch table
+  (`build_bench_cache/` is ignored by git: back it up).
+- **Local devices** (`--target android[:serial]`, `ios[:udid]`) run the same
+  scripts; an iPhone must be unlocked to install. A 32-bit Raspberry Pi
+  needs `--cmake="-DTARGET_C_ARCH=armv7-a -DTARGET_C_EXTRA=neon_vfpv4"` for
+  NEON (tune.py) and takes hours per sweep.
+
 ## Code Style Guidelines
 
 ### Language Standards

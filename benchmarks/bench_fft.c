@@ -47,7 +47,7 @@ const char *pffftd_simd_arch(void);
 #endif
 
 #define MAX_SIZES 512
-#define MAX_LIBS 8
+#define MAX_LIBS 16
 #define MAX_PAIRS (1 << 24)
 #define MIN_ROUNDS 10     /* --case-seconds never ends a trial before this */
 /* nor before every engine has this many clean batches, unless the trial has
@@ -80,6 +80,13 @@ typedef struct options {
     const char *path;
   } lib[MAX_LIBS];
   int nlibs;
+  /* --tune: label "pffft" is the built-in pffft */
+  struct {
+    char label[41];
+    const char *spec;
+    bench_tune tune;
+  } tune[MAX_LIBS + 1];
+  int ntunes;
   int prec[NPREC], xform[2];
   int min_n, max_n, trials, rounds, pin, quiet, list;
   int accuracy, seeds, bits_only; /* --accuracy, --seeds, --bits-only */
@@ -230,6 +237,13 @@ static int next_item(const char **list, char *item, size_t size) {
   return 1;
 }
 
+/* the --tune of a label, or NULL */
+static const bench_tune *tune_of(const options *o, const char *label) {
+  for (int i = 0; i < o->ntunes; i++)
+    if (!strcmp(o->tune[i].label, label)) return &o->tune[i].tune;
+  return NULL;
+}
+
 static void select_engine(registry *r, const bench_engine *e) {
   for (int i = 0; i < r->nsel; i++) {
     if (r->sel[i] == e) return;
@@ -244,12 +258,15 @@ static void load_engines(const options *o) {
     registry *r = &g_reg[p];
     if (!o->prec[p]) continue;
     r->nall = r->nbuiltin = builtin_engines(p, r->all, BENCH_MAX_ENGINES);
+    for (int i = 0; i < r->nbuiltin; i++)
+      if (!strncmp(r->all[i].name, "pffft", 5)) r->all[i].tune = tune_of(o, "pffft");
     for (int i = 0; i < o->nlibs; i++) {
       int added;
       err[0] = 0;
       added = lib_engines(p, o->lib[i].label, o->lib[i].path, r->all + r->nall, BENCH_MAX_ENGINES - r->nall, err,
                           sizeof err);
       if (added < 0) die("--lib %s=%s: %s", o->lib[i].label, o->lib[i].path, err);
+      for (int k = 0; k < added; k++) r->all[r->nall + k].tune = tune_of(o, o->lib[i].label);
       r->nall += added;
       loaded[i] += added;
     }
@@ -592,6 +609,28 @@ static double mflops(const result *r) {
   return (r->cplx ? 5.0 : 2.5) * r->n * (log((double)r->n) / log(2.0)) / r->ns * 1000.0;
 }
 
+/* "tuning LABEL: ..." per pffft, the default tuning of the library in the
+ * first precision that has one (the same in both today), and "tune LABEL:
+ * SPEC" per --tune */
+static void write_tunings(FILE *f, const char *prefix, const options *o) {
+  char buf[200], err[256];
+  bench_tuning t;
+  /* the CPU as pffft sees it, once: every pffft from this source tree finds
+     the same, older revisions nothing */
+  if (bench_cpu_describe(NULL, buf, sizeof buf)) fprintf(f, "%spffft_cpu: %s\n", prefix, buf);
+  for (int i = -1; i < o->nlibs; i++) {
+    void *lib = NULL;
+    if (i >= 0 && !(lib = bench_dl_open(o->lib[i].path, err, sizeof err))) continue;
+    for (int p = 0; p < NPREC; p++) {
+      if (!o->prec[p] || !bench_default_tuning(lib, p == F64, &t)) continue;
+      bench_tuning_format(&t, buf, sizeof buf);
+      fprintf(f, "%stuning %s: %s\n", prefix, i < 0 ? "pffft" : o->lib[i].label, buf);
+      break;
+    }
+  }
+  for (int i = 0; i < o->ntunes; i++) fprintf(f, "%stune %s: %s\n", prefix, o->tune[i].label, o->tune[i].spec);
+}
+
 static void write_header(FILE *f, const char *prefix, const options *o, const char *date) {
   fprintf(f, "%sdate: %s\n", prefix, date);
   bench_platform_describe(f, prefix);
@@ -602,6 +641,7 @@ static void write_header(FILE *f, const char *prefix, const options *o, const ch
   fprintf(f, "%srounds: %d\n", prefix, o->rounds);
   fprintf(f, "%sbatch_us: %g\n", prefix, o->batch_us);
   fprintf(f, "%sseed: %lu\n", prefix, o->seed);
+  write_tunings(f, prefix, o);
 }
 
 static void write_csv(FILE *f, const options *o, const char *date) {
@@ -684,7 +724,16 @@ static void usage(FILE *f) {
           "  --engines LIST      engine names (default: all built-in engines but pffft-ip\n"
           "                      and pffft-un; if --lib is given, only the --lib engines)\n"
           "  --lib LABEL=PATH    add the engine pffft@LABEL from a pffft shared library\n"
-          "                      (repeatable)\n"
+          "                      (repeatable; the same PATH may be given under several\n"
+          "                      labels, e.g. with a --tune each)\n"
+          "  --tune LABEL=SPEC   setups of pffft@LABEL (LABEL pffft: the built-in pffft\n"
+          "                      engines) from the library's default tuning changed by\n"
+          "                      SPEC: KEY=VALUE,... with KEY split, split_real,\n"
+          "                      split_complex, prefetch, prefetch_real,\n"
+          "                      prefetch_complex or radix6 (split and prefetch: both\n"
+          "                      kinds) and VALUE bytes, with a suffix k or m, or\n"
+          "                      never (pffft_tuning_t in pffft_types.h); a library without\n"
+          "                      the tuning ignores it\n"
           "  --trials T          default 1\n"
           "  --rounds R          default 100\n"
           "  --batch-us U        default 300\n"
@@ -846,6 +895,17 @@ static void parse_options(int argc, char **argv, options *o) {
         if (!strcmp(o->lib[k].label, o->lib[o->nlibs].label)) die("--lib: the label '%s' is given twice", o->lib[k].label);
       }
       o->lib[o->nlibs++].path = eq + 1;
+    } else if (!strcmp(a, "--tune")) {
+      const char *eq = strchr(v, '=');
+      size_t len = eq ? (size_t)(eq - v) : 0;
+      char err[160];
+      if (len == 0 || len >= sizeof o->tune[0].label) die("--tune: expected LABEL=SPEC; got '%s'", v);
+      if (o->ntunes == MAX_LIBS + 1) die("--tune: at most %d", MAX_LIBS + 1);
+      memcpy(o->tune[o->ntunes].label, v, len);
+      o->tune[o->ntunes].label[len] = 0;
+      if (tune_of(o, o->tune[o->ntunes].label)) die("--tune: the label '%s' is given twice", o->tune[o->ntunes].label);
+      if (bench_tune_parse(eq + 1, &o->tune[o->ntunes].tune, err, sizeof err)) die("--tune %s: %s", v, err);
+      o->tune[o->ntunes++].spec = eq + 1;
     } else if (!strcmp(a, "--trials")) o->trials = int_arg(a, v, 1);
     else if (!strcmp(a, "--seeds")) o->seeds = int_arg(a, v, 1);
     else if (!strcmp(a, "--rounds")) o->rounds = int_arg(a, v, 1);
@@ -865,6 +925,11 @@ static void parse_options(int argc, char **argv, options *o) {
     else if (!strcmp(a, "--fftw-measure-max")) bench_fftw_measure_max = int_arg(a, v, 0);
     else die("%s: unknown option (see --help)", a);
   }
+  for (int i = 0; i < o->ntunes; i++) {
+    int known = !strcmp(o->tune[i].label, "pffft");
+    for (int k = 0; k < o->nlibs; k++) known |= !strcmp(o->tune[i].label, o->lib[k].label);
+    if (!known) die("--tune %s: no --lib with this label", o->tune[i].label);
+  }
 }
 
 /* bench_fft --accuracy: no timing. The libraries are loaded here, not as
@@ -878,8 +943,10 @@ static int accuracy_main(options *o, const int *sizes, int nsizes, const char *d
   if (!o->have_seed) o->seed = 1; /* reproducible by default */
   libs[0].label = "pffft";
   libs[0].lib = NULL;
+  libs[0].tune = tune_of(o, "pffft");
   for (int i = 0; i < o->nlibs; i++) {
     libs[i].label = o->lib[i].label;
+    libs[i].tune = tune_of(o, o->lib[i].label);
     libs[i].lib = bench_dl_open(o->lib[i].path, err, sizeof err);
     if (!libs[i].lib) die("--lib %s=%s: %s", o->lib[i].label, o->lib[i].path, err);
   }
@@ -896,6 +963,7 @@ static int accuracy_main(options *o, const int *sizes, int nsizes, const char *d
     fprintf(csv, "# compiler: %s\n# pffft_simd: %s\n", BENCH_COMPILER, simd_name());
     fprintf(csv, "# target_arch: %s\n", BENCH_TARGET_ARCH[0] ? BENCH_TARGET_ARCH : "none");
     fprintf(csv, "# seed: %lu\n# seeds: %d\n# bits_only: %d\n", o->seed, o->seeds, o->bits_only);
+    write_tunings(csv, "# ", o);
     bench_accuracy_columns(csv);
   }
   failed = bench_accuracy(csv, libs, nlibs, sizes, nsizes, o->prec, o->xform, o->seeds, o->seed, o->bits_only);

@@ -61,6 +61,7 @@
 
 #include "bench.h"
 
+#include <errno.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -70,6 +71,8 @@
 #define MIN_POINTS 4096
 
 typedef void *(*new_setup_fn)(int n, int transform);
+typedef void *(*new_setup_tuned_fn)(int n, int transform, const bench_tuning *tuning);
+typedef void (*default_tuning_fn)(bench_tuning *tuning, size_t size);
 typedef int (*is_valid_size_fn)(int n, int transform);
 typedef void (*destroy_setup_fn)(void *setup);
 typedef void (*transform_fn)(const void *setup, const void *in, void *out, void *work, int direction);
@@ -83,12 +86,19 @@ typedef struct api {
   destroy_setup_fn destroy_setup;
   transform_fn transform, transform_ordered;
   zreorder_fn zreorder;
+  /* NULL in revisions from before the tuning */
+  new_setup_tuned_fn new_setup_tuned;
+  default_tuning_fn default_tuning;
+  const bench_tune *tune; /* of the bench_accuracy_lib */
 } api;
+
 
 /* The pffft linked into bench_fft. Declared here rather than taken from
  * pffft.h, in the spelling of the pointers above. */
 #ifdef BENCH_HAVE_F32
 void *pffft_new_setup(int n, int transform);
+void *pffft_new_setup_tuned(int n, int transform, const bench_tuning *tuning);
+void pffft_default_tuning(bench_tuning *tuning, size_t size);
 int pffft_is_valid_size(int n, int transform);
 void pffft_destroy_setup(void *setup);
 void pffft_transform(const void *setup, const void *in, void *out, void *work, int direction);
@@ -97,6 +107,8 @@ void pffft_zreorder(const void *setup, const void *in, void *out, int direction)
 #endif
 #ifdef BENCH_HAVE_F64
 void *pffftd_new_setup(int n, int transform);
+void *pffftd_new_setup_tuned(int n, int transform, const bench_tuning *tuning);
+void pffftd_default_tuning(bench_tuning *tuning, size_t size);
 int pffftd_is_valid_size(int n, int transform);
 void pffftd_destroy_setup(void *setup);
 void pffftd_transform(const void *setup, const void *in, void *out, void *work, int direction);
@@ -109,6 +121,8 @@ static void builtin_api(int f64, api *a) {
 #ifdef BENCH_HAVE_F32
   if (!f64) {
     a->new_setup = pffft_new_setup;
+    a->new_setup_tuned = pffft_new_setup_tuned;
+    a->default_tuning = pffft_default_tuning;
     a->is_valid_size = pffft_is_valid_size;
     a->destroy_setup = pffft_destroy_setup;
     a->transform = pffft_transform;
@@ -119,6 +133,8 @@ static void builtin_api(int f64, api *a) {
 #ifdef BENCH_HAVE_F64
   if (f64) {
     a->new_setup = pffftd_new_setup;
+    a->new_setup_tuned = pffftd_new_setup_tuned;
+    a->default_tuning = pffftd_default_tuning;
     a->is_valid_size = pffftd_is_valid_size;
     a->destroy_setup = pffftd_destroy_setup;
     a->transform = pffftd_transform;
@@ -148,7 +164,143 @@ static void lib_api(void *lib, int f64, api *a) {
   lib_function(lib, prefix, "transform", &a->transform);
   lib_function(lib, prefix, "transform_ordered", &a->transform_ordered);
   lib_function(lib, prefix, "zreorder", &a->zreorder);
+  lib_function(lib, prefix, "new_setup_tuned", &a->new_setup_tuned);
+  lib_function(lib, prefix, "default_tuning", &a->default_tuning);
   if (!a->destroy_setup || !a->transform || !a->transform_ordered || !a->zreorder) a->new_setup = NULL;
+}
+
+void bench_tune_apply(const bench_tune *tune, bench_tuning *t) {
+  if (!tune) return;
+  if (tune->set & BENCH_TUNE_SPLIT_REAL) t->split_max_real = tune->tuning.split_max_real;
+  if (tune->set & BENCH_TUNE_SPLIT_COMPLEX) t->split_max_complex = tune->tuning.split_max_complex;
+  if (tune->set & BENCH_TUNE_PREFETCH_REAL) t->prefetch_min_real = tune->tuning.prefetch_min_real;
+  if (tune->set & BENCH_TUNE_PREFETCH_COMPLEX) t->prefetch_min_complex = tune->tuning.prefetch_min_complex;
+  if (tune->set & BENCH_TUNE_RADIX6_MAX) t->radix6_max = tune->tuning.radix6_max;
+}
+
+int bench_tune_parse(const char *spec, bench_tune *tune, char *err, size_t errlen) {
+  static const struct { const char *key; unsigned set; } keys[] = {
+    {"split", BENCH_TUNE_SPLIT_REAL | BENCH_TUNE_SPLIT_COMPLEX},
+    {"split_real", BENCH_TUNE_SPLIT_REAL},
+    {"split_complex", BENCH_TUNE_SPLIT_COMPLEX},
+    {"prefetch", BENCH_TUNE_PREFETCH_REAL | BENCH_TUNE_PREFETCH_COMPLEX},
+    {"prefetch_real", BENCH_TUNE_PREFETCH_REAL},
+    {"prefetch_complex", BENCH_TUNE_PREFETCH_COMPLEX},
+    {"radix6", BENCH_TUNE_RADIX6_MAX},
+  };
+  const char *p = spec;
+  memset(tune, 0, sizeof *tune);
+  while (*p) {
+    char key[32], *end;
+    size_t len = strcspn(p, "="), k;
+    unsigned long long v;
+    unsigned set = 0;
+    if (!p[len] || len == 0 || len >= sizeof key) {
+      snprintf(err, errlen, "expected KEY=VALUE at '%s'", p);
+      return -1;
+    }
+    memcpy(key, p, len);
+    key[len] = 0;
+    for (k = 0; k < sizeof keys / sizeof keys[0]; k++)
+      if (!strcmp(key, keys[k].key)) set = keys[k].set;
+    if (!set) {
+      snprintf(err, errlen, "unknown key '%s' (split, split_real, split_complex, prefetch, prefetch_real, prefetch_complex, radix6)", key);
+      return -1;
+    }
+    p += len + 1;
+    if (!strncmp(p, "never", 5)) {
+      v = BENCH_TUNE_NEVER;
+      end = (char *)p + 5;
+    } else {
+      unsigned shift = 0;
+      errno = 0;
+      v = *p >= '0' && *p <= '9' ? strtoull(p, &end, 10) : 0;
+      if (*p < '0' || *p > '9' || errno == ERANGE) {
+        snprintf(err, errlen, "bad value for %s at '%s'", key, p);
+        return -1;
+      }
+      if (*end == 'k' || *end == 'K') shift = 10, end++;
+      else if (*end == 'm' || *end == 'M') shift = 20, end++;
+      /* a size this program can hold; never is (size_t)-1 */
+      if (v > (unsigned long long)((size_t)-1 - 1) >> shift) {
+        snprintf(err, errlen, "%s too large at '%s' (never: no limit)", key, p);
+        return -1;
+      }
+      v <<= shift;
+    }
+    if (*end && *end != ',') {
+      snprintf(err, errlen, "bad value for %s at '%s'", key, p);
+      return -1;
+    }
+    tune->set |= set;
+    if (set & BENCH_TUNE_SPLIT_REAL) tune->tuning.split_max_real = (size_t)v;
+    if (set & BENCH_TUNE_SPLIT_COMPLEX) tune->tuning.split_max_complex = (size_t)v;
+    if (set & BENCH_TUNE_PREFETCH_REAL) tune->tuning.prefetch_min_real = (size_t)v;
+    if (set & BENCH_TUNE_PREFETCH_COMPLEX) tune->tuning.prefetch_min_complex = (size_t)v;
+    if (set & BENCH_TUNE_RADIX6_MAX) tune->tuning.radix6_max = (size_t)v;
+    p = *end ? end + 1 : end;
+  }
+  return 0;
+}
+
+void bench_tuning_format(const bench_tuning *t, char *buf, size_t n) {
+  static const char *const names[5] = {"split_real", "split_complex", "prefetch_real", "prefetch_complex", "radix6"};
+  const size_t values[5] = {t->split_max_real, t->split_max_complex, t->prefetch_min_real, t->prefetch_min_complex,
+                            t->radix6_max};
+  size_t used = 0;
+  buf[0] = 0;
+  for (int k = 0; k < 5 && used < n; k++) {
+    if (t->size < (size_t)(k + 2) * sizeof(size_t)) break; /* beyond what the library knows */
+    if (values[k] == BENCH_TUNE_NEVER)
+      used += (size_t)snprintf(buf + used, n - used, "%s%s=never", k ? "," : "", names[k]);
+    else
+      used += (size_t)snprintf(buf + used, n - used, "%s%s=%llu", k ? "," : "", names[k],
+                               (unsigned long long)values[k]);
+  }
+}
+
+int bench_default_tuning(void *lib, int f64, bench_tuning *t) {
+  api a;
+  if (lib) lib_api(lib, f64, &a);
+  else builtin_api(f64, &a);
+  if (!a.new_setup || !a.default_tuning) return 0;
+  memset(t, 0, sizeof *t);
+  a.default_tuning(t, sizeof *t);
+  return 1;
+}
+
+#if defined(BENCH_HAVE_F32)
+int pffft_cpu_describe(char *buf, int len);
+#elif defined(BENCH_HAVE_F64)
+int pffftd_cpu_describe(char *buf, int len);
+#endif
+
+int bench_cpu_describe(void *lib, char *buf, int len) {
+  int (*describe)(char *, int) = NULL;
+  if (lib) {
+    void *address = bench_dl_sym(lib, "pffft_cpu_describe");
+    if (!address) address = bench_dl_sym(lib, "pffftd_cpu_describe");
+    memcpy(&describe, &address, sizeof address);
+  } else {
+#if defined(BENCH_HAVE_F32)
+    describe = pffft_cpu_describe;
+#elif defined(BENCH_HAVE_F64)
+    describe = pffftd_cpu_describe;
+#endif
+  }
+  if (!describe) return 0;
+  describe(buf, len);
+  return 1;
+}
+
+/* a setup of the library f, with its tune if it has one and can */
+static void *make_setup(const api *f, int n, int cplx) {
+  bench_tuning t;
+  if (!f->tune || !f->new_setup_tuned || !f->default_tuning) return f->new_setup(n, cplx);
+  memset(&t, 0, sizeof t);
+  f->default_tuning(&t, sizeof t);
+  bench_tune_apply(f->tune, &t);
+  return f->new_setup_tuned(n, cplx, &t);
 }
 
 /* splitmix64 */
@@ -535,7 +687,7 @@ static void measure_forward(tally *t, const api *f, const arrays *a, int n, int 
   const int fwd = 0, bwd = 1; /* PFFFT_FORWARD, PFFFT_BACKWARD */
   size_t len = (size_t)(cplx ? 2 * n : n), bytes = len * (f64 ? sizeof(double) : sizeof(float)), i;
   double limit = f64 ? LIMIT_F64 : LIMIT_F32;
-  void *s = f->new_setup(n, cplx);
+  void *s = make_setup(f, n, cplx);
   if (!s) return;
   for (i = 0; i < len; i++) put(a->in, i, a->x[i], f64);
 
@@ -579,7 +731,7 @@ static void measure_backward(tally *t, const api *f, const arrays *a, int n, int
   const int bwd = 1;
   size_t len = (size_t)(cplx ? 2 * n : n), bytes = len * (f64 ? sizeof(double) : sizeof(float)), i;
   double limit = f64 ? LIMIT_F64 : LIMIT_F32;
-  void *s = f->new_setup(n, cplx);
+  void *s = make_setup(f, n, cplx);
   if (!s) return;
   for (i = 0; i < len; i++) put(a->in, i, a->spec[i], f64);
 
@@ -641,6 +793,7 @@ int bench_accuracy(FILE *csv, const bench_accuracy_lib *libs, int nlibs, const i
     for (int l = 0; l < nlibs && l < BENCH_MAX_ENGINES; l++) {
       if (libs[l].lib) lib_api(libs[l].lib, f64, &apis[l]);
       else builtin_api(f64, &apis[l]);
+      apis[l].tune = libs[l].tune;
     }
     for (int cplx = 0; cplx < 2; cplx++) {
       if (!xform[cplx]) continue;

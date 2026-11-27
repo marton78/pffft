@@ -17,8 +17,10 @@ python3 benchmarks/accuracy.py master . -v               # every length, not onl
 ```
 
 It builds each revision twice as a shared library, as configured by default
-and with `PFFFT_SPLIT_MAX=1024` (every array of more than 1 KiB split into
-blocks), and runs `bench_fft --accuracy` on all four with the same random
+and as a split library whose setups split every array of more than 1 KiB into
+blocks (the tuning `split=1k`, see `bench_fft --tune`; revisions from before
+the tuning are built with `PFFFT_SPLIT_MAX=1024`), and runs
+`bench_fft --accuracy` on all four with the same random
 inputs (uniform in [-1, 1), rounded to the precision): by default the powers
 of two and 3, 5, 9 and 15 times them from 16 to 2^22, and the picked lengths,
 with as many inputs per length as make 16384 points (one from n = 16384 up).
@@ -89,6 +91,6 @@ forward results of all inputs.
 
 `ctest` runs `test_accuracy` and `test_accuracy_split` (tests/test_accuracy.c:
 the same measures with accuracy.c, built with the tests rather than the
-benchmarks, the second against the library that splits every array of more
-than 1 KiB) on lengths of every kind of pass up to 4096, in under a second.
+benchmarks, the second as `test_accuracy --split`, whose setups split every
+array of more than 1 KiB) on lengths of every kind of pass up to 4096, in under a second.
 CI runs them on every backend it builds, emulators included.

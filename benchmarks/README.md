@@ -56,6 +56,8 @@ python3 benchmarks/run.py -- --sizes 1024,4096 --prec f32 --trials 3   # after -
 python3 benchmarks/compare.py master .                   # the working tree against master
 python3 benchmarks/compare.py c14802c master --target android -o cmp.csv
 python3 benchmarks/compare_many.py master a=HEAD~2 b=HEAD~1 c=HEAD --sizes 32,64,1024 -o many.csv
+python3 benchmarks/compare_many.py base=HEAD s8m=HEAD --tune s8m=split=8m --sizes 1048576  # a tuning
+python3 benchmarks/tune.py                               # the best thresholds for this CPU
 uv run --with matplotlib python3 benchmarks/plot.py local.csv -o local.png
 uv run --with matplotlib python3 benchmarks/plot.py local.csv --engines pffft -o pffft.png
 uv run --with matplotlib python3 benchmarks/plot.py local.csv android.csv -o devices.png
@@ -82,7 +84,28 @@ uv run --with matplotlib python3 benchmarks/plot.py mac-cmp.csv ios-cmp.csv --na
   engine `pffft@LABEL` (`LABEL=REV`, or the revision itself), and prints
   each one's speed-up over the first: one commit per engine separates the
   effects of the commits of a branch in one run. A revision given twice is
-  loaded twice, which shows the noise floor inside the run.
+  loaded twice, which shows the noise floor inside the run. `--tune
+  LABEL=SPEC` makes the setups of `pffft@LABEL` with a changed tuning (as
+  `bench_fft --tune`, see `--help`): e.g. `split=8m`, `prefetch=never`. A
+  label with a `--tune` loads its commit's library itself, so that tunings
+  of one commit run the same code. `--cmake LABEL="ARGS"` builds a label's
+  library with more CMake arguments (`*` for every label), e.g. a generic
+  x86 build or `-DPFFFT_DISABLE_PREFETCH=ON`.
+- **tune.py** sweeps each threshold of pffft's tuning (split and prefetch,
+  for real and complex transforms each, the prefetch on x86 only; radix-6)
+  over its range in one build, every value a `--tune` of the
+  same library, and prints per kind and precision the speed of each value
+  against the CPU's default, the best one, and the row for
+  `src/pffft_tuning.h` (README: "Thresholds chosen for the CPU").
+  `--quick` for a first look; run it twice for a row.
+- **split_sim.py** gives split thresholds that were not measured from a
+  sweep of those that were: a transform depends on the threshold only
+  through its split depth, so a threshold's time per case is that of the
+  measured thresholds with the same depth in the same run. `split_depth`
+  (a program built from the library's own sources, split_depth.c) gives the
+  depths. E.g. `split_sim.py sweep.csv --candidate incl=split=1048575 --cases
+  s1m`: would splitting from 1 MiB on, 1 MiB arrays included, beat the
+  measured 1 MiB, and where.
 - **plot.py** draws speed against n, higher is faster: GFLOPS, counting
   5·n·log2(n) flops per complex transform and 2.5·n·log2(n) per real one
   (benchFFT's convention), so that lengths compare fairly. Where cycles were
@@ -265,12 +288,19 @@ come up once in 30 runs. `benchmarks/ci_dispatch.py` runs the workflow
 until each CPU of a table has done its part: every run gets the table as
 the input `by_cpu`, does the part of the CPU it lands on, and ends after a
 few seconds on any other CPU. Give a CPU everything it should measure in
-one entry (sweep, compares, compare_many); the script's docstring shows the
-table:
+one entry (sweep, compares, compare_many, and as many more compare_many.py
+runs as it needs, "rounds"); a later run of an entry does only the parts
+still missing. The script's docstring shows the table:
 
 ```sh
 python3 benchmarks/ci_dispatch.py table.json ci-out --ref my-branch
 ```
+
+When a run is to decide a default and also measure it, give the candidates
+as `--tune` variants of one library in a compare_many.py round, next to
+master: whichever wins, its numbers against master come from that run, and
+changing the default afterwards is a change of data, not of the code that
+was measured.
 
 ## CSV
 

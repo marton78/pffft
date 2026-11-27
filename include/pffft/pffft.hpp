@@ -59,6 +59,9 @@ namespace pffft {
 // enum { PFFFT_REAL, PFFFT_COMPLEX }
 typedef detail::pffft_transform_t TransformType;
 
+// the thresholds of a setup that depend on the CPU (pffft_types.h)
+typedef detail::pffft_tuning_t Tuning;
+
 // define 'Scalar' and 'Complex' (in namespace pffft) with template Types<>
 // and other type specific helper functions
 template<typename T> struct Types {};
@@ -69,6 +72,7 @@ template<> struct Types<float>  {
   static int simd_size() { return detail::pffft_simd_size(); }
   static const char * simd_arch() { return detail::pffft_simd_arch(); }
   static int minFFtsize() { return pffft_min_fft_size(detail::PFFFT_REAL); }
+  static void defaultTuning(Tuning* t) { detail::pffft_default_tuning(t, sizeof *t); }
   static bool isValidSize(int N) { return pffft_is_valid_size(N, detail::PFFFT_REAL); }
   static int nearestTransformSize(int N, bool higher) { return pffft_nearest_transform_size(N, detail::PFFFT_REAL, higher ? 1 : 0); }
 };
@@ -78,6 +82,7 @@ template<> struct Types< ::std::complex<float> >  {
   static int simd_size() { return detail::pffft_simd_size(); }
   static const char * simd_arch() { return detail::pffft_simd_arch(); }
   static int minFFtsize() { return pffft_min_fft_size(detail::PFFFT_COMPLEX); }
+  static void defaultTuning(Tuning* t) { detail::pffft_default_tuning(t, sizeof *t); }
   static bool isValidSize(int N) { return pffft_is_valid_size(N, detail::PFFFT_COMPLEX); }
   static int nearestTransformSize(int N, bool higher) { return pffft_nearest_transform_size(N, detail::PFFFT_COMPLEX, higher ? 1 : 0); }
 };
@@ -89,6 +94,7 @@ template<> struct Types<double> {
   static int simd_size() { return detail::pffftd_simd_size(); }
   static const char * simd_arch() { return detail::pffftd_simd_arch(); }
   static int minFFtsize() { return pffftd_min_fft_size(detail::PFFFT_REAL); }
+  static void defaultTuning(Tuning* t) { detail::pffftd_default_tuning(t, sizeof *t); }
   static bool isValidSize(int N) { return pffftd_is_valid_size(N, detail::PFFFT_REAL); }
   static int nearestTransformSize(int N, bool higher) { return pffftd_nearest_transform_size(N, detail::PFFFT_REAL, higher ? 1 : 0); }
 };
@@ -98,6 +104,7 @@ template<> struct Types< ::std::complex<double> > {
   static int simd_size() { return detail::pffftd_simd_size(); }
   static const char * simd_arch() { return detail::pffftd_simd_arch(); }
   static int minFFtsize() { return pffftd_min_fft_size(detail::PFFFT_COMPLEX); }
+  static void defaultTuning(Tuning* t) { detail::pffftd_default_tuning(t, sizeof *t); }
   static bool isValidSize(int N) { return pffftd_is_valid_size(N, detail::PFFFT_COMPLEX); }
   static int nearestTransformSize(int N, bool higher) { return pffftd_nearest_transform_size(N, detail::PFFFT_COMPLEX, higher ? 1 : 0); }
 };
@@ -156,6 +163,10 @@ public:
   // simple helper to get minimum possible fft length
   static int minFFtsize() { return Types<T>::minFFtsize(); }
 
+  // the thresholds that the constructor takes on this CPU: start from them
+  // to change one for the constructor or prepareLength() with a Tuning
+  static Tuning defaultTuning() { Tuning t; Types<T>::defaultTuning(&t); return t; }
+
   // helper to determine nearest transform size - factorizable to minFFtsize() with factors 2, 3, 5
   static bool isValidSize(int N) { return Types<T>::isValidSize(N); }
   static int nearestTransformSize(int N, bool higher=true) { return Types<T>::nearestTransformSize(N, higher); }
@@ -174,6 +185,12 @@ public:
    * there's no sufficient amount of memory, usually leading to a crash!
    */
   Fft( int length, int stackThresholdLen = 4096 );
+
+  /*
+   * the same, with the thresholds of tuning instead of the default ones
+   * (pffft_new_setup_tuned())
+   */
+  Fft( int length, const Tuning& tuning, int stackThresholdLen = 4096 );
 
 
   /*
@@ -206,6 +223,11 @@ public:
    * returns true if newLength is >= minFFtsize, false otherwise
    */
   bool prepareLength(int newLength);
+
+  /*
+   * the same, with the thresholds of tuning (pffft_new_setup_tuned())
+   */
+  bool prepareLength(int newLength, const Tuning& tuning);
 
   /*
    * retrieve the transformation length.
@@ -447,6 +469,8 @@ private:
   Fft& operator=(const Fft&);
 #endif
 
+  bool prepare(int newLength, const Tuning* tuning);
+
   detail::Setup<T> setup;
   Scalar* work;
   int length;
@@ -494,6 +518,8 @@ struct CApi<float>
 
   static Handle* new_setup(int N, pffft_transform_t kind)
   { return pffft_new_setup(N, kind); }
+  static Handle* new_setup_tuned(int N, pffft_transform_t kind, const pffft_tuning_t* tuning)
+  { return pffft_new_setup_tuned(N, kind, tuning); }
   static void destroy_setup(Handle* s)
   { pffft_destroy_setup(s); }
   static void transform_ordered(const Handle* s, const float* input, float* output, float* work, pffft_direction_t direction)
@@ -523,6 +549,8 @@ struct CApi<double>
 
   static Handle* new_setup(int N, pffft_transform_t kind)
   { return pffftd_new_setup(N, kind); }
+  static Handle* new_setup_tuned(int N, pffft_transform_t kind, const pffft_tuning_t* tuning)
+  { return pffftd_new_setup_tuned(N, kind, tuning); }
   static void destroy_setup(Handle* s)
   { pffftd_destroy_setup(s); }
   static void transform_ordered(const Handle* s, const double* input, double* output, double* work, pffft_direction_t direction)
@@ -600,10 +628,12 @@ private:
 public:
 #endif
 
-  void prepareLength(int length)
+  // with the default thresholds if tuning is NULL
+  void prepareLength(int length, const pffft_tuning_t* tuning)
   {
     Api::destroy_setup(self);
-    self = Api::new_setup(length, transformType());
+    self = tuning ? Api::new_setup_tuned(length, transformType(), tuning)
+                  : Api::new_setup(length, transformType());
   }
 
   bool isValid() const { return self != NULL; }
@@ -683,6 +713,20 @@ inline Fft<T>::Fft(int length, int stackThresholdLen)
 }
 
 template<typename T>
+inline Fft<T>::Fft(int length, const Tuning& tuning, int stackThresholdLen)
+  : work(NULL)
+  , length(0)
+  , stackThresholdLen(stackThresholdLen)
+{
+#if PFFFT_HPP_CXX11
+  static_assert( sizeof(Complex) == 2 * sizeof(Scalar), "pffft requires sizeof(std::complex<>) == 2 * sizeof(Scalar)" );
+#elif defined(__GNUC__)
+  char static_assert_like[(sizeof(Complex) == 2 * sizeof(Scalar)) ? 1 : -1]; // pffft requires sizeof(std::complex<>) == 2 * sizeof(Scalar)
+#endif
+  prepareLength(length, tuning);
+}
+
+template<typename T>
 inline Fft<T>::~Fft()
 {
   alignedFree(work);
@@ -728,6 +772,21 @@ template<typename T>
 inline bool
 Fft<T>::prepareLength(int newLength)
 {
+  return prepare(newLength, NULL);
+}
+
+template<typename T>
+inline bool
+Fft<T>::prepareLength(int newLength, const Tuning& tuning)
+{
+  return prepare(newLength, &tuning);
+}
+
+// with the default thresholds if tuning is NULL
+template<typename T>
+inline bool
+Fft<T>::prepare(int newLength, const Tuning* tuning)
+{
   if(newLength < minFFtsize())
     return false;
 
@@ -735,13 +794,14 @@ Fft<T>::prepareLength(int newLength)
 
   const bool useHeap = newLength > stackThresholdLen;
 
-  if (useHeap == wasOnHeap && newLength == length) {
+  // a new tuning needs a new setup
+  if (!tuning && useHeap == wasOnHeap && newLength == length) {
     return true;
   }
 
   length = 0;
 
-  setup.prepareLength(newLength);
+  setup.prepareLength(newLength, tuning);
   if (!setup.isValid())
     return false;
 

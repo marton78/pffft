@@ -55,7 +55,7 @@ on:
         type: string
         default: ""
       by_cpu:
-        description: "JSON {CPU regex: {sweep, fftw, compares: [{revs: 'A B', name}], compare_args, many, many_args}}: a runner does the entry of its CPU instead of the inputs above, or nothing (benchmarks/ci_dispatch.py)"
+        description: "JSON {CPU regex: {sweep, fftw, compares: [{revs: 'A B', name}], compare_args, many, many_args, rounds: [{name, many, args}]}}: a runner does the entry of its CPU instead of the inputs above, or nothing (benchmarks/ci_dispatch.py)"
         type: string
         default: ""
 
@@ -95,6 +95,7 @@ jobs:
       COMPARE_ARGS: ${{ inputs.compare_args }}
       MANY: ${{ inputs.many }}
       MANY_ARGS: ${{ inputs.many_args }}
+      ROUNDS: ""
     steps:
       - uses: actions/checkout@v7
         with:
@@ -141,6 +142,7 @@ jobs:
                   env.write(f"SWEEP={'true' if e.get('sweep') else 'false'}\n")
                   env.write(f"FFTW={'true' if e.get('fftw', e.get('sweep')) else 'false'}\n")
                   env.write("COMPARES=" + json.dumps(e.get("compares", [])) + "\n")
+                  env.write("ROUNDS=" + json.dumps(e.get("rounds", [])) + "\n")
                   for k in ("compare_args", "many", "many_args"): env.write(f"{k.upper()}={e.get(k, '')}\n")
           EOF
           fi
@@ -203,6 +205,24 @@ jobs:
         run: |
           # shellcheck disable=SC2086
           $PY benchmarks/compare_many.py $MANY $MANY_ARGS -o "out/$RUNNER_LABEL-many.csv" | tee "out/$RUNNER_LABEL-many.txt"
+
+      - name: Rounds of the CPU's entry
+        # more compare_many.py runs, {name, many: LABEL=REV ..., args}, each to out/<runner>-r-<name>.csv
+        if: env.ROUNDS != '' && env.ROUNDS != '[]' && steps.cpu.outputs.skip != 'true'
+        run: |
+          $PY - <<'EOF'
+          import json, os, shlex, subprocess, sys
+          lab, failed = os.environ["RUNNER_LABEL"], 0
+          for r in json.loads(os.environ["ROUNDS"]):
+              cmd = [sys.executable, "benchmarks/compare_many.py", *shlex.split(r["many"]), *shlex.split(r.get("args", "")),
+                     "-o", f"out/{lab}-r-{r['name']}.csv"]
+              print("running", " ".join(cmd), flush=True)
+              p = subprocess.run(cmd, capture_output=True, text=True)
+              with open(f"out/{lab}-r-{r['name']}.txt", "w") as f: f.write(p.stdout + p.stderr)
+              print(r["name"], "exit", p.returncode, p.stdout[-3000:], p.stderr[-3000:], flush=True)
+              failed |= p.returncode != 0
+          sys.exit(1 if failed else 0)
+          EOF
 
       - name: Upload
         if: always()

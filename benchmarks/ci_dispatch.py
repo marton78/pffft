@@ -16,16 +16,25 @@ TABLE.json:
     {"entries": {
       "xeon6975": {"runner": "ubuntu-26.04", "cpu": "6975P", "cycles": true,
                    "job": {"sweep": true, "fftw": true,
-                           "compares": [{"revs": "master HEAD", "name": "master"}],
-                           "compare_args": "--sizes pow2", "many": "a=master b=HEAD", "many_args": ""}},
+                           "compares": [{"revs": "origin/master HEAD", "name": "master"}],
+                           "compare_args": "--sizes pow2", "many": "a=origin/master b=HEAD", "many_args": ""}},
       "epyc7763": {"runner": "windows-2025", "cpu": "7763",
-                   "job": {"compares": [{"revs": "master HEAD", "name": "master"}]}}}}
+                   "job": {"compares": [{"revs": "origin/master HEAD", "name": "master"}],
+                           "rounds": [{"name": "split", "many": "base=HEAD s1m=HEAD s8m=HEAD",
+                                       "args": "--tune s1m=split=1m --tune s8m=split=8m"}]}}}}
 
-"cpu" is a regex for the model name, "cycles" asks for a cycle counter. Runs
-are repeated, in waves, until every entry has its files: <runner>.csv for the
-sweep, <runner>-cmp-<name>.csv per compare, <runner>-many.csv. OUT/status.json
-records the run and files of each entry, OUT/<entry>/run-<id>/ holds the
-artifacts. Started again with the same OUT, it goes on where it stopped.
+"cpu" is a regex for the model name, "cycles" asks for a cycle counter. A
+round is one more compare_many.py run (its LABEL=REV list in "many", its
+options in "args"), so that a CPU does every sweep it needs in one landing.
+On the runner, master is origin/master. Each part of an entry (the sweep,
+each compare, each round) is done once: a later run of the entry gets only
+the parts still missing, and the entry is complete when all are there, with
+a cycle count if asked. Runs are repeated, in waves, until every entry is
+complete. OUT/status.json records per entry the parts done and their files
+(<runner>.csv for the sweep, <runner>-cmp-<name>.csv per compare,
+<runner>-r-<name>.csv per round), OUT/<entry>/run-<id>/ holds the artifacts.
+Started again with the same OUT, it goes on where it stopped; to measure a
+part again, take it out of the entry's "done" there.
 Needs gh, logged in, and bench.yml on the repository's default branch.
 """
 from __future__ import annotations
@@ -49,11 +58,25 @@ def run_ids(repo: str) -> list[int]:
                                                      "-L", "40", "--json", "databaseId"))]
 
 
-def expected(runner: str, job: dict) -> list[str]:
-    """The files that an entry's job produces."""
-    files = [f"{runner}.csv"] if job.get("sweep") else []
-    files += [f"{runner}-cmp-{c['name']}.csv" for c in job.get("compares", [])]
-    return files + ([f"{runner}-many.csv"] if job.get("many") else [])
+def parts(runner: str, job: dict) -> list:
+    """(part name, file) of every part of a job: sweep, compares, rounds, many."""
+    out = [("sweep", f"{runner}.csv")] if job.get("sweep") else []
+    out += [(f"cmp-{c['name']}", f"{runner}-cmp-{c['name']}.csv") for c in job.get("compares", [])]
+    out += [(r["name"], f"{runner}-r-{r['name']}.csv") for r in job.get("rounds", [])]
+    return out + ([("many", f"{runner}-many.csv")] if job.get("many") else [])
+
+
+def todo(entry: dict, st: dict) -> dict:
+    """The job of an entry without the parts it has done."""
+    done = set(st.get("done", []))
+    job = dict(entry["job"])
+    if "sweep" in done:
+        job["sweep"] = job["fftw"] = False
+    job["compares"] = [c for c in job.get("compares", []) if f"cmp-{c['name']}" not in done]
+    job["rounds"] = [r for r in job.get("rounds", []) if r["name"] not in done]
+    if "many" in done:
+        job["many"] = ""
+    return job
 
 
 def main() -> None:
@@ -79,7 +102,8 @@ def main() -> None:
         runs = []
         for runner in sorted({e["runner"] for e in pending.values()}):
             mine = [e for e in pending.values() if e["runner"] == runner]
-            by_cpu = json.dumps({e["cpu"]: e["job"] for e in mine})
+            by_cpu = json.dumps({e["cpu"]: todo(e, status.get(n, {})) for n, e in pending.items()
+                                 if e["runner"] == runner})
             for _ in range(min(len(mine), args.k)):
                 before = set(run_ids(repo))
                 sh("gh", "workflow", "run", "bench.yml", "-R", repo, "--ref", args.ref, "-f", f"runners={runner}",
@@ -116,14 +140,20 @@ def main() -> None:
                 shutil.rmtree(tmp, ignore_errors=True)
                 continue
             entry = entries[name]
-            files = [glob.glob(f"{tmp}/*/{f}") for f in expected(runner, entry["job"])]
-            ok = all(files) and (not entry.get("cycles") or
-                                 all("perf_event" in open(f[0]).read(3000) for f in files))
+            old = status.get(name, {})
+            done = set(old.get("done", []))
             dst = os.path.join(args.out, name, f"run-{rid}")
             shutil.rmtree(dst, ignore_errors=True)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.move(tmp, dst)
-            status[name] = {"run": rid, "cpu": cpu, "ok": bool(ok), "files": [f[0].replace(tmp, dst) for f in files if f]}
+            files = list(old.get("files", []))
+            for part, fname in parts(runner, entry["job"]):
+                f = glob.glob(f"{dst}/*/{fname}")
+                if f and part not in done and (not entry.get("cycles") or "perf_event" in open(f[0]).read(3000)):
+                    done.add(part)
+                    files.append(f[0])
+            ok = all(part in done for part, _ in parts(runner, entry["job"]))
+            status[name] = {"run": rid, "cpu": cpu, "ok": bool(ok), "done": sorted(done), "files": files}
             print(f"  {name}: run {rid} on {cpu!r}: ok={bool(ok)}", flush=True)
             with open(status_path, "w") as f:
                 json.dump(status, f, indent=1)
