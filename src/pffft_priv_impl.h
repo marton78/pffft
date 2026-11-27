@@ -190,6 +190,19 @@ const char * FUNC_SIMD_ARCH(void) { return VARCH; }
    pass of rfftb1_ps from pf_min/2 on (see there). */
 #define PF_ALL   1
 #define PF_FIRST 2
+/* COLD marks the functions that only the setup and the self-test run. GCC
+   puts them in .text.unlikely, away from the transforms' code: between the
+   kernels they had pushed hot code into the same sets of a small
+   instruction cache (Raspberry Pi 2, Cortex-A7: f64 real 64, 10 more L1I
+   refills and 3% more cycles per transform after #140 added setup code). */
+#ifndef COLD
+#  if defined(__GNUC__)
+#    define COLD __attribute__((cold))
+#  else
+#    define COLD
+#  endif
+#endif
+
 static int pf_flags(size_t bytes, size_t pf_min) {
   if (!PF_ON) return 0;
   return (bytes >= pf_min ? PF_ALL : 0) | (bytes >= pf_min/2 ? PF_FIRST : 0);
@@ -1953,7 +1966,7 @@ static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *w
 }
 
 #define IFAC_MAX_SIZE 25 /* max number of integer factors for the decomposition, +2 */
-static int decompose(int n, int *ifac, const int *ntryh) {
+COLD static int decompose(int n, int *ifac, const int *ntryh) {
   int nl = n, nf = 0, i, j = 0;
   for (j=0; ntryh[j]; ++j) {
     int ntry = ntryh[j];
@@ -1995,7 +2008,7 @@ static int decompose(int n, int *ifac, const int *ntryh) {
   against an exact transform, 2.7e-16 with these twiddles).
   0 <= m, 0 < n, and 4*m must not overflow (n <= 2^26 in FUNC_NEW_SETUP).
 */
-static void cos_sin_2pi_ps(int m, int n, float *c, float *s) {
+COLD static void cos_sin_2pi_ps(int m, int n, float *c, float *s) {
   int q, r, swap = 0;
   double x, cx, sx, t;
   m %= n;
@@ -2019,7 +2032,7 @@ static void cos_sin_2pi_ps(int m, int n, float *c, float *s) {
 
 /* radix6_max: the largest transform, in bytes per array of n vectors, that
    takes a radix-6 instead of a radix-8 pass where it can (pffft_tuning_t) */
-static void rffti1_ps(int n, float *wa, int *ifac, size_t radix6_max)
+COLD static void rffti1_ps(int n, float *wa, int *ifac, size_t radix6_max)
 {
   static const int ntryh[] = { 4,2,3,5,0 };
   int k1, j, ii;
@@ -2079,7 +2092,7 @@ static void rffti1_ps(int n, float *wa, int *ifac, size_t radix6_max)
   }
 } /* rffti1 */
 
-static void cffti1_ps(int n, float *wa, int *ifac)
+COLD static void cffti1_ps(int n, float *wa, int *ifac)
 {
   static const int ntryh[] = { 5,3,4,2,0 };
   int k1, j, ii;
@@ -2263,7 +2276,7 @@ static void split_sub_ifac(const int *ifac, int *sub) {
    have two passes or more. All blocks of a level have the same length and
    factors, so the setup stores the number and the transforms count it down
    (levels). */
-static int split_levels(int n, const int *ifac, size_t vec_per_elem, size_t split_max) {
+COLD static int split_levels(int n, const int *ifac, size_t vec_per_elem, size_t split_max) {
   int sub[IFAC_MAX_SIZE];
   if (ifac[1] <= 2 || (size_t)n*vec_per_elem*sizeof(v4sf) <= split_max) return 0;
   split_sub_ifac(ifac, sub);
@@ -2403,7 +2416,7 @@ static v4sf *rfftb_split_ps(int n, v4sf *a, v4sf *b, const float *wa, const int 
 
 /* the number of passes of the blocks' FFTs after levels split levels, odd or
    even */
-static int split_leaf_odd(const int *ifac, int levels) {
+COLD static int split_leaf_odd(const int *ifac, int levels) {
   int sub[IFAC_MAX_SIZE];
   if (!levels) return ifac[1] & 1;
   split_sub_ifac(ifac, sub);
@@ -2740,11 +2753,11 @@ struct SETUP_STRUCT {
    radix6_max for rffti1_ps. */
 void pffft_priv_cpu_tuning(pffft_tuning_t *t); /* pffft_common.c */
 
-static void default_tuning(pffft_tuning_t *t) {
+COLD static void default_tuning(pffft_tuning_t *t) {
   pffft_priv_cpu_tuning(t);
 }
 
-void FUNC_DEFAULT_TUNING(pffft_tuning_t *tuning, size_t size) {
+COLD void FUNC_DEFAULT_TUNING(pffft_tuning_t *tuning, size_t size) {
   pffft_tuning_t t;
   if (size < sizeof t.size) return;
   default_tuning(&t);
@@ -2755,7 +2768,7 @@ void FUNC_DEFAULT_TUNING(pffft_tuning_t *tuning, size_t size) {
 }
 
 
-static SETUP_STRUCT *new_setup(int N, pffft_transform_t transform, const pffft_tuning_t *t) {
+COLD static SETUP_STRUCT *new_setup(int N, pffft_transform_t transform, const pffft_tuning_t *t) {
   SETUP_STRUCT *s = 0;
   int k, m;
   size_t array_bytes;
@@ -2822,13 +2835,13 @@ static SETUP_STRUCT *new_setup(int N, pffft_transform_t transform, const pffft_t
   return s;
 }
 
-SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
+COLD SETUP_STRUCT *FUNC_NEW_SETUP(int N, pffft_transform_t transform) {
   pffft_tuning_t t;
   default_tuning(&t);
   return new_setup(N, transform, &t);
 }
 
-SETUP_STRUCT *FUNC_NEW_SETUP_TUNED(int N, pffft_transform_t transform, const pffft_tuning_t *tuning) {
+COLD SETUP_STRUCT *FUNC_NEW_SETUP_TUNED(int N, pffft_transform_t transform, const pffft_tuning_t *tuning) {
   pffft_tuning_t t;
   default_tuning(&t);
   if (tuning) {
@@ -2847,7 +2860,7 @@ SETUP_STRUCT *FUNC_NEW_SETUP_TUNED(int N, pffft_transform_t transform, const pff
 }
 
 
-void FUNC_DESTROY(SETUP_STRUCT *s) {
+COLD void FUNC_DESTROY(SETUP_STRUCT *s) {
   if (!s)
     return;
   FUNC_ALIGNED_FREE(s->data);
@@ -4073,7 +4086,7 @@ void FUNC_TRANSFORM_ORDERED(const SETUP_STRUCT *setup, const float *input, float
 #define assertv4(v,f0,f1,f2,f3) assert(v.f[0] == (f0) && v.f[1] == (f1) && v.f[2] == (f2) && v.f[3] == (f3))
 
 /* detect bugs with the vector support macros */
-PFFFT_EXPORT void FUNC_VALIDATE_SIMD_A(void) {
+COLD PFFFT_EXPORT void FUNC_VALIDATE_SIMD_A(void) {
   float f[16] = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
   v4sf_union a0, a1, a2, a3, t, u;
   memcpy(a0.f, f, 4*sizeof(float));
@@ -4132,7 +4145,7 @@ static void pffft_assert4(  vsfscalar v0, vsfscalar v1, vsfscalar v2, vsfscalar 
 #define PFFFT_ASSERT4( V, a, b, c, d, FUNCTXT )  pffft_assert4( (V).f[0], (V).f[1], (V).f[2], (V).f[3], a, b, c, d, FUNCTXT, &numErrs, __FILE__, __LINE__ )
 
 
-PFFFT_EXPORT int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
+COLD PFFFT_EXPORT int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
 {
   int numErrs = 0;
 
@@ -4474,11 +4487,11 @@ PFFFT_EXPORT int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
 
 #else  /* if ( SIMD_SZ == 4 ) */
 
-PFFFT_EXPORT void FUNC_VALIDATE_SIMD_A()
+COLD PFFFT_EXPORT void FUNC_VALIDATE_SIMD_A()
 {
 }
 
-PFFFT_EXPORT int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
+COLD PFFFT_EXPORT int FUNC_VALIDATE_SIMD_EX(FILE * DbgOut)
 {
   return -1;
 }
