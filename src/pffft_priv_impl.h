@@ -133,7 +133,7 @@ const char * FUNC_SIMD_ARCH(void) { return VARCH; }
   of the real transform stalled on a full store buffer, with no more L1/L2
   traffic than without the prefetches; the lines of the store misses
   apparently do not arrive fast enough. Prefetching each output stream
-  PFFFT_PREFETCH_DIST bytes ahead made the transforms out of L1 up to 40%
+  PF_PREFETCH_DIST bytes ahead made the transforms out of L1 up to 40%
   faster on Intel CPUs (Xeon 6975P-C, Xeon Platinum 8573C, Core i7-8700B);
   docs/benchmarks.md has the numbers. A read prefetch measured as good as one
   for writing (PREFETCHW), and every x86 with SSE has it.
@@ -151,30 +151,31 @@ const char * FUNC_SIMD_ARCH(void) { return VARCH; }
     at single lengths), so their prefetch thresholds are "never"
     (pffft_tuning.h). A build whose compiler targets Zen
     (-march=znverN, which -march=native picks on compilers that know the
-    CPU) leaves the prefetches out altogether, as PFFFT_PREFETCH_DIST=0
-    does.
+    CPU) leaves the prefetching code out altogether, as the build option
+    PFFFT_DISABLE_PREFETCH does. That changes the layout of the rest, which
+    moved single short lengths either way (EPYC 7763 with MSVC: -9.5% to
+    +14% at n = 64 and 96).
   - Never on WebAssembly, where Emscripten's _mm_prefetch does nothing.
   The x86 SIMD headers have already included pf_fma_x86.h and _mm_prefetch.
 */
-#ifndef PFFFT_PREFETCH_DIST
-   /* extend this list when compilers add later Zen targets */
-#  if defined(__znver1__) || defined(__znver2__) || defined(__znver3__) || \
-      defined(__znver4__) || defined(__znver5__) || defined(__znver6__)
-#    define PFFFT_PREFETCH_DIST 0
-#  else
-#    define PFFFT_PREFETCH_DIST 128
-#  endif
+/* the distance in bytes: a constant, which the compiler folds into the
+   instruction */
+#define PF_PREFETCH_DIST 128
+/* extend this list when compilers add later Zen targets */
+#if defined(__znver1__) || defined(__znver2__) || defined(__znver3__) || \
+    defined(__znver4__) || defined(__znver5__) || defined(__znver6__)
+#  define PF_NO_PREFETCH
 #endif
-#if PFFFT_PREFETCH_DIST > 0 && defined(PFFFT_X86_HAVE_SSE) && !defined(PFFFT_SIMD_DISABLE) && \
-    !defined(__EMSCRIPTEN__) && !defined(__wasm__)
-   /* Prefetch the line PFFFT_PREFETCH_DIST bytes after (dir = 1) or before
+#if !defined(PFFFT_DISABLE_PREFETCH) && !defined(PF_NO_PREFETCH) && defined(PFFFT_X86_HAVE_SSE) && \
+    !defined(PFFFT_SIMD_DISABLE) && !defined(__EMSCRIPTEN__) && !defined(__wasm__)
+   /* Prefetch the line PF_PREFETCH_DIST bytes after (dir = 1) or before
       (dir = -1) p if pf. Near the ends of a pass that address lies outside
       the array: a prefetch never faults, and pointer arithmetic (rather than
       integer arithmetic, which cost clang an instruction per prefetch and up
       to 5% on a Core i7-8700B) lets the compiler fold the offset into the
       instruction. */
 #  define PF_PREFETCH(pf, p, dir) do { if (pf) \
-     _mm_prefetch((const char *)(p) + (dir) * PFFFT_PREFETCH_DIST, _MM_HINT_T0); } while (0)
+     _mm_prefetch((const char *)(p) + (dir) * PF_PREFETCH_DIST, _MM_HINT_T0); } while (0)
    /* call the kernel f##_pf_ps, with the prefetches, if pf, else f##_ps */
 #  define PF_CALL(pf, f, args) do { if (pf) f##_pf_ps args; else f##_ps args; } while (0)
 #  define PF_ON 1
@@ -2697,6 +2698,8 @@ static NEVER_INLINE(void) split_top_inplace_ps(int p, int mode, int M, v4sf *x, 
 #undef PF_PREFETCH
 #undef PF_CALL
 #undef PF_ON
+#undef PF_PREFETCH_DIST
+#undef PF_NO_PREFETCH
 
 
 struct SETUP_STRUCT {

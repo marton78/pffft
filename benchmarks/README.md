@@ -90,7 +90,7 @@ uv run --with matplotlib python3 benchmarks/plot.py mac-cmp.csv ios-cmp.csv --na
   label with a `--tune` loads its commit's library itself, so that tunings
   of one commit run the same code. `--cmake LABEL="ARGS"` builds a label's
   library with more CMake arguments (`*` for every label), e.g. a generic
-  x86 build or `-DPFFFT_PREFETCH_DIST=0`.
+  x86 build or `-DPFFFT_DISABLE_PREFETCH=ON`.
 - **tune.py** sweeps each threshold of pffft's tuning (split and prefetch,
   for real and complex transforms each, the prefetch on x86 only; radix-6)
   over its range in one build, every value a `--tune` of the

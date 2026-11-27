@@ -367,13 +367,14 @@ Zen (`-DTARGET_C_ARCH=znver3` and the like, or `native` on a Zen CPU with a
 compiler that knows it), and with
 
 ```
-cmake -DPFFFT_PREFETCH_DIST=0 ..
+cmake -DPFFFT_DISABLE_PREFETCH=ON ..
 ```
 
-(`-DPFFFT_PREFETCH_DIST=0` or `/DPFFFT_PREFETCH_DIST=0` without CMake), for
-a build that runs only on CPUs that do not prefetch: the code that is not
-there does not move the rest around. `PFFFT_PREFETCH_DIST` is the distance
-in bytes (default 128).
+(`-DPFFFT_DISABLE_PREFETCH` or `/DPFFFT_DISABLE_PREFETCH` without CMake), for
+a build that runs only on CPUs that do not prefetch. It is not faster by
+itself: the code moves around the code that is left, so single lengths
+change either way (on an AMD EPYC 7763 with MSVC from -9.5% to +14% at
+n = 64 and 96, elsewhere within a few percent).
 
 **Long transforms: splitting.** pffft runs the passes of an FFT one after the
 other, each over the whole array. That is fast while the data fits in the

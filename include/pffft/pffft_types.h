@@ -68,8 +68,9 @@ extern "C" {
     size_t split_max_complex;
     /* x86: the passes of a real transform over arrays of this size or more
        prefetch the lines they write, the first pass of a backward real
-       transform from half of it on; without effect on other CPUs, and in
-       builds with PFFFT_DISABLE_PREFETCH */
+       transform from half of it on; without effect on other CPUs and in
+       builds without the prefetching code (PFFFT_DISABLE_PREFETCH, a
+       compiler that targets AMD Zen, no SIMD, WebAssembly) */
     size_t prefetch_min_real;
     /* the same for complex transforms */
     size_t prefetch_min_complex;

@@ -18,7 +18,7 @@ that tunings of one commit compare the same code: e.g.
 "base=HEAD s8m=HEAD --tune s8m=split=8m".
 
 --cmake LABEL="ARGS" builds the library of LABEL with these CMake arguments
-added, e.g. --cmake out="-DPFFFT_PREFETCH_DIST=0"; --cmake "*=ARGS" adds
+added, e.g. --cmake out="-DPFFFT_DISABLE_PREFETCH=ON"; --cmake "*=ARGS" adds
 them to every label (e.g. -DTARGET_C_ARCH=x86-64-v3 for a generic build).
 Labels with the same commit and arguments share one build.
 """
