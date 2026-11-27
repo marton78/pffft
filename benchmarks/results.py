@@ -55,6 +55,9 @@ def read_csv(source):
                 row[key] = int(row[key])
             for key in FLOATS:  # ghz and clock are missing from older files
                 row[key] = float(row[key]) if row.get(key) else None
+            for key in columns:  # bench_fft --events: hardware events per transform
+                if key.startswith("ev:"):
+                    row[key] = float(row[key]) if row[key] else None
             rows.append(row)
     if columns is None:
         raise ValueError("no pffft-bench CSV found")

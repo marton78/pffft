@@ -25,6 +25,8 @@ extern "C" {
  * platform.c
  * ---------------------------------------------------------------------- */
 
+#define BENCH_MAX_EVENTS 4 /* --events: hardware events besides cycles and instructions */
+
 /* A reading of the clocks of the calling thread. Only differences between
  * two readings are meaningful. */
 typedef struct bench_snap {
@@ -32,11 +34,27 @@ typedef struct bench_snap {
   uint64_t cycles;       /* CPU cycles spent on the preferred kind of core */
   uint64_t stray_cycles; /* CPU cycles spent on any other kind of core */
   uint64_t instructions; /* instructions retired */
+  uint64_t events[BENCH_MAX_EVENTS]; /* those of bench_platform_events() */
 } bench_snap;
 
 /* pin_cpu argument of bench_platform_init() */
 #define BENCH_PIN_AUTO (-1) /* choose the fastest core where pinning is possible */
 #define BENCH_PIN_NONE (-2) /* do not pin the thread to a core */
+
+/* More hardware events to count with the cycles (Linux perf_event only), from a
+ * comma-separated list of up to BENCH_MAX_EVENTS. An event is one of perf's
+ * generic names (branches, branch-misses, stalled-cycles-frontend,
+ * L1-icache-load-misses, iTLB-load-misses, ...), an event of the core's PMU in
+ * /sys/bus/event_source/devices/<pmu>/events (stall_frontend, or with the PMU:
+ * armv8_pmuv3_0/stall_frontend/), a PMU's fields (cpu/event=0x79,umask=0x08/:
+ * its format/ directory says where they go) or a raw code (r1a8). Call before
+ * bench_platform_init(), which opens them: one that cannot be opened is left
+ * out with a message, and if the PMU cannot count them all together, none is
+ * counted. Returns 0, or -1 with the reason in err. */
+int bench_platform_events(const char *list, char *err, size_t errlen);
+int bench_event_count(void);
+const char *bench_event_name(int i);
+int bench_event_counted(int i); /* after bench_platform_init(): could event i be opened? */
 
 /* Prepare the calling thread for measuring: steer it to the fastest cores and
  * open the CPU cycle counter. Returns 1 if cycles are counted, 0 if only the
