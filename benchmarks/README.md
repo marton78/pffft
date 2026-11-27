@@ -97,6 +97,14 @@ uv run --with matplotlib python3 benchmarks/plot.py mac-cmp.csv ios-cmp.csv --na
   against the CPU's default, the best one, and the row for
   `src/pffft_tuning.h` (README: "Thresholds chosen for the CPU").
   `--quick` for a first look; run it twice for a row.
+- **split_sim.py** gives split thresholds that were not measured from a
+  sweep of those that were: a transform depends on the threshold only
+  through its split depth, so a threshold's time per case is that of the
+  measured thresholds with the same depth in the same run. `split_depth`
+  (a program built from the library's own sources, split_depth.c) gives the
+  depths. E.g. `split_sim.py sweep.csv --candidate incl=split=1048575 --cases
+  s1m`: would splitting from 1 MiB on, 1 MiB arrays included, beat the
+  measured 1 MiB, and where.
 - **plot.py** draws speed against n, higher is faster: GFLOPS, counting
   5·n·log2(n) flops per complex transform and 2.5·n·log2(n) per real one
   (benchFFT's convention), so that lengths compare fairly. Where cycles were
