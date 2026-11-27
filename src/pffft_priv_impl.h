@@ -1903,12 +1903,32 @@ static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *w
   return in; /* this is in fact the output .. */
 } /* rfftf1 */
 
+/* the passes first .. last of rfftb1_ps, all with the prefetching pf; l1, iw
+   and the buffers carry from one call to the next */
+static ALWAYS_INLINE(void) rfftb1_passes(int first, int last, int n, const float *wa, const int *ifac, int pf,
+                                       int *l1, int *iw, v4sf **in, v4sf **out, v4sf *work1, v4sf *work2) {
+  int k1;
+  for (k1 = first; k1 <= last; k1++) {
+    int ip = ifac[k1 + 1];
+    int l2 = ip * *l1;
+    int ido = n / l2;
+    rfftb_pass_ps(ip, ido, *l1, *in, *out, &wa[*iw], pf);
+    *l1 = l2;
+    *iw += (ip - 1)*ido;
+    if (*out == work2) {
+      *out = work1; *in = work2;
+    } else {
+      *out = work2; *in = work1;
+    }
+  }
+}
+
 /* pf_mask: pf_flags() of its arrays */
 static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2,
                                       const float *wa, const int *ifac, int pf_mask) {
   v4sf *in  = (v4sf*)input_readonly;
   v4sf *out = (in == work2 ? work1 : work2);
-  int nf = ifac[1], k1;
+  int nf = ifac[1];
   int l1 = 1;
   int iw = 0;
   const int pf = pf_mask & PF_ALL; /* the same for every pass */
@@ -1918,19 +1938,17 @@ static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *w
   const int pf_first = (pf_mask & PF_FIRST) != 0;
   (void)pf; (void)pf_first;
   assert(in != out);
-  for (k1=1; k1<=nf; k1++) {
-    int ip = ifac[k1 + 1];
-    int l2 = ip*l1;
-    int ido = n / l2;
-    rfftb_pass_ps(ip, ido, l1, in, out, &wa[iw], k1 == 1 ? pf_first : pf);
-    l1 = l2;
-    iw += (ip - 1)*ido;
-
-    if (out == work2) {
-      out = work1; in = work2;
-    } else {
-      out = work2; in = work1;
-    }
+  if (PF_ON) {
+    /* The first pass on its own, the others in a loop. Chosen per pass in
+       one loop (k1 == 1 ? pf_first : pf), short real transforms ran 3 to 8%
+       slower on a Core i7-8700B with Clang (f32 and f64, n = 64 to 160), at
+       every code layout: Clang no longer peeled the first pass, as it had
+       while pf_first came from the length. Without prefetching (PF_ON 0)
+       pf_first does not matter: one loop, as before. */
+    rfftb1_passes(1, 1, n, wa, ifac, pf_first, &l1, &iw, &in, &out, work1, work2);
+    rfftb1_passes(2, nf, n, wa, ifac, pf, &l1, &iw, &in, &out, work1, work2);
+  } else {
+    rfftb1_passes(1, nf, n, wa, ifac, pf, &l1, &iw, &in, &out, work1, work2);
   }
   return in; /* this is in fact the output .. */
 }
