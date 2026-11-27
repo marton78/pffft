@@ -1918,11 +1918,28 @@ static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *w
   const int pf_first = (pf_mask & PF_FIRST) != 0;
   (void)pf; (void)pf_first;
   assert(in != out);
-  for (k1=1; k1<=nf; k1++) {
+  /* The first pass on its own, with pf_first, the others in the loop with
+     pf. Chosen per pass in one loop (k1 == 1 ? pf_first : pf), short real
+     transforms ran 3 to 8% slower on a Core i7-8700B with Clang (f32 and
+     f64, n = 64 to 160), at every code layout: Clang no longer peeled the
+     first pass, as it had while pf_first came from the length. */
+  if (nf >= 1) {
+    int ip = ifac[2];
+    int ido = n / ip;
+    rfftb_pass_ps(ip, ido, 1, in, out, wa, pf_first);
+    l1 = ip;
+    iw = (ip - 1)*ido;
+    if (out == work2) {
+      out = work1; in = work2;
+    } else {
+      out = work2; in = work1;
+    }
+  }
+  for (k1=2; k1<=nf; k1++) {
     int ip = ifac[k1 + 1];
     int l2 = ip*l1;
     int ido = n / l2;
-    rfftb_pass_ps(ip, ido, l1, in, out, &wa[iw], k1 == 1 ? pf_first : pf);
+    rfftb_pass_ps(ip, ido, l1, in, out, &wa[iw], pf);
     l1 = l2;
     iw += (ip - 1)*ido;
 
