@@ -106,7 +106,8 @@ skip reordering the output (see `pffft_transform()` vs.
 ## The code
 
 The FFT API is very very simple, just make sure that you read the comments in
-`include/pffft/pffft.h` (float) and `include/pffft/pffft_double.h` (double).
+`include/pffft/pffft.h` (float) and `include/pffft/pffft_double.h` (double),
+and in `include/pffft/pffft_types.h`, which both include.
 A simple C++ wrapper is available in `include/pffft/pffft.hpp`; see
 `examples/` for C and C++ examples.
 

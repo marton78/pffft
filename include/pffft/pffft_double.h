@@ -82,33 +82,7 @@
 #ifndef PFFFT_DOUBLE_H
 #define PFFFT_DOUBLE_H
 
-#include <stddef.h> /* for size_t */
-
-#ifndef PFFFT_EXPORT
-  #ifdef PFFFT_STATIC_DEFINE
-    #define PFFFT_EXPORT
-  #elif defined(_WIN32) || defined(__CYGWIN__)
-    #ifdef PFFFT_EXPORTS
-      #define PFFFT_EXPORT __declspec(dllexport)
-    #else
-      #define PFFFT_EXPORT __declspec(dllimport)
-    #endif
-  #elif defined(PFFFT_EXPORTS) && (defined(__GNUC__) || defined(__clang__))
-    #define PFFFT_EXPORT __attribute__((visibility("default")))
-  #else
-    #define PFFFT_EXPORT
-  #endif
-#endif
-
-#ifndef PFFFT_DEPRECATED
-  #if defined(__GNUC__) || defined(__clang__)
-    #define PFFFT_DEPRECATED __attribute__((deprecated))
-  #elif defined(_MSC_VER)
-    #define PFFFT_DEPRECATED __declspec(deprecated)
-  #else
-    #define PFFFT_DEPRECATED
-  #endif
-#endif
+#include "pffft_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -119,17 +93,6 @@ extern "C" {
      read-only data.  
   */
   typedef struct PFFFTD_Setup PFFFTD_Setup;
-
-#ifndef PFFFT_COMMON_ENUMS
-#define PFFFT_COMMON_ENUMS
-
-  /* direction of the transform */
-  typedef enum { PFFFT_FORWARD, PFFFT_BACKWARD } pffft_direction_t;
-  
-  /* type of transform */
-  typedef enum { PFFFT_REAL, PFFFT_COMPLEX } pffft_transform_t;
-
-#endif
 
   /*
     prepare for performing transforms of size N -- the returned
@@ -272,10 +235,10 @@ extern "C" {
   PFFFT_EXPORT void PFFFT_DEPRECATED pffftd_zconvolve_no_accu(const PFFFTD_Setup *setup, const double *dft_a, const double *dft_b, double *dft_ab, double scaling);
 
   /* return 4 or 1 wether support AVX instructions was enabled when building pffft-double.c */
-  PFFFT_EXPORT int pffftd_simd_size();
+  PFFFT_EXPORT int pffftd_simd_size(void);
 
   /* return string identifier of used architecture (AVX/..) */
-  PFFFT_EXPORT const char * pffftd_simd_arch();
+  PFFFT_EXPORT const char * pffftd_simd_arch(void);
 
   /* simple helper to get minimum possible fft size */
   PFFFT_EXPORT int pffftd_min_fft_size(pffft_transform_t transform);
@@ -292,27 +255,23 @@ extern "C" {
   PFFFT_EXPORT int pffftd_nearest_transform_size(int N, pffft_transform_t cplx, int higher);
 
 
-  /* following functions are identical to the pffft_ functions - both declared */
+  /* following functions are identical to the pffft_ functions of pffft_types.h */
 
   /* simple helper to determine next power of 2
      - without inexact/rounding floating point operations
   */
   PFFFT_EXPORT int pffftd_next_power_of_two(int N);
-  PFFFT_EXPORT int pffft_next_power_of_two(int N);
 
   /* simple helper to determine if power of 2 - returns bool */
   PFFFT_EXPORT int pffftd_is_power_of_two(int N);
-  PFFFT_EXPORT int pffft_is_power_of_two(int N);
 
   /*
     the double buffers must have the correct alignment (32-byte boundary
-    on intel and powerpc). This function may be used to obtain such
-    correctly aligned buffers.
+    with AVX). This function may be used to obtain such correctly aligned
+    buffers.
   */
   PFFFT_EXPORT void *pffftd_aligned_malloc(size_t nb_bytes);
-  PFFFT_EXPORT void *pffft_aligned_malloc(size_t nb_bytes);
   PFFFT_EXPORT void pffftd_aligned_free(void *);
-  PFFFT_EXPORT void pffft_aligned_free(void *);
 
 #ifdef __cplusplus
 }
