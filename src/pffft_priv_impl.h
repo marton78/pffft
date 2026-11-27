@@ -1869,7 +1869,8 @@ static ALWAYS_INLINE(void) rfftb_pass_ps(int ip, int ido, int l1, const v4sf *in
 }
 
 static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2,
-                                      const float *wa, const int *ifac) {
+                                      const float *wa, const int *ifac, int pf_mask) {
+  (void)pf_mask;
   v4sf *in  = (v4sf*)input_readonly;
   v4sf *out = (in == work2 ? work1 : work2);
   int nf = ifac[1], k1;
@@ -1896,7 +1897,8 @@ static NEVER_INLINE(v4sf *) rfftf1_ps(int n, const v4sf *input_readonly, v4sf *w
 } /* rfftf1 */
 
 static NEVER_INLINE(v4sf *) rfftb1_ps(int n, const v4sf *input_readonly, v4sf *work1, v4sf *work2,
-                                      const float *wa, const int *ifac) {
+                                      const float *wa, const int *ifac, int pf_mask) {
+  (void)pf_mask;
   v4sf *in  = (v4sf*)input_readonly;
   v4sf *out = (in == work2 ? work1 : work2);
   int nf = ifac[1], k1;
@@ -2359,7 +2361,7 @@ static v4sf *rfftf_split_ps(int n, const v4sf *in, v4sf *a, v4sf *b, const float
   int sub[IFAC_MAX_SIZE];
   const v4sf *res = 0;
   assert(in != a);
-  if (!split_here(n, ifac, 1)) return rfftf1_ps(n, in, a, b, wa, ifac);
+  if (!split_here(n, ifac, 1)) return rfftf1_ps(n, in, a, b, wa, ifac, 0);
   p = ifac[2];
   M = n / p;
   split_deinterleave(p, M, 1, in, a);
@@ -2378,7 +2380,7 @@ static v4sf *rfftb_split_ps(int n, v4sf *a, v4sf *b, const float *wa, const int 
   int p, M, j;
   int sub[IFAC_MAX_SIZE];
   v4sf *res = 0;
-  if (!split_here(n, ifac, 1)) return rfftb1_ps(n, a, a, b, wa, ifac);
+  if (!split_here(n, ifac, 1)) return rfftb1_ps(n, a, a, b, wa, ifac, 0);
   p = ifac[2];
   M = n / p;
   rfftb_pass_ps(p, M, 1, a, b, wa, PF_USE_PREFETCH(n));
@@ -2717,8 +2719,6 @@ struct SETUP_STRUCT {
   float *twiddle; /* points into 'data', N/4 elements */
   int split;      /* cfft_split_ps / rfft?_split_ps instead of cfftf1_ps / rfft?1_ps */
   int nf_odd;     /* the number of passes (of the blocks if split), odd or even */
-  int pad_pf;     /* experiment: 620190b's struct size */
-  size_t pad_pf_min;
 };
 
 
@@ -3541,7 +3541,7 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
     ib = !ib;
     if (setup->transform == PFFFT_REAL) {
       ib = (rfftf1_ps(Ncvec*2, vinput, buff[ib], buff[!ib],
-                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
+                      setup->twiddle, &setup->ifac[0], 0) == buff[0] ? 0 : 1);
       if (ordered) real_finalize_reorder(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
       else FUNC_REAL_FINALIZE(Ncvec, buff[ib], buff[!ib], (v4sf*)setup->e);
       ib = !ib;
@@ -3564,7 +3564,7 @@ void FUNC_TRANSFORM_INTERNAL(const SETUP_STRUCT *setup, const float *finput, flo
       if (ordered) real_reorder_preprocess(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       else FUNC_REAL_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       ib = (rfftb1_ps(Ncvec*2, buff[ib], buff[0], buff[1],
-                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
+                      setup->twiddle, &setup->ifac[0], 0) == buff[0] ? 0 : 1);
     } else {
       if (ordered) cplx_reorder_preprocess(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
       else FUNC_CPLX_PREPROCESS(Ncvec, vinput, buff[ib], (v4sf*)setup->e);
@@ -3859,7 +3859,7 @@ void pffft_transform_internal_nosimd(const SETUP_STRUCT *setup, const float *inp
   if (direction == PFFFT_FORWARD) {
     if (setup->transform == PFFFT_REAL) {
       ib = (rfftf1_ps(Ncvec*2, input, buff[ib], buff[!ib],
-                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
+                      setup->twiddle, &setup->ifac[0], 0) == buff[0] ? 0 : 1);
     } else {
       ib = (cfftf1_ps(Ncvec, input, buff[ib], buff[!ib],
                       setup->twiddle, &setup->ifac[0], -1) == buff[0] ? 0 : 1);
@@ -3877,7 +3877,7 @@ void pffft_transform_internal_nosimd(const SETUP_STRUCT *setup, const float *inp
     }
     if (setup->transform == PFFFT_REAL) {
       ib = (rfftb1_ps(Ncvec*2, input, buff[ib], buff[!ib],
-                      setup->twiddle, &setup->ifac[0]) == buff[0] ? 0 : 1);
+                      setup->twiddle, &setup->ifac[0], 0) == buff[0] ? 0 : 1);
     } else {
       ib = (cfftf1_ps(Ncvec, input, buff[ib], buff[!ib],
                       setup->twiddle, &setup->ifac[0], +1) == buff[0] ? 0 : 1);
