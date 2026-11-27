@@ -113,7 +113,11 @@ jobs:
           {
             echo "runner: $RUNNER_LABEL ($RUNNER_OS $RUNNER_ARCH)"
             case "$RUNNER_OS" in
-              Linux) lscpu; cat /proc/cpuinfo | head -40 ;;
+              Linux) lscpu; cat /proc/cpuinfo | head -40
+                     # what bench_fft --events can count here
+                     for d in /sys/bus/event_source/devices/*/; do
+                       [ -d "$d/events" ] && echo "pmu $(basename "$d") (type $(cat "$d/type")): $(ls "$d/events" | tr '\n' ' ')"
+                     done ;;
               macOS) sysctl -a | grep -E '^(machdep\.cpu|hw\.(model|perflevel|l1|l2|l3|ncpu|cpufrequency))' ;;
               Windows) powershell -NoProfile -Command "Get-CimInstance Win32_Processor | Format-List Name,NumberOfCores,NumberOfLogicalProcessors,MaxClockSpeed,L2CacheSize,L3CacheSize" ;;
             esac
