@@ -279,12 +279,19 @@ come up once in 30 runs. `benchmarks/ci_dispatch.py` runs the workflow
 until each CPU of a table has done its part: every run gets the table as
 the input `by_cpu`, does the part of the CPU it lands on, and ends after a
 few seconds on any other CPU. Give a CPU everything it should measure in
-one entry (sweep, compares, compare_many); the script's docstring shows the
-table:
+one entry (sweep, compares, compare_many, and as many more compare_many.py
+runs as it needs, "rounds"); a later run of an entry does only the parts
+still missing. The script's docstring shows the table:
 
 ```sh
 python3 benchmarks/ci_dispatch.py table.json ci-out --ref my-branch
 ```
+
+When a run is to decide a default and also measure it, give the candidates
+as `--tune` variants of one library in a compare_many.py round, next to
+master: whichever wins, its numbers against master come from that run, and
+changing the default afterwards is a change of data, not of the code that
+was measured.
 
 ## CSV
 
