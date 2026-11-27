@@ -2719,6 +2719,8 @@ struct SETUP_STRUCT {
   float *twiddle; /* points into 'data', N/4 elements */
   int split;      /* cfft_split_ps / rfft?_split_ps instead of cfftf1_ps / rfft?1_ps */
   int nf_odd;     /* the number of passes (of the blocks if split), odd or even */
+  int pad_pf;     /* experiment: 620190b's struct size */
+  size_t pad_pf_min;
 };
 
 
