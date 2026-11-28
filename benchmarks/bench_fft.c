@@ -74,6 +74,7 @@ typedef struct options {
   const char *sizes;   /* NULL: the default sweep */
   const char *engines; /* NULL: all built-in engines, or all --lib engines */
   const char *csv;
+  const char *events; /* --events, NULL: none */
   int show; /* SHOW_*, or -1: cycles if counted, else ns */
   struct {
     char label[41]; /* "pffft@" and the label fit a bench_engine name */
@@ -115,6 +116,7 @@ typedef struct slot {
   double *ratios; /* the same relative to the batches around them */
   int nratios;
   double best_cycles, best_instructions; /* of the cheapest clean batch */
+  double best_events[BENCH_MAX_EVENTS];   /* the --events of the same batch */
   double clock;   /* the median of ratios[], 0 if unknown */
 } slot;
 
@@ -123,6 +125,7 @@ typedef struct result {
   const bench_engine *e;
   int prec, cplx, n, trial, pairs, batches, clean;
   double ns, ns_median, cycles, cycles_median, instructions;
+  double events[BENCH_MAX_EVENTS]; /* --events per transform, of the cheapest clean batch */
   double ghz;   /* the engine's clock, cycles per nanosecond */
   double clock; /* its clock relative to the other engines' (1: the same) */
 } result;
@@ -134,7 +137,7 @@ static int g_counted; /* is there a cycle counter? */
 static int g_failed;  /* a self-check or a zero check failed */
 static uint64_t g_rng;
 static struct {
-  uint64_t ns, cycles, instructions;
+  uint64_t ns, cycles, instructions, events[BENCH_MAX_EVENTS];
   int known;
 } g_overhead; /* cost of an empty bench_snap_begin/end pair: the smallest seen */
 
@@ -321,6 +324,9 @@ static void sample_overhead(void) {
   if (!g_overhead.known || b.cycles - a.cycles < g_overhead.cycles) g_overhead.cycles = b.cycles - a.cycles;
   if (!g_overhead.known || b.instructions - a.instructions < g_overhead.instructions)
     g_overhead.instructions = b.instructions - a.instructions;
+  for (int i = 0; i < bench_event_count(); i++) {
+    if (!g_overhead.known || b.events[i] - a.events[i] < g_overhead.events[i]) g_overhead.events[i] = b.events[i] - a.events[i];
+  }
   g_overhead.known = 1;
 }
 
@@ -402,6 +408,7 @@ static double record(slot *s, const bench_snap *a, const bench_snap *b) {
     if (s->clean == 0 || cycles < s->best_cycles) {
       s->best_cycles = cycles;
       s->best_instructions = (double)(b->instructions - a->instructions);
+      for (int i = 0; i < bench_event_count(); i++) s->best_events[i] = (double)(b->events[i] - a->events[i]);
     }
     s->ghz[s->clean] = cycles / (double)(b->ns - a->ns);
     s->cycles[s->clean] = cycles;
@@ -464,6 +471,7 @@ static void add_result(slot *s, int prec, int cplx, int n, int trial) {
   r->ns_median = net(median(s->ns, s->batches), g_overhead.ns) * per_transform;
   r->ns = net(s->ns[0], g_overhead.ns) * per_transform;
   r->cycles = r->cycles_median = r->instructions = r->ghz = r->clock = -1;
+  for (int i = 0; i < BENCH_MAX_EVENTS; i++) r->events[i] = -1;
   if (s->clean > 0) {
     double charge = 1;
     r->ghz = median(s->ghz, s->clean);
@@ -475,6 +483,11 @@ static void add_result(slot *s, int prec, int cplx, int n, int trial) {
     r->cycles = net(s->best_cycles, g_overhead.cycles) * per_transform * charge;
     if (s->best_instructions > 0) /* 0: the system counts cycles only */
       r->instructions = net(s->best_instructions, g_overhead.instructions) * per_transform;
+    /* an event may well not happen at all: 0 is a count, not "not counted" */
+    for (int i = 0; i < bench_event_count(); i++) {
+      double v = s->best_events[i] - (double)g_overhead.events[i];
+      if (bench_event_counted(i)) r->events[i] = (v > 0 ? v : 0) * per_transform;
+    }
   }
 }
 
@@ -641,13 +654,20 @@ static void write_header(FILE *f, const char *prefix, const options *o, const ch
   fprintf(f, "%srounds: %d\n", prefix, o->rounds);
   fprintf(f, "%sbatch_us: %g\n", prefix, o->batch_us);
   fprintf(f, "%sseed: %lu\n", prefix, o->seed);
+  if (o->events) fprintf(f, "%sevents: %s\n", prefix, o->events);
   write_tunings(f, prefix, o);
 }
 
 static void write_csv(FILE *f, const options *o, const char *date) {
   fprintf(f, "# pffft-bench 1\n");
   write_header(f, "# ", o, date);
-  fprintf(f, "engine,prec,xform,n,trial,pairs,batches,clean,ns,ns_median,cycles,cycles_median,instructions,mflops,ghz,clock\n");
+  fprintf(f, "engine,prec,xform,n,trial,pairs,batches,clean,ns,ns_median,cycles,cycles_median,instructions,mflops,ghz,clock");
+  for (int i = 0; i < bench_event_count(); i++) {
+    /* a column name without the commas of PMU/FIELDS/ */
+    fprintf(f, ",ev:");
+    for (const char *c = bench_event_name(i); *c; c++) fputc(*c == ',' ? ';' : *c, f);
+  }
+  fprintf(f, "\n");
   for (int i = 0; i < g_nresults; i++) {
     const result *r = &g_results[i];
     fprintf(f, "%s,%s,%s,%d,%d,%d,%d,%d,%.3f,%.3f,", r->e->name, prec_name[r->prec], xform_name[r->cplx], r->n,
@@ -659,8 +679,12 @@ static void write_csv(FILE *f, const options *o, const char *date) {
     fprintf(f, "%.1f,", mflops(r));
     if (r->ghz > 0) fprintf(f, "%.4f,", r->ghz);
     else fprintf(f, ",");
-    if (r->clock > 0) fprintf(f, "%.4f\n", r->clock);
-    else fprintf(f, "\n");
+    if (r->clock > 0) fprintf(f, "%.4f", r->clock);
+    for (int k = 0; k < bench_event_count(); k++) {
+      if (r->events[k] >= 0) fprintf(f, ",%.3f", r->events[k]);
+      else fprintf(f, ",");
+    }
+    fprintf(f, "\n");
   }
 }
 
@@ -744,6 +768,13 @@ static void usage(FILE *f) {
           "                      counted, else ns)\n"
           "  --seed S            default: from the clock\n"
           "  --cpu N | --no-pin  core selection where pinning exists (Linux, Android)\n"
+          "  --events LIST       Linux: also count these hardware events per transform\n"
+          "                      (CSV columns ev:NAME), at most 4, comma separated: perf's\n"
+          "                      generic names (branch-misses, L1-icache-load-misses,\n"
+          "                      iTLB-load-misses, stalled-cycles-frontend, ...), events\n"
+          "                      of /sys/bus/event_source/devices/*/events\n"
+          "                      (stall_frontend), PMU/FIELDS/ (cpu/event=0x79,umask=0x8/)\n"
+          "                      or rHEX (raw)\n"
           "  --fftw-measure-max N  default 65536\n"
           "  --list              print the engines of each precision and exit\n"
           "  --accuracy          instead of timing: the error of pffft (the --lib ones, or\n"
@@ -922,6 +953,11 @@ static void parse_options(int argc, char **argv, options *o) {
       if (end == v || *end) die("--seed: bad value '%s'", v);
       o->have_seed = 1;
     } else if (!strcmp(a, "--cpu")) o->pin = int_arg(a, v, 0);
+    else if (!strcmp(a, "--events")) {
+      char err[256];
+      if (bench_platform_events(v, err, sizeof err)) die("--events: %s", err);
+      o->events = v;
+    }
     else if (!strcmp(a, "--fftw-measure-max")) bench_fftw_measure_max = int_arg(a, v, 0);
     else die("%s: unknown option (see --help)", a);
   }
@@ -1004,6 +1040,7 @@ int main(int argc, char **argv) {
   if (nsizes == 0) die("no sizes to run: the keyword lists are limited to --min %d .. --max %d", o.min_n, o.max_n);
 
   g_counted = bench_platform_init(o.pin);
+  if (o.events && !g_counted) fprintf(stderr, "bench_fft: --events: no counter here, so no events either\n");
   for (int i = 0; i < 1000; i++) sample_overhead();
   if (!o.have_seed) {
     bench_snap_begin(&clock_now);

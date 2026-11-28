@@ -40,6 +40,7 @@
 #  include <pthread/qos.h>
 #  include <sys/sysctl.h>
 #elif defined(__linux__)
+#  include <dirent.h>
 #  include <dlfcn.h>
 #  include <errno.h>
 #  if defined(__has_include)
@@ -88,6 +89,15 @@ typedef struct machine {
 
 static const char *g_counter = "none";
 static int g_pinned_cpu = -1;
+
+/* --events (bench_platform_events): the names as given, and how many */
+static char g_event_names[BENCH_MAX_EVENTS][96];
+static int g_nevents;
+
+/* Fills in how system-specific code opens event i, from its text; 0, or -1
+ * with the reason in err. Defined per system below. */
+static int event_resolve(int i, const char *text, char *err, size_t errlen);
+static int event_counted(int i); /* was event i opened (bench_platform_init)? */
 
 /* Each system below provides now_ns(), read_counters(), steer(),
  * counter_open(), counter_close() and describe(). */
@@ -140,6 +150,13 @@ static int counter_open(void) {
 
 static void counter_close(void) { g_selfcounts = NULL; }
 
+static int event_resolve(int i, const char *text, char *err, size_t errlen) {
+  (void)i;
+  snprintf(err, errlen, "%s: hardware events are counted only on Linux (perf_event)", text);
+  return -1;
+}
+static int event_counted(int i) { (void)i; return 0; }
+
 static const char *counter_name(void) { return "thread_selfcounts"; }
 
 static void sysctl_text(const char *name, char *out, size_t n) {
@@ -179,6 +196,15 @@ static void describe(machine *m) {
 #elif defined(__linux__)
 
 static int g_perf_cycles = -1, g_perf_instructions = -1;
+/* the --events: how to open each, its file and its place among the group's values */
+static struct {
+  uint32_t type;
+  uint64_t config, config1, config2;
+  int fd, slot;
+} g_ev[BENCH_MAX_EVENTS];
+static int g_instructions_slot = -1;
+
+static int event_counted(int i) { return g_ev[i].fd >= 0; }
 
 static uint64_t now_ns(void) {
   struct timespec t;
@@ -187,11 +213,13 @@ static uint64_t now_ns(void) {
 }
 
 static void read_counters(bench_snap *s) {
-  uint64_t b[3] = {0, 0, 0}; /* number of values, cycles, instructions */
-  if (g_perf_cycles >= 0 && read(g_perf_cycles, b, sizeof b) < 0) b[1] = b[2] = 0;
+  /* the number of values, then cycles, and the others in the order opened */
+  uint64_t b[3 + BENCH_MAX_EVENTS] = {0};
+  if (g_perf_cycles >= 0 && read(g_perf_cycles, b, sizeof b) < 0) memset(b, 0, sizeof b);
   s->cycles = b[1];
   s->stray_cycles = 0; /* a pinned thread never runs on another kind of core */
-  s->instructions = b[2];
+  s->instructions = g_instructions_slot >= 0 ? b[1 + g_instructions_slot] : 0;
+  for (int i = 0; i < g_nevents; i++) s->events[i] = g_ev[i].slot >= 0 ? b[1 + g_ev[i].slot] : 0;
 }
 
 /* First line of /sys/devices/system/cpu/cpu<cpu>/<leaf>; 0 if there is none. */
@@ -248,6 +276,12 @@ static void steer(int pin_cpu) {
 
 #  if defined(BENCH_NO_PERF_EVENT)
 static int counter_open(void) { return 0; }
+static void counter_close(void) {}
+static int event_resolve(int i, const char *text, char *err, size_t errlen) {
+  (void)i;
+  snprintf(err, errlen, "%s: this build has no perf_event (no linux/perf_event.h)", text);
+  return -1;
+}
 #  else
 /* Neither glibc nor bionic wraps perf_event_open().
  *
@@ -255,12 +289,14 @@ static int counter_open(void) { return 0; }
  * its own PMU, and an event that names no core goes to the first PMU, where
  * it stands still while the thread runs on the other kind (seen on a
  * Cortex-A78/A55 phone). */
-static int perf_open(unsigned config, int group) {
+static int perf_open(uint32_t type, uint64_t config, uint64_t config1, uint64_t config2, int group) {
   struct perf_event_attr attr;
   memset(&attr, 0, sizeof attr);
-  attr.type = PERF_TYPE_HARDWARE;
+  attr.type = type;
   attr.size = sizeof attr;
   attr.config = config;
+  attr.config1 = config1;
+  attr.config2 = config2;
   attr.disabled = group < 0; /* the leader starts the group once it is complete */
   attr.exclude_kernel = 1;   /* user-space counting is what unprivileged users may do */
   attr.exclude_hv = 1;
@@ -268,27 +304,211 @@ static int perf_open(unsigned config, int group) {
   return (int)syscall(SYS_perf_event_open, &attr, 0 /* this thread */, g_pinned_cpu, group, 0UL);
 }
 
+static void counter_close(void) {
+  for (int i = 0; i < g_nevents; i++) {
+    if (g_ev[i].fd >= 0) close(g_ev[i].fd);
+    g_ev[i].fd = -1;
+  }
+  if (g_perf_instructions >= 0) close(g_perf_instructions);
+  if (g_perf_cycles >= 0) close(g_perf_cycles);
+  g_perf_cycles = g_perf_instructions = g_instructions_slot = -1;
+}
+
 static int counter_open(void) {
+  int slot = 1;
   /* Unpinned, a batch that moves to the other kind of core halfway is counted
    * in part, and nothing tells that it was: no counter then. */
   if (g_pinned_cpu < 0) return 0;
-  g_perf_cycles = perf_open(PERF_COUNT_HW_CPU_CYCLES, -1);
+  g_perf_cycles = perf_open(PERF_TYPE_HARDWARE, PERF_COUNT_HW_CPU_CYCLES, 0, 0, -1);
   if (g_perf_cycles < 0) return 0;
   /* If this one fails the group still counts cycles, and instructions read as 0. */
-  g_perf_instructions = perf_open(PERF_COUNT_HW_INSTRUCTIONS, g_perf_cycles);
+  g_perf_instructions = perf_open(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS, 0, 0, g_perf_cycles);
+  if (g_perf_instructions >= 0) g_instructions_slot = slot++;
+  for (int i = 0; i < g_nevents; i++) {
+    g_ev[i].fd = perf_open(g_ev[i].type, g_ev[i].config, g_ev[i].config1, g_ev[i].config2, g_perf_cycles);
+    if (g_ev[i].fd < 0) {
+      int why = errno;
+      fprintf(stderr, "bench_fft: cannot count the event %s, left out: %s%s\n", g_event_names[i], strerror(why),
+              why == EINVAL ? " (unknown to this PMU, or more events than it has counters: cycles and"
+                              " instructions take two)" : "");
+      g_ev[i].slot = -1;
+      continue;
+    }
+    g_ev[i].slot = slot++;
+  }
   if (ioctl(g_perf_cycles, PERF_EVENT_IOC_ENABLE, PERF_IOC_FLAG_GROUP) == 0) return 1;
-  if (g_perf_instructions >= 0) close(g_perf_instructions);
-  close(g_perf_cycles);
-  g_perf_cycles = g_perf_instructions = -1;
+  counter_close();
   return 0;
 }
-#  endif
 
-static void counter_close(void) {
-  if (g_perf_instructions >= 0) close(g_perf_instructions);
-  if (g_perf_cycles >= 0) close(g_perf_cycles);
-  g_perf_cycles = g_perf_instructions = -1;
+/* perf's generic events, by the names perf list gives them */
+#    define CACHE_EVENT(cache, result) \
+      (PERF_COUNT_HW_CACHE_##cache | (PERF_COUNT_HW_CACHE_OP_READ << 8) | (PERF_COUNT_HW_CACHE_RESULT_##result << 16))
+static const struct {
+  const char *name;
+  uint32_t type;
+  uint64_t config;
+} generic_events[] = {
+    {"branches", PERF_TYPE_HARDWARE, PERF_COUNT_HW_BRANCH_INSTRUCTIONS},
+    {"branch-instructions", PERF_TYPE_HARDWARE, PERF_COUNT_HW_BRANCH_INSTRUCTIONS},
+    {"branch-misses", PERF_TYPE_HARDWARE, PERF_COUNT_HW_BRANCH_MISSES},
+    {"cache-references", PERF_TYPE_HARDWARE, PERF_COUNT_HW_CACHE_REFERENCES},
+    {"cache-misses", PERF_TYPE_HARDWARE, PERF_COUNT_HW_CACHE_MISSES},
+    {"stalled-cycles-frontend", PERF_TYPE_HARDWARE, PERF_COUNT_HW_STALLED_CYCLES_FRONTEND},
+    {"stalled-cycles-backend", PERF_TYPE_HARDWARE, PERF_COUNT_HW_STALLED_CYCLES_BACKEND},
+    {"ref-cycles", PERF_TYPE_HARDWARE, PERF_COUNT_HW_REF_CPU_CYCLES},
+    {"L1-dcache-loads", PERF_TYPE_HW_CACHE, CACHE_EVENT(L1D, ACCESS)},
+    {"L1-dcache-load-misses", PERF_TYPE_HW_CACHE, CACHE_EVENT(L1D, MISS)},
+    {"L1-icache-loads", PERF_TYPE_HW_CACHE, CACHE_EVENT(L1I, ACCESS)},
+    {"L1-icache-load-misses", PERF_TYPE_HW_CACHE, CACHE_EVENT(L1I, MISS)},
+    {"iTLB-loads", PERF_TYPE_HW_CACHE, CACHE_EVENT(ITLB, ACCESS)},
+    {"iTLB-load-misses", PERF_TYPE_HW_CACHE, CACHE_EVENT(ITLB, MISS)},
+    {"branch-loads", PERF_TYPE_HW_CACHE, CACHE_EVENT(BPU, ACCESS)},
+    {"branch-load-misses", PERF_TYPE_HW_CACHE, CACHE_EVENT(BPU, MISS)},
+};
+
+#    define PMU_DIR "/sys/bus/event_source/devices"
+
+/* The first line of a file, without its line break; 0 if there is none. */
+static int file_line(const char *path, char *out, size_t n) {
+  FILE *f = fopen(path, "r");
+  int ok;
+  if (!f) return 0;
+  ok = fgets(out, (int)n, f) != NULL;
+  fclose(f);
+  if (ok) out[strcspn(out, "\n")] = 0;
+  return ok;
 }
+
+/* Puts value into the bits that PMU_DIR/<pmu>/format/<field> names, e.g.
+ * "config:0-7", "config1:0-15" or "config:0-7,32-35" (the value's low bits go
+ * into the first range). */
+static int set_field(int i, const char *pmu, const char *field, uint64_t value, char *err, size_t errlen) {
+  char path[256], fmt[128], *p;
+  uint64_t *dst;
+  snprintf(path, sizeof path, PMU_DIR "/%s/format/%s", pmu, field);
+  if (!file_line(path, fmt, sizeof fmt)) {
+    snprintf(err, errlen, "the PMU %s has no field '%s' (%s)", pmu, field, path);
+    return -1;
+  }
+  if (!strncmp(fmt, "config2:", 8)) dst = &g_ev[i].config2, p = fmt + 8;
+  else if (!strncmp(fmt, "config1:", 8)) dst = &g_ev[i].config1, p = fmt + 8;
+  else if (!strncmp(fmt, "config:", 7)) dst = &g_ev[i].config, p = fmt + 7;
+  else {
+    snprintf(err, errlen, "%s: unknown format '%s'", path, fmt);
+    return -1;
+  }
+  while (*p) {
+    char *end;
+    long lo = strtol(p, &end, 10), hi = lo;
+    if (end == p) break;
+    if (*end == '-') hi = strtol(end + 1, &end, 10);
+    for (long b = lo; b <= hi && b < 64; b++, value >>= 1) {
+      if (value & 1) *dst |= (uint64_t)1 << b;
+    }
+    p = end + (*end == ',');
+  }
+  return 0;
+}
+
+/* "field=value,field,..." of an event of pmu: a field without a value is 1, or
+ * the name of one of the PMU's events, which is then read from its events/. */
+static int set_terms(int i, const char *pmu, const char *terms, int depth, char *err, size_t errlen) {
+  char copy[256], *t, *save = NULL;
+  snprintf(copy, sizeof copy, "%s", terms);
+  for (t = strtok_r(copy, ",", &save); t; t = strtok_r(NULL, ",", &save)) {
+    char *eq = strchr(t, '='), path[256], text[256];
+    t += strspn(t, " ");
+    if (eq) {
+      *eq = 0;
+      if (set_field(i, pmu, t, strtoull(eq + 1, NULL, 0), err, errlen)) return -1;
+      continue;
+    }
+    snprintf(path, sizeof path, PMU_DIR "/%s/events/%s", pmu, t);
+    if (depth == 0 && file_line(path, text, sizeof text)) {
+      if (set_terms(i, pmu, text, 1, err, errlen)) return -1;
+    } else if (set_field(i, pmu, t, 1, err, errlen)) {
+      return -1;
+    }
+  }
+  return 0;
+}
+
+static int set_pmu(int i, const char *pmu, char *err, size_t errlen) {
+  char path[256], text[32];
+  snprintf(path, sizeof path, PMU_DIR "/%s/type", pmu);
+  if (!file_line(path, text, sizeof text)) {
+    snprintf(err, errlen, "no PMU '%s' (%s)", pmu, path);
+    return -1;
+  }
+  g_ev[i].type = (uint32_t)strtoul(text, NULL, 10);
+  return 0;
+}
+
+static int event_resolve(int i, const char *text, char *err, size_t errlen) {
+  const char *slash = strchr(text, '/');
+  memset(&g_ev[i], 0, sizeof g_ev[i]);
+  g_ev[i].fd = -1;
+  for (size_t k = 0; k < sizeof generic_events / sizeof generic_events[0]; k++) {
+    if (!strcmp(text, generic_events[k].name)) {
+      g_ev[i].type = generic_events[k].type;
+      g_ev[i].config = generic_events[k].config;
+      return 0;
+    }
+  }
+  if (text[0] == 'r' && text[1] && strspn(text + 1, "0123456789abcdefABCDEF") == strlen(text + 1)) {
+    g_ev[i].type = PERF_TYPE_RAW;
+    g_ev[i].config = strtoull(text + 1, NULL, 16);
+    return 0;
+  }
+  if (slash) { /* pmu/terms/ */
+    char pmu[64], terms[256];
+    size_t len = (size_t)(slash - text), tl = strlen(slash + 1);
+    if (len == 0 || len >= sizeof pmu || tl == 0 || slash[tl] != '/' || tl > sizeof terms) {
+      snprintf(err, errlen, "'%s': expected PMU/FIELDS/", text);
+      return -1;
+    }
+    memcpy(pmu, text, len);
+    pmu[len] = 0;
+    memcpy(terms, slash + 1, tl - 1);
+    terms[tl - 1] = 0;
+    if (set_pmu(i, pmu, err, errlen)) return -1;
+    return set_terms(i, pmu, terms, 0, err, errlen);
+  }
+  /* a bare name: the first PMU that has the event, the core's ("cpu" on x86) first */
+  {
+    static const char *const first[] = {"cpu", "cpu_core", "armv8_pmuv3_0", "armv8_pmuv3"};
+    char path[512], line[256];
+    for (size_t k = 0; k < sizeof first / sizeof first[0]; k++) {
+      snprintf(path, sizeof path, PMU_DIR "/%s/events/%s", first[k], text);
+      if (file_line(path, line, sizeof line)) {
+        if (set_pmu(i, first[k], err, errlen)) return -1;
+        return set_terms(i, first[k], line, 1, err, errlen);
+      }
+    }
+    {
+      DIR *d = opendir(PMU_DIR);
+      struct dirent *e;
+      while (d && (e = readdir(d)) != NULL) {
+        if (e->d_name[0] == '.') continue;
+        snprintf(path, sizeof path, PMU_DIR "/%s/events/%s", e->d_name, text);
+        if (file_line(path, line, sizeof line)) {
+          char pmu[256];
+          int r;
+          snprintf(pmu, sizeof pmu, "%s", e->d_name);
+          closedir(d);
+          if (set_pmu(i, pmu, err, errlen)) return -1;
+          r = set_terms(i, pmu, line, 1, err, errlen);
+          return r;
+        }
+      }
+      if (d) closedir(d);
+    }
+  }
+  snprintf(err, errlen, "unknown event '%s': not a generic name, no PMU in " PMU_DIR " has it, not rHEX", text);
+  return -1;
+}
+#  endif
 
 static const char *counter_name(void) { return "perf_event"; }
 
@@ -436,11 +656,51 @@ static int counter_open(void) { return 0; }
 static void counter_close(void) {}
 static const char *counter_name(void) { return "none"; }
 
+static int event_resolve(int i, const char *text, char *err, size_t errlen) {
+  (void)i;
+  snprintf(err, errlen, "%s: hardware events are counted only on Linux (perf_event)", text);
+  return -1;
+}
+static int event_counted(int i) { (void)i; return 0; }
+
 #endif
 
 /* ------------------------------------------------------------------------
  * Common to all systems
  * ---------------------------------------------------------------------- */
+
+int bench_platform_events(const char *list, char *err, size_t errlen) {
+  const char *p = list;
+  g_nevents = 0;
+  while (*p) {
+    /* the commas inside PMU/.../ belong to the event */
+    size_t len = 0;
+    int inside = 0;
+    char text[sizeof g_event_names[0]];
+    while (p[len] && (inside || p[len] != ',')) {
+      if (p[len] == '/') inside = !inside && strchr(p + len + 1, '/') != NULL;
+      len++;
+    }
+    if (len == 0 || len >= sizeof text) {
+      snprintf(err, errlen, "'%.*s': expected an event of 1 to %d characters", (int)len, p, (int)sizeof text - 1);
+      return -1;
+    }
+    if (g_nevents == BENCH_MAX_EVENTS) {
+      snprintf(err, errlen, "at most %d events", BENCH_MAX_EVENTS);
+      return -1;
+    }
+    memcpy(text, p, len);
+    text[len] = 0;
+    if (event_resolve(g_nevents, text, err, errlen)) return -1;
+    memcpy(g_event_names[g_nevents++], text, len + 1);
+    p += len + (p[len] == ',');
+  }
+  return 0;
+}
+
+int bench_event_count(void) { return g_nevents; }
+int bench_event_counted(int i) { return i >= 0 && i < g_nevents && event_counted(i); }
+const char *bench_event_name(int i) { return g_event_names[i]; }
 
 int bench_platform_init(int pin_cpu) {
   /* Undocumented switch for testing the wall-clock fallback on any machine. */
@@ -448,7 +708,14 @@ int bench_platform_init(int pin_cpu) {
   volatile unsigned spin = 0;
   bench_snap start, a, b;
   steer(pin_cpu);
-  if ((off && *off && strcmp(off, "0") != 0) || !counter_open()) return 0;
+  if (off && *off && strcmp(off, "0") != 0) return 0;
+  if (!counter_open()) {
+    /* a group with the events that the PMU cannot schedule: count without them */
+    if (!g_nevents) return 0;
+    fprintf(stderr, "bench_fft: the counter does not open with the events: counting without them\n");
+    g_nevents = 0;
+    if (!counter_open()) return 0;
+  }
   /* Work until the counter shows the thread on the preferred cores, for at
    * most 0.2 s. macOS starts a thread on an efficiency core and moves it only
    * after it has been busy for some milliseconds; calibrating before that
@@ -462,7 +729,11 @@ int bench_platform_init(int pin_cpu) {
     bench_snap_end(&b);
     if (b.cycles + b.stray_cycles == a.cycles + a.stray_cycles) {
       counter_close();
-      return 0;
+      if (!g_nevents) return 0;
+      /* a group that stands still may be one the PMU cannot schedule */
+      fprintf(stderr, "bench_fft: the counter stands still with the events: counting without them\n");
+      g_nevents = 0;
+      return bench_platform_init(pin_cpu);
     }
   } while (b.stray_cycles != a.stray_cycles && b.ns - start.ns < 200000000u);
   g_counter = counter_name();

@@ -91,6 +91,12 @@ uv run --with matplotlib python3 benchmarks/plot.py mac-cmp.csv ios-cmp.csv --na
   of one commit run the same code. `--cmake LABEL="ARGS"` builds a label's
   library with more CMake arguments (`*` for every label), e.g. a generic
   x86 build or `-DPFFFT_DISABLE_PREFETCH=ON`.
+  `--pads LIST` compares revisions at matched code layouts (see "Code
+  layout" below).
+- **layout.py** shows where the code of a library lies: its functions'
+  addresses, `loops LIB`: where the loops start (modulo 64 and 32), and
+  `diff A B`: which functions two libraries have different code in, with
+  the addresses taken out.
 - **tune.py** sweeps each threshold of pffft's tuning (split and prefetch,
   for real and complex transforms each, the prefetch on x86 only; radix-6)
   over its range in one build, every value a `--tune` of the
@@ -204,6 +210,21 @@ What it cannot do:
 - **Alone, an engine that slows the clock** has nothing to be compared with:
   run it with at least one other engine (`--engines vdsp` alone counts its
   cycles at its own clock; the `clock` column is then empty).
+
+## Code layout
+
+The same instructions run at different speeds at different addresses, and a
+change moves all the code after it. For short transforms that alone moves the
+speed by up to 16% on an EPYC 7763 and 6% on a Neoverse N2, under 2% on recent
+Intel and Apple cores. `compare_many.py --pads LIST` (e.g. `--pads spread`)
+tells it from what a change does: it builds every revision with its code moved
+by each pad (`layout_pad.cmake`, for any revision) and compares the revisions
+pad by pad, with a verdict per case (`slower*`: at every layout, beyond the
+spread that layout causes; `layout`: the sign depends on the layout).
+`layout.py` shows where a library's functions and loops lie and which
+functions two builds differ in, and `bench_fft --events` counts hardware
+events (Linux). [docs/code-layout.md](../docs/code-layout.md) explains why,
+how, and what was found.
 
 ## Engines
 

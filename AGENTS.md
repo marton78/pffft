@@ -137,10 +137,20 @@ is left: `PFFFT_DISABLE_PREFETCH`, which leaves the prefetching code out.
   the same results (`accuracy.py master . --bits`); `radix6_max` changes the
   arithmetic, so a change to it needs the full accuracy run.
 - **Code layout:** the same code at another address can move a short
-  length by 5 to 15% on some machines (EPYC 7763 with MSVC, Core i7-8700B).
-  Call a loss layout only with evidence: the same instruction count with
-  different cycles (the runners that count instructions: Xeon 6975P-C,
-  Neoverse N2), or a matched-layout control.
+  length by 5 to 16% on some machines (EPYC 7763 with either compiler,
+  Neoverse N2, Core i7-8700B, EPYC 9V45; under 2% on the Xeons 6975P-C and
+  8573C and on Apple). Call a loss layout only with the matched-layout
+  control: `compare_many.py master . --pads spread` on that machine, next to
+  an A/A run (`master m2=master --pads spread`) for the noise. A loss is
+  real if it is `slower*` (every pad, beyond both bands), beyond the A/A
+  noise of its case, and the kernels were sampled (the run's "layout:"
+  lines); layout if the verdict is `layout`. On x86, judge with MSVC or
+  Clang: GCC's own alignment leaves most kernels where they are at every
+  pad. Code the change did not touch that loses at every pad (`layout.py
+  diff`), with the same instructions, lost by where it now lies relative to
+  other code, which the pads do not vary (on the Raspberry Pi 2, more
+  instruction-cache refills: `--events l1i_cache_refill`). See
+  docs/code-layout.md.
 
 ## Benchmarking on GitHub's runners
 
